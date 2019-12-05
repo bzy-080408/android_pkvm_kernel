@@ -71,4 +71,12 @@ config TEST_KVM_S2MPU
 	help
 	  Kernel module for kselftests that exercises the KVM S2MPU driver.
 
+config KVM_ARM_HYP_DEBUG_UART
+	bool "Hack up some basic UART functionality at EL2"
+
+config KVM_ARM_HYP_DEBUG_UART_ADDR
+	hex "Physical address of the PL011 for EL2 to use"
+	depends on KVM_ARM_HYP_DEBUG_UART
+	default 0x09000000
+
 endif # VIRTUALIZATION
