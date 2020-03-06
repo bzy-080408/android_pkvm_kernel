@@ -1,0 +1,48 @@
+Secure Partition Client Interface Memory Region
+-----------------------------------------------
+
+This binding allows a firmware framework to describe the normal memory regions
+of a partition to a hypervisor.
+See Documentation/devicetree/bindings/arm/arm,spci.txt for more information.
+
+The physical address range reserved for the partition can be specified as a
+static allocation using the 'reg' property or as a dynamic allocation using the
+'size' property. If both properties are omitted, then the hypervisor can
+allocate physical memory for the partition however it sees fit.
+See Documentation/devicetree/bindings/reserved-memory/reserved-memory.txt for
+more information.
+
+Required properties:
+
+- compatible : Should be one of:
+	       "arm,spci-0.9-partition-memory-region"
+
+Optional properties:
+
+- ipa-range : The Intermediate Physical Address (IPA) range where the memory
+	      described by the "reg" property should be mapped at stage 2. If
+	      the IPA range is larger than the memory region then the region is
+	      mapped starting at the base of the IPA range.
+
+- read-only : (static allocation only) The memory region has been pre-populated
+	      by the firmware framework and must be mapped without write
+	      permission at stage 2.
+
+- non-executable : The memory region must be mapped without execute permission
+		   at stage 2.
+
+Example:
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		spci_reserved0: spci_mem@100000000 {
+			compatible = "arm,spci-0.9-partition-memory-region";
+			reg = <0x1 0x0 0x0 0x04000000>;		// 64M @ 1GB
+
+			ipa-range = <0x0 0x0 0x0 0x04000000>;	// 64M @ 0x0
+			read-only;
+		};
+	};

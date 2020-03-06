@@ -1,0 +1,64 @@
+Secure Partition Client Interface
+---------------------------------
+
+Firmware frameworks implementing partition setup according to the SPCI described
+in ARM document number ARM DEN 0077A ("Secure Partition Client Interface
+Specification") [0] must provide a "manifest and image" for each partition to
+the "partition manager" so that the partition execution contexts can be
+initialised.
+
+In the case of a virtual SPCI instance, the manifest and image details can be
+passed to the hypervisor (e.g. Linux KVM) using this binding.
+
+Required properties:
+
+- compatible : Should be one of:
+	       "arm,spci-0.9-hypervisor"
+
+- memory-region : A phandle to the reserved memory region [1] to be used by the
+		  hypervisor. The reserved memory region must be compatible with
+		  "arm,spci-0.9-hypervisor-memory-region".
+
+- One or more child nodes, each describing an SPCI partition using the following
+  required properties:
+
+  - compatible: Should be one of:
+		"arm,spci-0.9-partition"
+
+  - uuid : The 128-bit UUID [2] of the service implemented by this partition,
+	   represented as a string.
+
+  - nr-exec-ctxs : The number of virtual CPUs to instantiate for this partition.
+
+  - exec-state : The execution state in which to execute the partition. Should
+		 be "AArch64" or "AArch32".
+
+  - entry-point : The entry address of the partition specified as an
+		  Intermediate Physical Address (IPA).
+
+  - memory-region : A list of phandles to SPCI reserved memory regions as
+		    described in [3].
+
+[0] https://developer.arm.com/docs/den0077/latest
+[1] Documentation/devicetree/bindings/reserved-memory/reserved-memory.txt
+[2] https://tools.ietf.org/html/rfc4122
+[3] Documentation/devicetree/bindings/reserved-memory/arm,spci-memory.txt
+
+Example:
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	spci {
+		compatible = "arm,spci-0.9-hypervisor";
+		memory-region = <&spci_hyp_reserved>;
+
+		spci_partition0: spci_partition {
+			compatible = "arm,spci-0.9-partition";
+			uuid = "12345678-9abc-def0-1234-56789abcdef0";
+			nr-exec-ctxs = <2>;
+			exec-state = "AArch64";
+			entry-point = <0x0 0x80000>;
+			memory-region = <&spci_reserved0 &spci_reserved1>;
+		};
+	};
