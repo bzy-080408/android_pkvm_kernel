@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: GPL-2.0
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/reserved-memory/arm,psa-ffa-memory.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Memory Region for Arm PSA Firmware Framework for Arm v8-A
+
+maintainers:
+  - Will Deacon <will@kernel.org>
+
+description: |
+  This binding allows a PSA-FF-A implementation to describe the normal memory
+  regions of a partition [1] to a hypervisor according to [2].
+
+  The physical address range reserved for the partition can be specified as a
+  static allocation using the 'reg' property or as a dynamic allocation using
+  the 'size' property. If both properties are omitted, then the hypervisor can
+  allocate physical memory for the partition however it sees fit.
+
+  [1] Documentation/devicetree/bindings/arm/arm,psa-ffa.yaml
+  [2] Documentation/devicetree/bindings/reserved-memory/reserved-memory.txt
+
+properties:
+  $nodename:
+    pattern: "^ffa_mem(@[0-9a-f]+)?$"
+
+  compatible:
+    oneOf:
+      - const: arm,psa-ffa-1.0-partition-memory-region
+
+  ipa-range:
+    $ref: '/schemas/types.yaml#/definitions/uint32-matrix'
+    description: |
+      The Intermediate Physical Address (IPA) range (encoded in the same way as
+      a 'reg' property) at which to map the physical memory. If the IPA range is
+      larger than the physical memory region then the region is mapped starting
+      at the base of the IPA range.
+
+  read-only:
+    type: boolean
+    description: |
+      (static allocation only) The memory region has been pre-populated
+      by the firmware framework and must be mapped without write permission
+      at stage 2.
+
+  non-executable:
+    type: boolean
+    description: |
+      The memory region must be mapped without execute permission at stage 2.
+
+
+required:
+  - compatible
+
+# The "reserved-memory" binding defines additional properties.
+additionalProperties: true
+
+examples:
+  - |
+    reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+
+        ffa_reserved0: ffa_mem@100000000 {
+            compatible = "arm,psa-ffa-1.0-partition-memory-region";
+            reg = <0x1 0x0 0x0 0x04000000>;          // 64M @ 1GB
+            ipa-range = <0x0 0x0 0x0 0x04000000>;    // 64M @ 0x0
+            read-only;
+        };
+    };

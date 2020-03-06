@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: GPL-2.0
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/arm/arm,psa-ffa.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Arm PSA Firmware Framework for Arm v8-A
+
+maintainers:
+  - Will Deacon <will@kernel.org>
+
+description: |
+  Firmware frameworks implementing partition setup according to the PSA-FF-A
+  specification defined by ARM document number ARM DEN 0077A ("Arm PSA Firmware
+  Framework for Arm v8-A") [0] must provide a "manifest and image" for each
+  partition to the "partition manager" so that the partition execution contexts
+  can be initialised.
+
+  In the case of a virtual FFA instance, the manifest and image details can be
+  passed to the hypervisor (e.g. Linux KVM) using this binding.
+
+  [0] https://developer.arm.com/docs/den0077/latest
+
+properties:
+  $nodename:
+    const: psa_ffa
+
+  compatible:
+    oneOf:
+      - const: arm,psa-ffa-1.0-hypervisor
+
+  memory-region:
+    $ref: '/schemas/types.yaml#/definitions/phandle'
+    description: |
+      A phandle to the reserved memory region [1] to be used by the hypervisor.
+      The reserved memory region must be compatible with
+      "arm,psa-ffa-1.0-hypervisor-memory-region".
+
+      [1] Documentation/devicetree/bindings/reserved-memory/reserved-memory.txt
+
+patternProperties:
+  "^ffa_partition[0-9]+$":
+    type: object
+    description: One or more child nodes, each describing an FFA partition.
+    properties:
+      $nodename:
+        const: ffa_partition
+
+      compatible:
+        oneOf:
+          - const: arm,psa-ffa-1.0-partition
+
+      uuid:
+        $ref: '/schemas/types.yaml#definitions/string'
+        description: |
+          The 128-bit UUID [2] of the service implemented by this partition.
+
+          [2] https://tools.ietf.org/html/rfc4122
+
+      nr-exec-ctxs:
+        $ref: '/schemas/types.yaml#/definitions/uint32'
+        description: |
+          The number of virtual CPUs to instantiate for this partition.
+
+      exec-state:
+        description: The execution state in which to execute the partition.
+        oneOf:
+          - const: "AArch64"
+          - const: "AArch32"
+
+      entry-point:
+        $ref: '/schemas/types.yaml#/definitions/uint32-matrix'
+        description: |
+          The entry address of the partition specified as an Intermediate
+          Physical Address (IPA) encoded according to the '#address-cells'
+          property.
+
+      memory-region:
+        $ref: '/schemas/types.yaml#/definitions/phandle-array'
+        description: |
+          A list of phandles to FFA reserved memory regions [3] for this
+          partition.
+
+          [3] Documentation/devicetree/bindings/reserved-memory/arm,psa-ffa-memory.yaml
+
+additionalProperties: false
+
+examples:
+  - |
+    psa_ffa {
+        compatible = "arm,psa-ffa-1.0-hypervisor";
+        memory-region = <&ffa_hyp_reserved>;
+
+        ffa_partition0 {
+            compatible = "arm,psa-ffa-1.0-partition";
+            uuid = "12345678-9abc-def0-1234-56789abcdef0";
+            nr-exec-ctxs = <2>;
+            exec-state = "AArch64";
+            entry-point = <0x80000>;
+            memory-region = <&ffa_reserved0 &ffa_reserved1>;
+        };
+    };
