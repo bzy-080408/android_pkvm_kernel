@@ -67,6 +67,45 @@
 		      <0x00000008 0x80000000 0 0x80000000>;
 	};
 
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ffa_hyp_reserved: ffa_mem {
+			compatible = "arm,psa-ffa-1.0-hypervisor-memory-region";
+			size = <0x0 0x04000000>;
+			alignment = <0x0 0x00200000>;
+		};
+
+		ffa_reserved0: ffa_mem@e0000000 {
+			compatible = "arm,psa-ffa-1.0-partition-memory-region";
+			reg = <0x00000000 0xe0000000 0 0x04000000>;
+			ipa-range = <0x0 0x0 0x0 0x04000000>;
+			read-only;
+		};
+
+		ffa_reserved1: ffa_mem@e4000000 {
+			compatible = "arm,psa-ffa-1.0-partition-memory-region";
+			reg = <0x00000000 0xe4000000 0 0x1c000000>;
+			ipa-range = <0x0 0x04000000 0x0 0x1c000000>;
+		};
+	};
+
+	psa_ffa {
+		compatible = "arm,psa-ffa-1.0-hypervisor";
+		memory-region = <&ffa_hyp_reserved>;
+
+		ffa_partition0 {
+			compatible = "arm,psa-ffa-1.0-partition";
+			uuid = "58758040-4f9c-42b7-b6ac-e30c62c9ee96";
+			nr-exec-ctxs = <2>;
+			exec-state = "AArch64";
+			entry-point = <0x0 0x80000>;
+			memory-region = <&ffa_reserved0 &ffa_reserved1>;
+		};
+	};
+
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
