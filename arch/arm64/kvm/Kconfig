@@ -57,6 +57,19 @@ config KVM_ARM_PMU
 	  Adds support for a virtual Performance Monitoring Unit (PMU) in
 	  virtual machines.
 
+config KVM_ARM_PSA_FFA
+	bool "Arm Platform Security Architecture Firmware Framework for Armv8-A (PSA-FF-A) support"
+	help
+	  Adds support for managing virtual machines (aka "partitions")
+	  following the PSA-FF-A specification described in the DEN0077A
+	  document from Arm Limited.
+
+	  This allows PSA-FF-A-compliant guests to be controlled and scheduled
+	  by KVM. Communication between the guests and the host occurs via
+	  message passing and shared-memory queues.
+
+	  If unsure, say N.
+
 config KVM_INDIRECT_VECTORS
 	def_bool HARDEN_BRANCH_PREDICTOR || HARDEN_EL2_VECTORS
 
