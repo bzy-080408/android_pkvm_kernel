@@ -57,6 +57,18 @@ config KVM_ARM_PMU
 	  Adds support for a virtual Performance Monitoring Unit (PMU) in
 	  virtual machines.
 
+config KVM_ARM_SPCI
+	bool "Secure Partition Client Interface (SPCI) support"
+	help
+	  Adds support for the Secure Partition Client Interface (SPCI)
+	  described in the DEN0077A document from Arm Limited.
+
+	  This allows SPCI-compliant guests to be controlled and scheduled
+	  by KVM. Communication between the guests and the host occurs via
+	  message passing and shared-memory queues.
+
+	  If unsure, say N.
+
 config KVM_INDIRECT_VECTORS
 	def_bool HARDEN_BRANCH_PREDICTOR || HARDEN_EL2_VECTORS
 
