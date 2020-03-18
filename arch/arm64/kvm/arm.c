@@ -40,6 +40,7 @@
 
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_pmu.h>
+#include <kvm/arm-psa-ffa.h>
 #include <kvm/arm_psci.h>
 
 #ifdef REQUIRES_VIRT
@@ -1417,7 +1418,13 @@ static inline void hyp_cpu_pm_exit(void)
 
 static int init_common_resources(void)
 {
-	return kvm_set_ipa_limit();
+	int ret;
+
+	ret = kvm_set_ipa_limit();
+	if (ret)
+		return ret;
+
+	return kvm_ffa_init();
 }
 
 static int init_subsystems(void)
