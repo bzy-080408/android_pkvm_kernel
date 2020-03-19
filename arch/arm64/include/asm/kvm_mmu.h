@@ -544,6 +544,13 @@ static inline void hyp_init_aux_data(void)
 static inline void hyp_init_aux_data(void) {}
 #endif
 
+static inline int hyp_map_bss(void)
+{
+	return create_hyp_mappings(kvm_ksym_ref(__hyp_bss_start),
+				   kvm_ksym_ref(__hyp_bss_end),
+				   PAGE_HYP);
+}
+
 #define kvm_phys_to_vttbr(addr)		phys_to_ttbr(addr)
 
 /*
