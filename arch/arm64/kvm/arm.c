@@ -1600,6 +1600,12 @@ static int init_hyp_mode(void)
 		goto out_err;
 	}
 
+	err = hyp_map_bss();
+	if (err) {
+		kvm_err("Cannot map hyp bss section: %d\n", err);
+		goto out_err;
+	}
+
 	err = kvm_map_vectors();
 	if (err) {
 		kvm_err("Cannot map vectors\n");

@@ -17,6 +17,8 @@ struct kvm_nvhe_hyp_params {
 	void *vector_ptr;
 };
 
+#define __hyp_bss __section(.hyp.bss)
+
 #define read_sysreg_elx(r,nvh,vh)					\
 	({								\
 		u64 reg;						\
