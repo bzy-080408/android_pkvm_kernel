@@ -4,6 +4,8 @@
 
 #include <linux/device.h>
 
+#define OF_MAX_RESERVED_MEM_REGIONS	64
+
 struct of_phandle_args;
 struct reserved_mem_ops;
 
