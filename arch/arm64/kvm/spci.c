@@ -382,6 +382,11 @@ int kvm_spci_init(void)
 	return 0;
 }
 
+bool kvm_spci_supported(void)
+{
+	return !list_empty(&spci_partitions);
+}
+
 /* Early memory reservation parsing. */
 static int __init spci_rmem_err(const char *type, struct reserved_mem *rmem,
 				const char *reason)

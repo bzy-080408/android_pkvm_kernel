@@ -38,10 +38,12 @@ struct kvm_spci_partition {
 #ifdef CONFIG_KVM_ARM_SPCI
 
 int kvm_spci_init(void);
+bool kvm_spci_supported(void);
 
 #else
 
 static inline int kvm_spci_init(void) { return 0; }
+static inline bool kvm_spci_supported(void) { return false; }
 
 #endif /* CONFIG_KVM_ARM_SPCI */
 #endif	/* __KVM_ARM_SPCI_H */
