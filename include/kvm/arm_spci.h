@@ -8,6 +8,7 @@
 #define __KVM_ARM_SPCI_H
 
 #include <linux/of_reserved_mem.h>
+#include <linux/kobject.h>
 
 enum kvm_spci_mem_prot {
 	KVM_SPCI_MEM_PROT_X	= 1 << 0,
@@ -23,6 +24,7 @@ struct kvm_spci_memory {
 };
 
 struct kvm_spci_partition {
+	struct kobject		kobj;
 	struct list_head	list;
 	int			id;
 	uuid_t			uuid;

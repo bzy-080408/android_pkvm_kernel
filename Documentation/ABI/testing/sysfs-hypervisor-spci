@@ -1,0 +1,18 @@
+What:		/sys/hypervisor/spci/partitionX/uuid
+Date:		April 2020
+KernelVersion:	5.8
+Contact:	kvmarm@lists.cs.columbia.edu
+Description:	The UUID of the partition.
+
+What:		/sys/hypervisor/spci/partitionX/vcpus
+Date:		April 2020
+KernelVersion:	5.8
+Contact:	kvmarm@lists.cs.columbia.edu
+Description:	The number of vCPUs declared by the partition.
+
+What:		/sys/hypervisor/spci/partitionX/exec_state
+Date:		April 2020
+KernelVersion:	5.8
+Contact:	kvmarm@lists.cs.columbia.edu
+Description:	The execution state of the partition.
+		Currently "AArch32" or "AArch64".

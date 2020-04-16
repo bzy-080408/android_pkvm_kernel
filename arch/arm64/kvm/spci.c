@@ -157,6 +157,60 @@ static int spci_parse_partition_entry_point(struct kvm_spci_partition *part,
 	return 0;
 }
 
+static struct kobj_type spci_part_ktype = {
+	.sysfs_ops = &kobj_sysfs_ops,
+};
+
+#define kobj_to_part(kobj) container_of(kobj, struct kvm_spci_partition, kobj)
+#define SPCI_PART_ATTR_RO(_name, _fmt, ...)				\
+static ssize_t _name##_show(struct kobject *kobj,			\
+			    struct kobj_attribute *attr,		\
+			    char *buf)					\
+{									\
+	struct kvm_spci_partition *part = kobj_to_part(kobj);		\
+									\
+	return sprintf(buf, _fmt, __VA_ARGS__);				\
+}									\
+static struct kobj_attribute spci_part_attr_##_name = __ATTR_RO(_name)
+
+SPCI_PART_ATTR_RO(uuid, "%pU\n", &part->uuid);
+SPCI_PART_ATTR_RO(vcpus, "%d\n", part->nr_vcpus);
+SPCI_PART_ATTR_RO(exec_state, "%s\n", part->is_32bit ? "AArch32" : "AArch64");
+
+static struct attribute *spci_part_attrs[] = {
+	&spci_part_attr_uuid.attr,
+	&spci_part_attr_vcpus.attr,
+	&spci_part_attr_exec_state.attr,
+	NULL,
+};
+
+static const struct attribute_group spci_part_attr_group = {
+	.attrs = spci_part_attrs,
+};
+
+static struct kobject *spci_kobj;
+
+static int spci_partition_create_sysfs(struct kvm_spci_partition *part)
+{
+	int err;
+
+	err = kobject_init_and_add(&part->kobj, &spci_part_ktype, spci_kobj,
+				   "partition%d", part->id);
+	if (err)
+		goto out;
+
+	err = sysfs_create_group(&part->kobj, &spci_part_attr_group);
+	if (err)
+		goto out_put_kobj;
+
+	return 0;
+
+out_put_kobj:
+	kobject_put(&part->kobj);
+out:
+	return err;
+}
+
 static int spci_parse_partitions(struct device_node *spci_np)
 {
 	struct device_node *np, *prev_np = spci_np;
@@ -223,6 +277,10 @@ static int spci_parse_partitions(struct device_node *spci_np)
 		}
 
 		part->id = nr_parts;
+		if (spci_partition_create_sysfs(part)) {
+			kvm_err("%s: failed to create sysfs entries\n", pfx);
+			goto next_free_part;
+		}
 		++nr_parts;
 
 		INIT_LIST_HEAD(&part->list);
@@ -307,8 +365,13 @@ static void spci_dump_partitions(void)
 
 int kvm_spci_init(void)
 {
-	int ret = spci_parse_dt_node();
+	int ret;
 
+	spci_kobj = kobject_create_and_add("spci", hypervisor_kobj);
+	if (!spci_kobj)
+		return -ENOMEM;
+
+	ret = spci_parse_dt_node();
 	if (ret)
 		return ret;
 
