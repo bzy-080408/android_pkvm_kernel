@@ -19,13 +19,10 @@ struct tlb_inv_context {
 	u64		sctlr;
 };
 
-static void __hyp_text __tlb_switch_to_guest(struct kvm *kvm,
-					     struct tlb_inv_context *cxt);
-static void __hyp_text __tlb_switch_to_host(struct kvm *kvm,
-					    struct tlb_inv_context *cxt);
+static void __tlb_switch_to_guest(struct kvm *kvm, struct tlb_inv_context *cxt);
+static void __tlb_switch_to_host(struct kvm *kvm, struct tlb_inv_context *cxt);
 
-static inline void __hyp_text
-__tlb_flush_vmid_ipa(struct kvm *kvm, phys_addr_t ipa)
+static inline void __tlb_flush_vmid_ipa(struct kvm *kvm, phys_addr_t ipa)
 {
 	struct tlb_inv_context cxt;
 
@@ -79,7 +76,7 @@ __tlb_flush_vmid_ipa(struct kvm *kvm, phys_addr_t ipa)
 	__tlb_switch_to_host(kvm, &cxt);
 }
 
-static inline void __hyp_text __tlb_flush_vmid(struct kvm *kvm)
+static inline void __tlb_flush_vmid(struct kvm *kvm)
 {
 	struct tlb_inv_context cxt;
 
@@ -96,7 +93,7 @@ static inline void __hyp_text __tlb_flush_vmid(struct kvm *kvm)
 	__tlb_switch_to_host(kvm, &cxt);
 }
 
-static inline void __hyp_text __tlb_flush_local_vmid(struct kvm_vcpu *vcpu)
+static inline void __tlb_flush_local_vmid(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = kern_hyp_va(kern_hyp_va(vcpu)->kvm);
 	struct tlb_inv_context cxt;
@@ -111,7 +108,7 @@ static inline void __hyp_text __tlb_flush_local_vmid(struct kvm_vcpu *vcpu)
 	__tlb_switch_to_host(kvm, &cxt);
 }
 
-static inline void __hyp_text __tlb_flush_vm_context(void)
+static inline void __tlb_flush_vm_context(void)
 {
 	dsb(ishst);
 	__tlbi(alle1is);
