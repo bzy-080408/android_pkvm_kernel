@@ -61,8 +61,6 @@ __efistub__ctype		= _ctype;
  * memory mappings.
  */
 
-__kvm_nvhe___debug_switch_to_guest = __debug_switch_to_guest;
-__kvm_nvhe___debug_switch_to_host = __debug_switch_to_host;
 __kvm_nvhe___fpsimd_restore_state = __fpsimd_restore_state;
 __kvm_nvhe___fpsimd_save_state = __fpsimd_save_state;
 __kvm_nvhe___guest_enter = __guest_enter;
@@ -71,7 +69,6 @@ __kvm_nvhe___hyp_panic_string = __hyp_panic_string;
 __kvm_nvhe___hyp_stub_vectors = __hyp_stub_vectors;
 __kvm_nvhe___icache_flags = __icache_flags;
 __kvm_nvhe___kvm_enable_ssbs = __kvm_enable_ssbs;
-__kvm_nvhe___kvm_get_mdcr_el2 = __kvm_get_mdcr_el2;
 __kvm_nvhe___kvm_timer_set_cntvoff = __kvm_timer_set_cntvoff;
 __kvm_nvhe___sysreg32_restore_state = __sysreg32_restore_state;
 __kvm_nvhe___sysreg32_save_state = __sysreg32_save_state;
