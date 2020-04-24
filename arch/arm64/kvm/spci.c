@@ -72,6 +72,10 @@ spci_parse_partition_mem(struct kvm_spci_partition *part,
 	spci_mem->ipa_base = of_read_number(prop, na);
 	spci_mem->ipa_size = of_read_number(prop + na, ns);
 
+	/* TODO: For now, force the reserved region to be static. */
+	if (!rmem->base)
+		return NULL;
+
 	/*
 	 * TODO:
 	 * For now, force the guest region to be the same size as the
@@ -87,6 +91,9 @@ spci_parse_partition_mem(struct kvm_spci_partition *part,
 	    !PAGE_ALIGNED(spci_mem->ipa_size))
 		return NULL;
 
+	if (spci_mem->ipa_size >> PAGE_SHIFT > KVM_MEM_MAX_NR_PAGES)
+		return NULL;
+
 	/* TODO: Check against kvm_ipa_limit? */
 
 	spci_mem->prot = KVM_SPCI_MEM_PROT_R |
@@ -98,6 +105,12 @@ spci_parse_partition_mem(struct kvm_spci_partition *part,
 
 	if (of_property_read_bool(mem_np, "non-executable"))
 		spci_mem->prot &= ~KVM_SPCI_MEM_PROT_X;
+
+	/* TODO: support all protection modes. */
+	if (!(spci_mem->prot & KVM_SPCI_MEM_PROT_R))
+		return NULL;
+	if (!(spci_mem->prot & KVM_SPCI_MEM_PROT_X))
+		return NULL;
 
 	return spci_ipa_range_overlaps(part, spci_mem) ? NULL : spci_mem;
 }
@@ -421,6 +434,7 @@ int kvm_spci_init_vm(struct kvm *kvm, unsigned long type)
 		>> KVM_VM_TYPE_ARM_SPCI_ATTACH_ID_SHIFT;
 	struct kvm_spci_partition *part;
 	int ret;
+	int i;
 
 	if (!(type & KVM_VM_TYPE_ARM_SPCI_ATTACH))
 		return attach_id ? -EINVAL : 0;
@@ -448,6 +462,32 @@ int kvm_spci_init_vm(struct kvm *kvm, unsigned long type)
 	}
 
 	kvm->arch.max_vcpus = part->nr_vcpus;
+
+	mutex_lock(&kvm->slots_lock);
+	for (i = 0; i < part->nr_mems; ++i) {
+		struct kvm_spci_memory *mem = part->mems[i];
+		struct kvm_userspace_memory_region m = {
+			.slot = KVM_ARM_SPCI_MEM_SLOT_BASE + i,
+			.flags = KVM_ARM_MEM_PHYSICAL,
+			.guest_phys_addr = mem->ipa_base,
+			.memory_size = mem->rmem->size,
+			.userspace_addr = mem->rmem->base,
+		};
+
+		if (!(mem->prot & KVM_SPCI_MEM_PROT_W))
+			m.flags |= KVM_MEM_READONLY;
+
+		/* TODO: read and execute protect. */
+
+		ret = __kvm_set_memory_region(kvm, &m);
+		if (ret)
+			break;
+	}
+	mutex_unlock(&kvm->slots_lock);
+
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
