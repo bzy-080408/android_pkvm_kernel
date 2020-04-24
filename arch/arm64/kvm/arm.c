@@ -135,6 +135,10 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	kvm->arch.max_vcpus = vgic_present ?
 				kvm_vgic_get_max_vcpus() : KVM_MAX_VCPUS;
 
+	ret = kvm_spci_init_vm(kvm, type);
+	if (ret)
+		goto out_free_stage2_pgd;
+
 	return ret;
 out_free_stage2_pgd:
 	kvm_free_stage2_pgd(kvm);
@@ -175,6 +179,8 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 		}
 	}
 	atomic_set(&kvm->online_vcpus, 0);
+
+	kvm_spci_destroy_vm(kvm);
 }
 
 int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
@@ -534,6 +540,10 @@ static int kvm_vcpu_first_run_init(struct kvm_vcpu *vcpu)
 
 	if (!kvm_arm_vcpu_is_finalized(vcpu))
 		return -EPERM;
+
+	ret = kvm_spci_vcpu_first_run_init(vcpu);
+	if (ret)
+		return ret;
 
 	vcpu->arch.has_run_once = true;
 
@@ -946,6 +956,10 @@ static int kvm_vcpu_set_target(struct kvm_vcpu *vcpu,
 	 */
 	if (vcpu->arch.target != -1 && vcpu->arch.target != init->target)
 		return -EINVAL;
+
+	ret = kvm_spci_check_vcpu_init_features(vcpu, init);
+	if (ret)
+		return ret;
 
 	/* -ENOENT for unknown features, -EINVAL for invalid combinations. */
 	for (i = 0; i < sizeof(init->features) * 8; i++) {

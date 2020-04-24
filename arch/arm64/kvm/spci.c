@@ -411,6 +411,75 @@ bool kvm_spci_supported(void)
 	return !list_empty(&spci_partitions);
 }
 
+int kvm_spci_init_vm(struct kvm *kvm, unsigned long type)
+{
+	unsigned long attach_id =
+		(type & KVM_VM_TYPE_ARM_SPCI_ATTACH_ID_MASK)
+		>> KVM_VM_TYPE_ARM_SPCI_ATTACH_ID_SHIFT;
+	struct kvm_spci_partition *part;
+	int ret;
+
+	if (!(type & KVM_VM_TYPE_ARM_SPCI_ATTACH))
+		return attach_id ? -EINVAL : 0;
+
+	// TODO: validate the IPA size is large enough for the memory regions
+
+	if (!kvm_spci_supported())
+		return -EINVAL;
+
+	list_for_each_entry(part, &spci_partitions, list)
+		if (part->id == attach_id)
+			break;
+
+	if (part->id != attach_id)
+		return -ENOENT;
+
+	ret = part_link(kvm, part);
+	if (ret)
+		return ret;
+
+	if (part->nr_vcpus > kvm->arch.max_vcpus) {
+		kvm_err("Partition requires %d vCPUs but max is %d\n",
+			part->nr_vcpus, kvm->arch.max_vcpus);
+		return -EDQUOT; // XXX: ?????
+	}
+
+	kvm->arch.max_vcpus = part->nr_vcpus;
+	return 0;
+}
+
+void kvm_spci_destroy_vm(struct kvm *kvm)
+{
+	part_unlink(kvm);
+}
+
+int kvm_spci_check_vcpu_init_features(const struct kvm_vcpu *vcpu,
+				      const struct kvm_vcpu_init *init)
+{
+	const struct kvm_spci_partition *part = part_get_linked(vcpu->kvm);
+	bool el1_32bit;
+
+	if (!part)
+		return 0;
+
+	el1_32bit = init->features[0] & (1 << KVM_ARM_VCPU_EL1_32BIT);
+	if (el1_32bit != part->is_32bit)
+		return -EINVAL;
+
+	return 0;
+}
+
+int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu)
+{
+	const struct kvm_spci_partition *part = part_get_linked(vcpu->kvm);
+
+	if (!part)
+		return 0;
+
+	vcpu_gp_regs(vcpu)->regs.pc = part->entry_point;
+	return 0;
+}
+
 /* Early memory reservation parsing. */
 static int __init spci_rmem_err(const char *type, struct reserved_mem *rmem,
 				const char *reason)

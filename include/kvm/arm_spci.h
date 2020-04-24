@@ -40,11 +40,30 @@ struct kvm_spci_partition {
 
 int kvm_spci_init(void);
 bool kvm_spci_supported(void);
+int kvm_spci_init_vm(struct kvm *kvm, unsigned long type);
+void kvm_spci_destroy_vm(struct kvm *kvm);
+int kvm_spci_check_vcpu_init_features(const struct kvm_vcpu *vcpu,
+				      const struct kvm_vcpu_init *init);
+int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu);
 
 #else
 
 static inline int kvm_spci_init(void) { return 0; }
 static inline bool kvm_spci_supported(void) { return false; }
+static inline int kvm_spci_init_vm(struct kvm *kvm, unsigned long type)
+{
+	return 0;
+}
+static inline void kvm_spci_destroy_vm(struct kvm *kvm) {}
+static inline int kvm_spci_check_vcpu_init_features(const struct kvm_vcpu *vcpu,
+				      const struct kvm_vcpu_init *init)
+{
+	return 0;
+}
+static inline int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu)
+{
+	return 0;
+}
 
 #endif /* CONFIG_KVM_ARM_SPCI */
 #endif	/* __KVM_ARM_SPCI_H */
