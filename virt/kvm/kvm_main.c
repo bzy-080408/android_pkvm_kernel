@@ -1202,10 +1202,6 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	int as_id, id;
 	int r;
 
-	r = check_memory_region_flags(mem);
-	if (r)
-		return r;
-
 	as_id = mem->slot >> 16;
 	id = (u16)mem->slot;
 
@@ -1327,8 +1323,14 @@ EXPORT_SYMBOL_GPL(kvm_set_memory_region);
 static int kvm_vm_ioctl_set_memory_region(struct kvm *kvm,
 					  struct kvm_userspace_memory_region *mem)
 {
+	int r;
+
 	if ((u16)mem->slot >= KVM_USER_MEM_SLOTS)
 		return -EINVAL;
+
+	r = check_memory_region_flags(mem);
+	if (r)
+		return r;
 
 	return kvm_set_memory_region(kvm, mem);
 }

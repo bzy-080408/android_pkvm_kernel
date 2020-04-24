@@ -927,6 +927,11 @@ static void stage2_unmap_memslot(struct kvm *kvm,
 	phys_addr_t size = PAGE_SIZE * memslot->npages;
 	hva_t reg_end = hva + size;
 
+	if (memslot->flags & KVM_ARM_MEM_PHYSICAL) {
+		unmap_stage2_range(kvm, addr, size);
+		return;
+	}
+
 	/*
 	 * A memory region could potentially cover multiple VMAs, and any holes
 	 * between them, so iterate over all of them to find out if we should
@@ -1656,15 +1661,82 @@ static bool fault_supports_stage2_huge_mapping(struct kvm_memory_slot *memslot,
 	       (hva & ~(map_size - 1)) + map_size <= uaddr_end;
 }
 
+static int __mem_abort_set_page(
+		struct kvm_vcpu *vcpu,
+		phys_addr_t fault_ipa,
+		kvm_pfn_t pfn,
+		unsigned long pagesize,
+		unsigned long fault_status,
+		bool writable,
+		unsigned long flags,
+		pgprot_t mem_type
+		)
+{
+	struct kvm *kvm = vcpu->kvm;
+	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
+	gfn_t gfn = fault_ipa >> PAGE_SHIFT;
+	bool exec_fault = kvm_vcpu_trap_is_iabt(vcpu);
+	bool needs_exec;
+
+	/*
+	 * If we took an execution fault we have made the
+	 * icache/dcache coherent above and should now let the s2
+	 * mapping be executable.
+	 *
+	 * Write faults (!exec_fault && FSC_PERM) are orthogonal to
+	 * execute permissions, and we preserve whatever we have.
+	 */
+	needs_exec = exec_fault ||
+		(fault_status == FSC_PERM && stage2_is_exec(kvm, fault_ipa));
+
+	if (pagesize == PUD_SIZE) {
+		pud_t new_pud = kvm_pfn_pud(pfn, mem_type);
+
+		new_pud = kvm_pud_mkhuge(new_pud);
+		if (writable)
+			new_pud = kvm_s2pud_mkwrite(new_pud);
+
+		if (needs_exec)
+			new_pud = kvm_s2pud_mkexec(new_pud);
+
+		return stage2_set_pud_huge(kvm, memcache, fault_ipa, &new_pud);
+	} else if (pagesize == PMD_SIZE) {
+		pmd_t new_pmd = kvm_pfn_pmd(pfn, mem_type);
+
+		new_pmd = kvm_pmd_mkhuge(new_pmd);
+
+		if (writable)
+			new_pmd = kvm_s2pmd_mkwrite(new_pmd);
+
+		if (needs_exec)
+			new_pmd = kvm_s2pmd_mkexec(new_pmd);
+
+		return stage2_set_pmd_huge(kvm, memcache, fault_ipa, &new_pmd);
+	} else {
+		pte_t new_pte = kvm_pfn_pte(pfn, mem_type);
+
+		if (writable) {
+			new_pte = kvm_s2pte_mkwrite(new_pte);
+			mark_page_dirty(kvm, gfn);
+		}
+
+		if (needs_exec)
+			new_pte = kvm_s2pte_mkexec(new_pte);
+
+		return stage2_set_pte(kvm, memcache, fault_ipa, &new_pte, flags);
+	}
+}
+
 static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
-			  struct kvm_memory_slot *memslot, unsigned long hva,
+			  struct kvm_memory_slot *memslot,
 			  unsigned long fault_status)
 {
 	int ret;
 	bool write_fault, writable, force_pte = false;
-	bool exec_fault, needs_exec;
+	bool exec_fault;
 	unsigned long mmu_seq;
 	gfn_t gfn = fault_ipa >> PAGE_SHIFT;
+	unsigned long hva = __gfn_to_hva_memslot(memslot, gfn);
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
 	struct vm_area_struct *vma;
@@ -1676,12 +1748,6 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	write_fault = kvm_is_write_fault(vcpu);
 	exec_fault = kvm_vcpu_trap_is_iabt(vcpu);
-	VM_BUG_ON(write_fault && exec_fault);
-
-	if (fault_status == FSC_PERM && !write_fault && !exec_fault) {
-		kvm_err("Unexpected L2 read permission error\n");
-		return -EFAULT;
-	}
 
 	/* Let's check if we will get back a huge page backed by hugetlbfs */
 	down_read(&current->mm->mmap_sem);
@@ -1792,58 +1858,52 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (exec_fault)
 		invalidate_icache_guest_page(pfn, vma_pagesize);
 
-	/*
-	 * If we took an execution fault we have made the
-	 * icache/dcache coherent above and should now let the s2
-	 * mapping be executable.
-	 *
-	 * Write faults (!exec_fault && FSC_PERM) are orthogonal to
-	 * execute permissions, and we preserve whatever we have.
-	 */
-	needs_exec = exec_fault ||
-		(fault_status == FSC_PERM && stage2_is_exec(kvm, fault_ipa));
-
-	if (vma_pagesize == PUD_SIZE) {
-		pud_t new_pud = kvm_pfn_pud(pfn, mem_type);
-
-		new_pud = kvm_pud_mkhuge(new_pud);
-		if (writable)
-			new_pud = kvm_s2pud_mkwrite(new_pud);
-
-		if (needs_exec)
-			new_pud = kvm_s2pud_mkexec(new_pud);
-
-		ret = stage2_set_pud_huge(kvm, memcache, fault_ipa, &new_pud);
-	} else if (vma_pagesize == PMD_SIZE) {
-		pmd_t new_pmd = kvm_pfn_pmd(pfn, mem_type);
-
-		new_pmd = kvm_pmd_mkhuge(new_pmd);
-
-		if (writable)
-			new_pmd = kvm_s2pmd_mkwrite(new_pmd);
-
-		if (needs_exec)
-			new_pmd = kvm_s2pmd_mkexec(new_pmd);
-
-		ret = stage2_set_pmd_huge(kvm, memcache, fault_ipa, &new_pmd);
-	} else {
-		pte_t new_pte = kvm_pfn_pte(pfn, mem_type);
-
-		if (writable) {
-			new_pte = kvm_s2pte_mkwrite(new_pte);
-			mark_page_dirty(kvm, gfn);
-		}
-
-		if (needs_exec)
-			new_pte = kvm_s2pte_mkexec(new_pte);
-
-		ret = stage2_set_pte(kvm, memcache, fault_ipa, &new_pte, flags);
-	}
+	ret = __mem_abort_set_page(vcpu, fault_ipa, pfn, vma_pagesize,
+				   fault_status, writable, flags, mem_type);
 
 out_unlock:
 	spin_unlock(&kvm->mmu_lock);
 	kvm_set_pfn_accessed(pfn);
 	kvm_release_pfn_clean(pfn);
+	return ret;
+}
+
+static int phys_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
+			  struct kvm_memory_slot *slot,
+			  unsigned long fault_status)
+{
+	struct kvm *kvm = vcpu->kvm;
+	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
+	unsigned long pagesize = PAGE_SIZE;
+	bool writable = !(slot->flags & KVM_MEM_READONLY);
+	unsigned long flags = 0;
+	pgprot_t mem_type = PAGE_S2;
+	gfn_t gfn = fault_ipa >> PAGE_SHIFT;
+	kvm_pfn_t pfn;
+	int ret;
+
+	/*
+	 * userspace_addr is a physical address when KVM_ARM_MEM_PHYSICAL
+	 * is set in the memslot flags.
+	 */
+	pfn = (slot->userspace_addr >> PAGE_SHIFT) + (gfn - slot->base_gfn);
+
+	/* We need minimum second+third level pages */
+	ret = mmu_topup_memory_cache(memcache, kvm_mmu_cache_min_pages(kvm),
+				     KVM_NR_MEM_OBJS);
+	if (ret)
+		return ret;
+
+	spin_lock(&kvm->mmu_lock);
+
+	// TODO: transparent hugepaging
+
+	// TODO: some icache maintainance?
+
+	ret = __mem_abort_set_page(vcpu, fault_ipa, pfn, pagesize, fault_status,
+				   writable, flags, mem_type);
+
+	spin_unlock(&kvm->mmu_lock);
 	return ret;
 }
 
@@ -1889,6 +1949,11 @@ out:
 		kvm_set_pfn_accessed(pfn);
 }
 
+static bool memslot_valid(struct kvm_memory_slot *slot)
+{
+	return slot && !(slot->flags & KVM_MEMSLOT_INVALID);
+}
+
 /**
  * kvm_handle_guest_abort - handles all 2nd stage aborts
  * @vcpu:	the VCPU pointer
@@ -1906,7 +1971,6 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 	unsigned long fault_status;
 	phys_addr_t fault_ipa;
 	struct kvm_memory_slot *memslot;
-	unsigned long hva;
 	bool is_iabt, write_fault, writable;
 	gfn_t gfn;
 	int ret, idx;
@@ -1948,9 +2012,13 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 
 	gfn = fault_ipa >> PAGE_SHIFT;
 	memslot = gfn_to_memslot(vcpu->kvm, gfn);
-	hva = gfn_to_hva_memslot_prot(memslot, gfn, &writable);
-	write_fault = kvm_is_write_fault(vcpu);
-	if (kvm_is_error_hva(hva) || (write_fault && !writable)) {
+
+	if (memslot_valid(memslot)) {
+		writable = !(memslot->flags & KVM_MEM_READONLY);
+		write_fault = kvm_is_write_fault(vcpu);
+	}
+
+	if (!memslot_valid(memslot) || (write_fault && !writable)) {
 		if (is_iabt) {
 			/* Prefetch Abort on I/O address */
 			ret = -ENOEXEC;
@@ -1993,7 +2061,17 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		goto out_unlock;
 	}
 
-	ret = user_mem_abort(vcpu, fault_ipa, memslot, hva, fault_status);
+	VM_BUG_ON(write_fault && is_iabt);
+	if (fault_status == FSC_PERM && !write_fault && !is_iabt) {
+		kvm_err("Unexpected L2 read permission error\n");
+		return -EFAULT;
+	}
+
+	if (memslot->flags & KVM_ARM_MEM_PHYSICAL) {
+		ret = phys_mem_abort(vcpu, fault_ipa, memslot, fault_status);
+	} else {
+		ret = user_mem_abort(vcpu, fault_ipa, memslot, fault_status);
+	}
 	if (ret == 0)
 		ret = 1;
 out:
@@ -2024,6 +2102,9 @@ static int handle_hva_to_gpa(struct kvm *kvm,
 	kvm_for_each_memslot(memslot, slots) {
 		unsigned long hva_start, hva_end;
 		gfn_t gpa;
+
+		if (memslot->flags & KVM_ARM_MEM_PHYSICAL)
+			continue;
 
 		hva_start = max(start, memslot->userspace_addr);
 		hva_end = min(end, memslot->userspace_addr +
@@ -2269,7 +2350,7 @@ void kvm_arch_commit_memory_region(struct kvm *kvm,
 		kvm_mmu_wp_memory_region(kvm, mem->slot);
 }
 
-int kvm_arch_prepare_memory_region(struct kvm *kvm,
+static int prepare_user_memory_region(struct kvm *kvm,
 				   struct kvm_memory_slot *memslot,
 				   const struct kvm_userspace_memory_region *mem,
 				   enum kvm_mr_change change)
@@ -2278,18 +2359,6 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	hva_t reg_end = hva + mem->memory_size;
 	bool writable = !(mem->flags & KVM_MEM_READONLY);
 	int ret = 0;
-
-	if (change != KVM_MR_CREATE && change != KVM_MR_MOVE &&
-			change != KVM_MR_FLAGS_ONLY)
-		return 0;
-
-	/*
-	 * Prevent userspace from creating a memory region outside of the IPA
-	 * space addressable by the KVM guest IPA space.
-	 */
-	if (memslot->base_gfn + memslot->npages >=
-	    (kvm_phys_size(kvm) >> PAGE_SHIFT))
-		return -EFAULT;
 
 	down_read(&current->mm->mmap_sem);
 	/*
@@ -2352,6 +2421,36 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 out:
 	up_read(&current->mm->mmap_sem);
 	return ret;
+}
+
+static int prepare_phys_memory_region(void)
+{
+	// TODO: pull the chain (that's a nod to flushing, by the way)
+	return 0;
+}
+
+int kvm_arch_prepare_memory_region(struct kvm *kvm,
+				   struct kvm_memory_slot *memslot,
+				   const struct kvm_userspace_memory_region *mem,
+				   enum kvm_mr_change change)
+{
+
+	if (change != KVM_MR_CREATE && change != KVM_MR_MOVE &&
+			change != KVM_MR_FLAGS_ONLY)
+		return 0;
+
+	/*
+	 * Prevent the memory region from being outside of the IPA space
+	 * addressable by the KVM guest.
+	 */
+	if (memslot->base_gfn + memslot->npages >=
+	    (kvm_phys_size(kvm) >> PAGE_SHIFT))
+		return -EFAULT;
+
+	if (memslot->flags & KVM_ARM_MEM_PHYSICAL)
+		return prepare_phys_memory_region();
+	else
+		return prepare_user_memory_region(kvm, memslot, mem, change);
 }
 
 void kvm_arch_free_memslot(struct kvm *kvm, struct kvm_memory_slot *slot)

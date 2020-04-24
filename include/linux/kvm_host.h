@@ -45,6 +45,7 @@
  * include/linux/kvm_h.
  */
 #define KVM_MEMSLOT_INVALID	(1UL << 16)
+#define KVM_ARM_MEM_PHYSICAL	(1UL << 17)
 
 /*
  * Bit 63 of the memslot generation number is an "update in-progress flag",
