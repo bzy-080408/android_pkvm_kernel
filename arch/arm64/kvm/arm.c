@@ -104,6 +104,9 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret, cpu;
 
+	if (type & KVM_VM_TYPE_ARM_UNUSED_BITS_MASK)
+		return -EINVAL;
+
 	ret = kvm_arm_setup_stage2(kvm, type);
 	if (ret)
 		return ret;

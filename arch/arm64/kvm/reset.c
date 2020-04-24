@@ -394,9 +394,6 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 	u32 parange, phys_shift;
 	u8 lvls;
 
-	if (type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK)
-		return -EINVAL;
-
 	phys_shift = KVM_VM_TYPE_ARM_IPA_SIZE(type);
 	if (phys_shift) {
 		if (phys_shift > kvm_ipa_limit ||

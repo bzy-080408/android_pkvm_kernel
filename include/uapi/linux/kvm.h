@@ -792,6 +792,23 @@ struct kvm_ppc_resize_hpt {
 #define KVM_VM_TYPE_ARM_IPA_SIZE_MASK	0xffULL
 #define KVM_VM_TYPE_ARM_IPA_SIZE(x)		\
 	((x) & KVM_VM_TYPE_ARM_IPA_SIZE_MASK)
+
+/*
+ * On arm64, machine type can be used to attach to a preloaded SPCI
+ * partition. Bit[15] is reserved to indicate whether an attach
+ * request is being made. Bits[8-14] are reserved for the ID of the
+ * preloaded partition to attach to.
+ */
+#define KVM_VM_TYPE_ARM_SPCI_ATTACH		0x8000UL
+#define KVM_VM_TYPE_ARM_SPCI_ATTACH_ID_SHIFT	8
+#define KVM_VM_TYPE_ARM_SPCI_ATTACH_ID_MASK			\
+	(0x7fUL << KVM_VM_TYPE_ARM_SPCI_ATTACH_ID_SHIFT)
+#define KVM_VM_TYPE_ARM_SPCI_ATTACH_ID(x)			\
+	(((x) << KVM_VM_TYPE_ARM_SPCI_ATTACH_SHIFT)		\
+	 & KVM_VM_TYPE_ARM_SPCI_ATTACH_MASK)
+
+#define KVM_VM_TYPE_ARM_UNUSED_BITS_MASK	(~0xffffUL)
+
 /*
  * ioctls for /dev/kvm fds:
  */
