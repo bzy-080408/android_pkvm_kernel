@@ -161,6 +161,7 @@ static int spci_parse_partitions(struct device_node *spci_np)
 {
 	struct device_node *np, *prev_np = spci_np;
 	const char *pfx = "Ignoring SPCI partition";
+	int nr_parts = 0;
 
 	while ((np = of_find_matching_node(prev_np, spci_part_of_match))) {
 		struct kvm_spci_partition *part;
@@ -220,6 +221,9 @@ static int spci_parse_partitions(struct device_node *spci_np)
 				pfx, uuid);
 			goto next_free_part;
 		}
+
+		part->id = nr_parts;
+		++nr_parts;
 
 		INIT_LIST_HEAD(&part->list);
 		list_add(&part->list, &spci_partitions);

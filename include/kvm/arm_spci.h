@@ -24,6 +24,7 @@ struct kvm_spci_memory {
 
 struct kvm_spci_partition {
 	struct list_head	list;
+	int			id;
 	uuid_t			uuid;
 	u64			entry_point;
 	int			nr_vcpus;
