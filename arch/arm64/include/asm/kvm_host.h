@@ -29,6 +29,12 @@
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
 
 #define KVM_USER_MEM_SLOTS 512
+#ifdef CONFIG_KVM_ARM_SPCI
+#define KVM_ARM_SPCI_MEM_SLOT_BASE (KVM_USER_MEM_SLOTS + 0)
+#define KVM_ARM_SPCI_MEM_SLOTS 16
+/* memory slots that are not exposed to userspace */
+#define KVM_PRIVATE_MEM_SLOTS KVM_ARM_SPCI_MEM_SLOTS
+#endif
 #define KVM_HALT_POLL_NS_DEFAULT 500000
 
 #include <kvm/arm_vgic.h>

@@ -112,6 +112,9 @@ spci_alloc_partition(struct device_node *part_np)
 	if (nmems <= 0)
 		return NULL;
 
+	if (nmems > KVM_PRIVATE_MEM_SLOTS)
+		return NULL;
+
 	part = kzalloc(sizeof(*part) + nmems * sizeof(void *), GFP_KERNEL);
 	if (!part)
 		return NULL;
