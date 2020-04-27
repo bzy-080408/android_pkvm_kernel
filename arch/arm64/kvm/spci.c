@@ -363,6 +363,30 @@ static void spci_dump_partitions(void)
 	}
 }
 
+static int part_link(struct kvm *kvm, struct kvm_spci_partition *part)
+{
+	if (cmpxchg(&part->kvm, NULL, kvm) != NULL)
+		return -EBUSY;
+
+	kvm->arch.spci_part = part;
+	return 0;
+}
+
+static void part_unlink(struct kvm *kvm)
+{
+	/* TODO: should the partition be marked as unusable now? */
+	WARN_ON(cmpxchg(&kvm->arch.spci_part->kvm, kvm, NULL) != kvm);
+	kvm->arch.spci_part = NULL;
+}
+
+static struct kvm_spci_partition *part_get_linked(struct kvm *kvm)
+{
+	struct kvm_spci_partition *part = kvm->arch.spci_part;
+
+	WARN_ON(part && part->kvm != kvm);
+	return part;
+}
+
 int kvm_spci_init(void)
 {
 	int ret;

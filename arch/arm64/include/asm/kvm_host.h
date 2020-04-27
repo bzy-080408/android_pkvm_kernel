@@ -85,6 +85,11 @@ struct kvm_arch {
 	/* Mandated version of PSCI */
 	u32 psci_version;
 
+#ifdef CONFIG_KVM_ARM_SPCI
+	/* The SPCI partition if this VM is connected to one. */
+	struct kvm_spci_partition *spci_part;
+#endif
+
 	/*
 	 * If we encounter a data abort without valid instruction syndrome
 	 * information, report this to user space.  User space can (and

@@ -32,6 +32,7 @@ struct kvm_spci_partition {
 	int			nr_vcpus;
 	int			nr_mems;
 	bool			is_32bit;
+	struct kvm		*kvm;
 	struct kvm_spci_memory	*mems[];
 };
 
