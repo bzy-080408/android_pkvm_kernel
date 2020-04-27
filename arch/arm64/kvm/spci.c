@@ -165,11 +165,29 @@ static int spci_parse_partition_entry_point(struct kvm_spci_partition *part,
 {
 	int na = of_n_addr_cells(part_np);
 	const __be32 *prop = of_get_property(part_np, "entry-point", NULL);
+	int i;
 
 	if (!prop)
 		return -ENODEV;
 
 	part->entry_point = of_read_number(prop, na);
+
+	/*
+	 * Ensure the entry point is within a preallocated memory region so that
+	 * the partition cannot be compromised by entering at user space
+	 * controlled memory.
+	 */
+	for (i = 0; i < part->nr_mems; ++i) {
+		struct kvm_spci_memory *mem = part->mems[i];
+
+		if (part->entry_point >= mem->ipa_base &&
+		    part->entry_point < mem->ipa_base + mem->ipa_size)
+			break;
+	}
+
+	if (i == part->nr_mems)
+		return -EINVAL;
+
 	return 0;
 }
 
