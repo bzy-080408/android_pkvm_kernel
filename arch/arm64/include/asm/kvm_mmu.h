@@ -430,6 +430,9 @@ static inline int kvm_write_guest_lock(struct kvm *kvm, gpa_t gpa,
 	return ret;
 }
 
+#define __kvm_get_hyp_vector(sym) \
+	(has_vhe() ? kvm_ksym_ref(sym) : kern_hyp_va(kvm_ksym_ref_nvhe(sym)))
+
 #ifdef CONFIG_KVM_INDIRECT_VECTORS
 /*
  * EL2 vectors can be mapped and rerouted in a number of ways,
@@ -461,11 +464,11 @@ extern int __kvm_harden_el2_vector_slot;
 static inline void *kvm_get_hyp_vector(void)
 {
 	struct bp_hardening_data *data = arm64_get_bp_hardening_data();
-	void *vect = kern_hyp_va(kvm_ksym_ref(__kvm_hyp_vector));
 	int slot = -1;
+	void *vect = __kvm_get_hyp_vector(__kvm_hyp_vector);
 
 	if (cpus_have_const_cap(ARM64_HARDEN_BRANCH_PREDICTOR) && data->fn) {
-		vect = kern_hyp_va(kvm_ksym_ref(__bp_harden_hyp_vecs));
+		vect = __kvm_get_hyp_vector(__bp_harden_hyp_vecs);
 		slot = data->hyp_vectors_slot;
 	}
 
@@ -494,12 +497,11 @@ static inline int kvm_map_vectors(void)
 	 *  HBP +  HEL2 -> use hardened vertors and use exec mapping
 	 */
 	if (cpus_have_const_cap(ARM64_HARDEN_BRANCH_PREDICTOR)) {
-		__kvm_bp_vect_base = kvm_ksym_ref(__bp_harden_hyp_vecs);
-		__kvm_bp_vect_base = kern_hyp_va(__kvm_bp_vect_base);
+		__kvm_bp_vect_base = __kvm_get_hyp_vector(__bp_harden_hyp_vecs);
 	}
 
 	if (cpus_have_const_cap(ARM64_HARDEN_EL2_VECTORS)) {
-		phys_addr_t vect_pa = __pa_symbol(__bp_harden_hyp_vecs);
+		phys_addr_t vect_pa = __pa_symbol(kvm_nvhe_sym(__bp_harden_hyp_vecs));
 		unsigned long size = __BP_HARDEN_HYP_VECS_SZ;
 
 		/*
@@ -518,7 +520,7 @@ static inline int kvm_map_vectors(void)
 #else
 static inline void *kvm_get_hyp_vector(void)
 {
-	return kern_hyp_va(kvm_ksym_ref(__kvm_hyp_vector));
+	return __kvm_get_hyp_vector(__kvm_hyp_vector);
 }
 
 static inline int kvm_map_vectors(void)
