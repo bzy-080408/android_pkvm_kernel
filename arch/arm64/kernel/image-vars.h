@@ -97,6 +97,17 @@ __kvm_nvhe_sve_save_state		= sve_save_state;
 __kvm_nvhe_sve_load_state		= sve_load_state;
 #endif
 
+/* Position-independent library routines */
+__kvm_nvhe_clear_page			= __kvm_nvhe___pi_clear_page;
+__kvm_nvhe_copy_page			= __kvm_nvhe___pi_copy_page;
+__kvm_nvhe_memcpy			= __kvm_nvhe___pi_memcpy;
+__kvm_nvhe_memset			= __kvm_nvhe___pi_memset;
+
+#ifdef CONFIG_KASAN
+__kvm_nvhe___memcpy			= __kvm_nvhe___pi_memcpy;
+__kvm_nvhe___memset			= __kvm_nvhe___pi_memset;
+#endif
+
 #endif /* CONFIG_KVM */
 
 #endif /* __ARM64_KERNEL_IMAGE_VARS_H */

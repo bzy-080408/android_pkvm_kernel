@@ -7,9 +7,14 @@ asflags-y := -D__KVM_NVHE_HYPERVISOR__
 ccflags-y := -D__KVM_NVHE_HYPERVISOR__ -fno-stack-protector \
 	     -DDISABLE_BRANCH_PROFILING $(DISABLE_STACKLEAK_PLUGIN)
 
+lib-objs := clear_page.o copy_page.o memcpy.o memset.o
+lib-objs := $(addprefix ../../../lib/, $(lib-objs))
+
 obj-y := ../vgic-v3-sr.o ../timer-sr.o timer-sr.o ../aarch32.o \
 	 ../vgic-v2-cpuif-proxy.o sysreg-sr.o debug-sr.o ../entry.o switch.o \
-	 ../fpsimd.o tlb.o hyp-init.o hyp-start.o hyp-main.o ../hyp-entry.o
+	 ../fpsimd.o tlb.o hyp-init.o hyp-start.o hyp-main.o ../hyp-entry.o \
+	$(lib-objs)
+
 obj-$(CONFIG_DEBUG_PREEMPT) += percpu.o
 
 obj-y := $(patsubst %.o,%.hyp.o,$(obj-y))
