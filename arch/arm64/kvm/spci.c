@@ -541,6 +541,46 @@ int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+int kvm_spci_vcpu_reg_list_num(struct kvm_vcpu *vcpu, unsigned long *num)
+{
+	const struct kvm_spci_partition *part = part_get_linked(vcpu->kvm);
+
+	if (!part)
+		return 0;
+
+	if (likely(vcpu->arch.has_run_once))
+		*num = 0;
+	else
+		*num = 8;
+
+	return 1;
+}
+
+int kvm_spci_vcpu_reg_list(struct kvm_vcpu *vcpu, u64 __user *uindices)
+{
+	const struct kvm_spci_partition *part = part_get_linked(vcpu->kvm);
+	u64 i;
+
+	if (!part)
+		return 1;
+
+	if (likely(vcpu->arch.has_run_once))
+		return 1;
+
+	for (i = 0; i < 16; i += 2) {
+		u64 reg = KVM_REG_ARM64 | KVM_REG_ARM_CORE
+			| KVM_REG_SIZE_U64 | i;
+
+		if (uindices) {
+			if (put_user(reg, uindices))
+				return -EFAULT;
+			++uindices;
+		}
+	}
+
+	return 0;
+}
+
 /*
  * Checks the registers can be accessed by user space. If the vCPU is part of an
  * SPCI partition, the only registers that can be accessed are x0-7 and,

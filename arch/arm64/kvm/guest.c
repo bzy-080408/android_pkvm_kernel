@@ -19,6 +19,7 @@
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <kvm/arm_psci.h>
+#include <kvm/arm_spci.h>
 #include <asm/cputype.h>
 #include <linux/uaccess.h>
 #include <asm/fpsimd.h>
@@ -607,6 +608,10 @@ unsigned long kvm_arm_num_regs(struct kvm_vcpu *vcpu)
 {
 	unsigned long res = 0;
 
+	/* XXX: This whole thing is pretty nasty */
+	if (kvm_spci_vcpu_reg_list_num(vcpu, &res))
+		return res;
+
 	res += num_core_regs(vcpu);
 	res += num_sve_regs(vcpu);
 	res += kvm_arm_num_sys_reg_descs(vcpu);
@@ -624,6 +629,11 @@ unsigned long kvm_arm_num_regs(struct kvm_vcpu *vcpu)
 int kvm_arm_copy_reg_indices(struct kvm_vcpu *vcpu, u64 __user *uindices)
 {
 	int ret;
+
+	/* XXX: This is _really_ nasty */
+	ret = kvm_spci_vcpu_reg_list(vcpu, uindices);
+	if (ret <= 0)
+		return ret;
 
 	ret = copy_core_reg_indices(vcpu, uindices);
 	if (ret < 0)

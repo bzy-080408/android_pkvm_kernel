@@ -45,6 +45,8 @@ void kvm_spci_destroy_vm(struct kvm *kvm);
 int kvm_spci_check_vcpu_init_features(const struct kvm_vcpu *vcpu,
 				      const struct kvm_vcpu_init *init);
 int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu);
+int kvm_spci_vcpu_reg_list_num(struct kvm_vcpu *vcpu, unsigned long *num);
+int kvm_spci_vcpu_reg_list(struct kvm_vcpu *vcpu, u64 __user *uindices);
 int kvm_spci_check_vcpu_access_reg(struct kvm_vcpu *vcpu,
 				   struct kvm_one_reg *reg);
 
