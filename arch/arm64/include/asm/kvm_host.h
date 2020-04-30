@@ -401,6 +401,11 @@ struct kvm_vcpu_arch {
 
 #define vcpu_gp_regs(v)		(&(v)->arch.ctxt.gp_regs)
 
+static inline u64 core_reg_offset_from_id(u64 id)
+{
+	return id & ~(KVM_REG_ARCH_MASK | KVM_REG_SIZE_MASK | KVM_REG_ARM_CORE);
+}
+
 /*
  * Only use __vcpu_sys_reg if you know you want the memory backed version of a
  * register, and not the one most recently accessed by a running VCPU.  For

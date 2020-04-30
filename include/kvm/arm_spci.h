@@ -45,6 +45,8 @@ void kvm_spci_destroy_vm(struct kvm *kvm);
 int kvm_spci_check_vcpu_init_features(const struct kvm_vcpu *vcpu,
 				      const struct kvm_vcpu_init *init);
 int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu);
+int kvm_spci_check_vcpu_access_reg(struct kvm_vcpu *vcpu,
+				   struct kvm_one_reg *reg);
 
 #else
 
@@ -61,6 +63,11 @@ static inline int kvm_spci_check_vcpu_init_features(const struct kvm_vcpu *vcpu,
 	return 0;
 }
 static inline int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu)
+{
+	return 0;
+}
+int kvm_spci_check_vcpu_access_reg(struct kvm_vcpu *vcpu,
+				   struct kvm_one_reg *reg)
 {
 	return 0;
 }

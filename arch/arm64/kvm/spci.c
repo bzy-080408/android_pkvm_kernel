@@ -541,6 +541,35 @@ int kvm_spci_vcpu_first_run_init(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+/*
+ * Checks the registers can be accessed by user space. If the vCPU is part of an
+ * SPCI partition, the only registers that can be accessed are x0-7 and,
+ * further, they can only be accessed before the first run. This allows user
+ * space to pass in some initial arguments but does not allow it the
+ * subsequently modify or observe the registers state of the vCPU.
+ */
+int kvm_spci_check_vcpu_access_reg(struct kvm_vcpu *vcpu,
+				   struct kvm_one_reg *reg)
+{
+	const struct kvm_spci_partition *part = part_get_linked(vcpu->kvm);
+
+	if (!part)
+		return 0;
+
+	if (likely(vcpu->arch.has_run_once))
+		return -EPERM;
+
+	switch (core_reg_offset_from_id(reg->id)) {
+	case KVM_REG_ARM_CORE_REG(regs.regs[0]) ...
+	     KVM_REG_ARM_CORE_REG(regs.regs[7]):
+		     break;
+	default:
+		return -EPERM;
+	}
+
+	return 0;
+}
+
 /* Early memory reservation parsing. */
 static int __init spci_rmem_err(const char *type, struct reserved_mem *rmem,
 				const char *reason)

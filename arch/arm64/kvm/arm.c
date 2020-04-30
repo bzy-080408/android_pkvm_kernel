@@ -1120,6 +1120,10 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 		if (copy_from_user(&reg, argp, sizeof(reg)))
 			break;
 
+		r = kvm_spci_check_vcpu_access_reg(vcpu, &reg);
+		if (r)
+			break;
+
 		if (ioctl == KVM_SET_ONE_REG)
 			r = kvm_arm_set_reg(vcpu, &reg);
 		else
