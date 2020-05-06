@@ -1353,7 +1353,9 @@ static void _kvm_arch_hardware_enable(void *discard)
 
 int kvm_arch_hardware_enable(void)
 {
+	preempt_disable();
 	_kvm_arch_hardware_enable(NULL);
+	preempt_enable();
 	return 0;
 }
 
