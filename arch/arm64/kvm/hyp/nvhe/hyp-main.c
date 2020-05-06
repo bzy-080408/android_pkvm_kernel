@@ -4,6 +4,7 @@
  * Author: Andrew Scull <ascull@google.com>
  */
 
+#include <asm/pgtable-types.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_hyp.h>
 
@@ -92,6 +93,28 @@ static void handle_host_hcall(struct kvm_vcpu *host_vcpu)
 			__vgic_v3_restore_aprs(cpu_if);
 			break;
 		}
+	case KVM_HOST_SMCCC_FUNC(__kvm_hyp_setup):
+		ret = __kvm_hyp_setup(
+			(phys_addr_t)	smccc_get_arg1(host_vcpu),
+			(void*)		smccc_get_arg2(host_vcpu),
+			(unsigned long)	smccc_get_arg3(host_vcpu),
+			(phys_addr_t)	smccc_get_arg4(host_vcpu),
+			(unsigned long)	smccc_get_arg5(host_vcpu),
+			(phys_addr_t *)smccc_get_arg6(host_vcpu));
+		break;
+	case KVM_HOST_SMCCC_FUNC(__kvm_hyp_create_mappings):
+		ret = __kvm_hyp_create_mappings(
+			(unsigned long)	smccc_get_arg1(host_vcpu),
+			(unsigned long)	smccc_get_arg2(host_vcpu),
+			(unsigned long)	smccc_get_arg3(host_vcpu),
+			(unsigned long)	smccc_get_arg4(host_vcpu));
+		break;
+	case KVM_HOST_SMCCC_FUNC(__kvm_hyp_create_private_mapping):
+		ret = __kvm_hyp_create_private_mapping(
+			(phys_addr_t)	smccc_get_arg1(host_vcpu),
+			(unsigned long)	smccc_get_arg2(host_vcpu),
+			(unsigned long)	smccc_get_arg3(host_vcpu));
+		break;
 	default:
 		/* Invalid host HVC. */
 		smccc_set_retval(host_vcpu, SMCCC_RET_NOT_SUPPORTED, 0, 0, 0);

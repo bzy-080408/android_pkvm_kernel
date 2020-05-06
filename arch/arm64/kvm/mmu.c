@@ -527,6 +527,11 @@ static int __create_hyp_mappings(pgd_t *pgdp, unsigned long ptrs_per_pgd,
 {
 	int ret;
 
+	if (static_branch_likely(&kvm_hyp_ready)) {
+		return __kvm_call_hyp(__kvm_hyp_create_mappings,
+				      start, end, pfn, prot.pgprot);
+	}
+
 	mutex_lock(&kvm_hyp_pgd_mutex);
 	ret = __create_hyp_mappings_locked(pgdp, ptrs_per_pgd, start, end, pfn,
 					   prot);
@@ -590,6 +595,17 @@ static int __create_hyp_private_mapping(phys_addr_t phys_addr, size_t size,
 	pgd_t *pgd = hyp_pgd;
 	unsigned long base;
 	int ret = 0;
+
+
+	if (static_branch_likely(&kvm_hyp_ready)) {
+		base = __kvm_call_hyp(__kvm_hyp_create_private_mapping,
+				      phys_addr, size, prot.pgprot);
+		if (!base)
+			return -ENOMEM;
+		*haddr = base + offset_in_page(phys_addr);
+
+		return 0;
+	}
 
 	mutex_lock(&kvm_hyp_pgd_mutex);
 
@@ -2009,9 +2025,13 @@ void kvm_mmu_free_memory_caches(struct kvm_vcpu *vcpu)
 	mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
 }
 
+/* XXX - should not be needed if vectors and pgds stayed in place */
+extern phys_addr_t __kvm_nvhe___phys_hyp_pgd;
 phys_addr_t kvm_mmu_get_httbr(void)
 {
-	if (__kvm_cpu_uses_extended_idmap())
+	if (static_branch_likely(&kvm_hyp_ready))
+		return __kvm_nvhe___phys_hyp_pgd;
+	else if (__kvm_cpu_uses_extended_idmap())
 		return virt_to_phys(merged_hyp_pgd);
 	else
 		return virt_to_phys(hyp_pgd);

@@ -14,7 +14,7 @@ lib-objs := $(addprefix ../../../lib/, $(lib-objs))
 obj-y := ../vgic-v3-sr.o ../timer-sr.o timer-sr.o ../aarch32.o \
 	 ../vgic-v2-cpuif-proxy.o sysreg-sr.o debug-sr.o ../entry.o switch.o \
 	 ../fpsimd.o tlb.o hyp-init.o hyp-start.o hyp-main.o ../hyp-entry.o \
-	$(lib-objs)
+	$(lib-objs) early_alloc.o  page_alloc.o mm_init.o mmu.o setup.o
 
 obj-$(CONFIG_DEBUG_PREEMPT) += percpu.o
 

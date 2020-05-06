@@ -62,6 +62,9 @@
 #define __KVM_HOST_SMCCC_FUNC___kvm_get_mdcr_el2		13
 #define __KVM_HOST_SMCCC_FUNC___vgic_v3_save_aprs		14
 #define __KVM_HOST_SMCCC_FUNC___vgic_v3_restore_aprs		15
+#define __KVM_HOST_SMCCC_FUNC___kvm_hyp_setup			16
+#define __KVM_HOST_SMCCC_FUNC___kvm_hyp_create_mappings		17
+#define __KVM_HOST_SMCCC_FUNC___kvm_hyp_create_private_mapping	18
 
 #ifndef __ASSEMBLY__
 
@@ -128,7 +131,10 @@ extern u32 __kvm_get_mdcr_el2(void);
 extern void __vgic_v3_save_aprs(struct vgic_v3_cpu_if *cpu_if);
 extern void __vgic_v3_restore_aprs(struct vgic_v3_cpu_if *cpu_if);
 extern char __smccc_workaround_1_smc[__SMCCC_WORKAROUND_1_SMC_SZ];
-
+extern int __kvm_hyp_setup(phys_addr_t phys, void* virt, unsigned long size,
+		phys_addr_t bp_vect_pa, unsigned long nr_cpus, phys_addr_t *per_cpu_base);
+extern int __kvm_hyp_create_mappings(unsigned long start, unsigned long end, unsigned long pfn, unsigned long prot);
+extern unsigned long __kvm_hyp_create_private_mapping(phys_addr_t phys_addr, unsigned long size, unsigned long prot);
 /*
  * Obtain the PC-relative address of a kernel symbol
  * s: symbol
