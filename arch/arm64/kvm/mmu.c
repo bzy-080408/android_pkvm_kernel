@@ -528,6 +528,7 @@ static int __create_hyp_mappings(pgd_t *pgdp, unsigned long ptrs_per_pgd,
 	int ret;
 
 	if (static_branch_likely(&kvm_hyp_ready)) {
+		kvm_arch_hardware_enable(); /* XXX */
 		return __kvm_call_hyp(__kvm_hyp_create_mappings,
 				      start, end, pfn, prot.pgprot);
 	}
@@ -598,6 +599,7 @@ static int __create_hyp_private_mapping(phys_addr_t phys_addr, size_t size,
 
 
 	if (static_branch_likely(&kvm_hyp_ready)) {
+		kvm_arch_hardware_enable(); /* XXX */
 		base = __kvm_call_hyp(__kvm_hyp_create_private_mapping,
 				      phys_addr, size, prot.pgprot);
 		if (!base)
