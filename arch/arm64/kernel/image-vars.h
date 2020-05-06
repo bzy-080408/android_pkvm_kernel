@@ -108,6 +108,20 @@ __kvm_nvhe___memcpy			= __kvm_nvhe___pi_memcpy;
 __kvm_nvhe___memset			= __kvm_nvhe___pi_memset;
 #endif
 
+/* Kernel memory sections */
+__kvm_nvhe___start_rodata		= __start_rodata;
+__kvm_nvhe___end_rodata			= __end_rodata;
+__kvm_nvhe___bss_start			= __bss_start;
+__kvm_nvhe___bss_stop			= __bss_stop;
+
+/* Hyp memory sections */
+__kvm_nvhe___hyp_idmap_text_start	= __hyp_idmap_text_start;
+__kvm_nvhe___hyp_idmap_text_end		= __hyp_idmap_text_end;
+__kvm_nvhe___hyp_text_start		= __hyp_text_start;
+__kvm_nvhe___hyp_text_end		= __hyp_text_end;
+__kvm_nvhe___hyp_bss_start		= __hyp_bss_start;
+__kvm_nvhe___hyp_bss_end		= __hyp_bss_end;
+
 #endif /* CONFIG_KVM */
 
 #endif /* __ARM64_KERNEL_IMAGE_VARS_H */
