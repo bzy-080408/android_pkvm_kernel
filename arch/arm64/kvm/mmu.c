@@ -2346,7 +2346,7 @@ int kvm_mmu_init(void)
 	hyp_idmap_start = ALIGN_DOWN(hyp_idmap_start, PAGE_SIZE);
 	hyp_idmap_end = __pa_symbol(__hyp_idmap_text_end);
 	hyp_idmap_end = ALIGN(hyp_idmap_end, PAGE_SIZE);
-	hyp_idmap_vector = __pa_symbol(__kvm_hyp_init);
+	hyp_idmap_vector = __pa_symbol(kvm_nvhe_sym(__kvm_hyp_init));
 
 	/*
 	 * We rely on the linker script to ensure at build time that the HYP
