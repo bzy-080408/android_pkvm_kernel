@@ -18,18 +18,11 @@ SYM_CODE_START(__kvm_hyp_start)
 	ldr	x1, [x0, #HYP_PARAMS_VECTOR]
 	msr	vbar_el2, x1
 
-	/*
-	 * The host has already saved off the caller-saved registers
-	 * prior to executing the hvc instruction and we can rely on the
-	 * compiler to save/restore the callee-saved registers once we're
-	 * running C functions. We just need to be careful with lr,
-	 * since it's clobbered by the BL instruction, so preserve it
-	 * across the call into C.
-	 */
-	str	lr, [sp, #-16]!
-	bl	kvm_hyp_main
-	ldr	lr, [sp], #16
+	/* Save some of the host's state so it can be restored */
+	adr_this_cpu		x0, kvm_host_vcpu, x1
+	add			x0, x0, #VCPU_CONTEXT
+	save_callee_saved_regs	x0
+	save_sp_el0		x0, x1
 
-	/* Hello, World! */
-	eret
+	b	kvm_hyp_main
 SYM_CODE_END(__kvm_hyp_start)
