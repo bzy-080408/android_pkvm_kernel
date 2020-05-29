@@ -68,6 +68,14 @@ void __kvm_enable_ssbs(void)
 	 */
 }
 
+void __kvm_set_ssbd_callback_required(void)
+{
+	/*
+	 * Nothing to do on VHE. Needed because VHE and nVHE hyp code
+	 * must expose the same interface.
+	 */
+}
+
 /**
  * kvm_vcpu_load_sysregs - Load guest system registers to the physical CPU
  *
