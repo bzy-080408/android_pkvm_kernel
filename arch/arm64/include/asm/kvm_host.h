@@ -535,14 +535,39 @@ struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 
 DECLARE_PER_CPU(kvm_host_data_t, kvm_host_data);
 DECLARE_PER_CPU(kvm_host_data_t, kvm_nvhe_sym(kvm_host_data));
+DECLARE_PER_CPU(struct page *, kvm_arm_hyp_percpu_base);
+
+/*
+ * Compute pointer to a symbol defined in nVHE percpu region.
+ * Returns NULL if percpu memory has not been allocated yet.
+ */
+#define kvm_this_cpu_hyp_ptr(sym)						\
+	({									\
+		typeof(kvm_nvhe_sym(sym)) *ptr;					\
+		struct page *page;						\
+										\
+		page = __this_cpu_read(kvm_arm_hyp_percpu_base);		\
+		if (page) {							\
+			unsigned long base, off;				\
+			base = (unsigned long)page_address(page);		\
+			off = (unsigned long)&kvm_nvhe_sym(sym) -		\
+			      (unsigned long)&kvm_nvhe_sym(__per_cpu_start);	\
+			ptr = (typeof(ptr))(base + off);			\
+		} else {							\
+			/* nVHE percpu region not initialized yet. */		\
+			ptr = NULL;						\
+		}								\
+		ptr;								\
+	})
 
 /*
  * Returns kvm_host_data for this CPU core and KVM configuration.
+ * Returns NULL if memory for kvm_host_data has not been allocated yet.
  */
 static inline kvm_host_data_t *kvm_this_cpu_host_data(void)
 {
 	return has_vhe() ? this_cpu_ptr(&kvm_host_data)
-			 : this_cpu_ptr(&kvm_nvhe_sym(kvm_host_data));
+			 : kvm_this_cpu_hyp_ptr(kvm_host_data);
 }
 
 #ifdef CONFIG_ARM64_SSBD
