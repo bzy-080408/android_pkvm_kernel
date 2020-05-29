@@ -535,6 +535,10 @@ struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 
 DECLARE_PER_CPU(kvm_host_data_t, kvm_host_data);
 
+#ifdef CONFIG_ARM64_SSBD
+DECLARE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
+#endif
+
 static inline void kvm_init_host_cpu_context(struct kvm_cpu_context *cpu_ctxt)
 {
 	/* The host's MPIDR is immutable, so let's set it up at boot time */
