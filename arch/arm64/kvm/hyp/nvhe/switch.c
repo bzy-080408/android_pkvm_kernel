@@ -26,6 +26,13 @@
 
 #include "../switch.h"
 
+/*
+ * This is the kvm_host_data used by nVHE. Giving it the same name
+ * means ensures VHE/nVHE source-level compatibility. Source files
+ * compiled for nVHE will link against this copy.
+ */
+DEFINE_PER_CPU(kvm_host_data_t, kvm_host_data);
+
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;

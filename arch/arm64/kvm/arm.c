@@ -46,7 +46,12 @@
 __asm__(".arch_extension	virt");
 #endif
 
+/*
+ * This is the kvm_host_data used by VHE. The nVHE copy is
+ * allocated in its own per-cpu memory.
+ */
 DEFINE_PER_CPU(kvm_host_data_t, kvm_host_data);
+
 static DEFINE_PER_CPU(struct page *, kvm_arm_hyp_stack_page);
 
 /* The VMID used in the VTTBR */
@@ -1322,7 +1327,7 @@ static void cpu_hyp_reset(void)
 
 static void cpu_hyp_reinit(void)
 {
-	kvm_init_host_cpu_context(&this_cpu_ptr(&kvm_host_data)->host_ctxt);
+	kvm_init_host_cpu_context(&kvm_this_cpu_host_data()->host_ctxt);
 
 	cpu_hyp_reset();
 
@@ -1559,7 +1564,7 @@ static int init_hyp_mode(void)
 	for_each_possible_cpu(cpu) {
 		kvm_host_data_t *cpu_data;
 
-		cpu_data = per_cpu_ptr(&kvm_host_data, cpu);
+		cpu_data = per_cpu_ptr(&__kvm_nvhe_sym(kvm_host_data), cpu);
 		err = create_hyp_mappings(cpu_data, cpu_data + 1, PAGE_HYP);
 
 		if (err) {
