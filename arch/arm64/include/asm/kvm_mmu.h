@@ -532,7 +532,7 @@ static inline int kvm_map_vectors(void)
 #endif
 
 #ifdef CONFIG_ARM64_SSBD
-DECLARE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
+DECLARE_PER_CPU_READ_MOSTLY(u64, __kvm_nvhe_sym(arm64_ssbd_callback_required));
 
 static inline int hyp_map_aux_data(void)
 {
@@ -541,7 +541,7 @@ static inline int hyp_map_aux_data(void)
 	for_each_possible_cpu(cpu) {
 		u64 *ptr;
 
-		ptr = per_cpu_ptr(&arm64_ssbd_callback_required, cpu);
+		ptr = per_cpu_ptr(&__kvm_nvhe_sym(arm64_ssbd_callback_required), cpu);
 		err = create_hyp_mappings(ptr, ptr + 1, PAGE_HYP);
 		if (err)
 			return err;

@@ -82,7 +82,6 @@ __kvm_nvhe_cpu_hwcaps			= cpu_hwcaps;
 __kvm_nvhe_cpu_hwcap_keys		= cpu_hwcap_keys;
 __kvm_nvhe___icache_flags		= __icache_flags;
 __kvm_nvhe_kvm_vgic_global_state	= kvm_vgic_global_state;
-__kvm_nvhe_arm64_ssbd_callback_required	= arm64_ssbd_callback_required;
 __kvm_nvhe_kvm_host_data		= kvm_host_data;
 
 /* Static keys shared with the kernel. */
