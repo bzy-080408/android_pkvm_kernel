@@ -59,6 +59,8 @@ static bool vgic_present;
 static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 DEFINE_STATIC_KEY_FALSE(userspace_irqchip_in_use);
 
+DECLARE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
+
 int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
 {
 	return kvm_vcpu_exiting_guest_mode(vcpu) == IN_GUEST_MODE;
@@ -1299,6 +1301,10 @@ static void cpu_init_hyp_mode(void)
 	 */
 	BUG_ON(!system_capabilities_finalized());
 	__kvm_call_hyp((void *)pgd_ptr, hyp_stack_ptr, vector_ptr, tpidr_el2);
+
+	/* Copy the arm64_ssbd_callback_required information to hyp. */
+	if (this_cpu_read(arm64_ssbd_callback_required))
+		kvm_call_hyp_nvhe(__kvm_set_ssbd_callback_required);
 
 	/*
 	 * Disabling SSBD on a non-VHE system requires us to enable SSBS

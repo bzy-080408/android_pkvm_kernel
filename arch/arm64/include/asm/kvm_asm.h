@@ -90,6 +90,7 @@ extern void __kvm_timer_set_cntvoff(u64 cntvoff);
 
 extern int __kvm_vcpu_run(struct kvm_vcpu *vcpu);
 
+extern void __kvm_set_ssbd_callback_required(void);
 extern void __kvm_enable_ssbs(void);
 
 extern u64 __vgic_v3_get_ich_vtr_el2(void);

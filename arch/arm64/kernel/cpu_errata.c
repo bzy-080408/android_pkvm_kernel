@@ -259,7 +259,7 @@ static int detect_harden_bp_fw(void)
 	return 1;
 }
 
-DEFINE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
+DECLARE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
 
 int ssbd_state __read_mostly = ARM64_SSBD_KERNEL;
 static bool __ssb_safe = true;
