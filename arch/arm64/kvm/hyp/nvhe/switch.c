@@ -28,6 +28,9 @@
 #include <asm/processor.h>
 #include <asm/thread_info.h>
 
+/* kvm_host_data used by nVHE */
+DEFINE_PER_CPU(kvm_host_data_t, kvm_host_data);
+
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;

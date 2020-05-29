@@ -534,6 +534,16 @@ void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
 struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 
 DECLARE_PER_CPU(kvm_host_data_t, kvm_host_data);
+DECLARE_PER_CPU(kvm_host_data_t, kvm_nvhe_sym(kvm_host_data));
+
+/*
+ * Returns kvm_host_data for this CPU core and KVM configuration.
+ */
+static inline kvm_host_data_t *kvm_this_cpu_host_data(void)
+{
+	return has_vhe() ? this_cpu_ptr(&kvm_host_data)
+			 : this_cpu_ptr(&kvm_nvhe_sym(kvm_host_data));
+}
 
 #ifdef CONFIG_ARM64_SSBD
 DECLARE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
