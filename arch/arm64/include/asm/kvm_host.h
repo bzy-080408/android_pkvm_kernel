@@ -11,6 +11,7 @@
 #ifndef __ARM64_KVM_HOST_H__
 #define __ARM64_KVM_HOST_H__
 
+#include <linux/arm-smccc.h>
 #include <linux/bitmap.h>
 #include <linux/types.h>
 #include <linux/jump_label.h>
@@ -446,7 +447,16 @@ int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
 void kvm_arm_halt_guest(struct kvm *kvm);
 void kvm_arm_resume_guest(struct kvm *kvm);
 
-u64 __kvm_call_hyp(void *hypfn, ...);
+#define __kvm_call_hyp(f, ...)						\
+	({								\
+		struct arm_smccc_res res;				\
+									\
+		arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(f),		\
+				  ##__VA_ARGS__, &res);			\
+		WARN_ON(res.a0 != SMCCC_RET_SUCCESS);			\
+									\
+		res.a1;							\
+	})
 
 /*
  * The couple of isb() below are there to guarantee the same behaviour
@@ -459,9 +469,7 @@ u64 __kvm_call_hyp(void *hypfn, ...);
 			f(__VA_ARGS__);					\
 			isb();						\
 		} else {						\
-			DECLARE_KVM_NVHE_SYM(f);			\
-			__kvm_call_hyp(kvm_ksym_ref_nvhe(f),		\
-				       ##__VA_ARGS__);			\
+			__kvm_call_hyp(f, ##__VA_ARGS__);		\
 		}							\
 	} while(0)
 
@@ -473,9 +481,7 @@ u64 __kvm_call_hyp(void *hypfn, ...);
 			ret = f(__VA_ARGS__);				\
 			isb();						\
 		} else {						\
-			DECLARE_KVM_NVHE_SYM(f);			\
-			ret = __kvm_call_hyp(kvm_ksym_ref_nvhe(f),	\
-					     ##__VA_ARGS__);		\
+			ret = __kvm_call_hyp(f, ##__VA_ARGS__);		\
 		}							\
 									\
 		ret;							\
