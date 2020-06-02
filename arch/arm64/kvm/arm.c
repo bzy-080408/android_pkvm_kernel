@@ -1281,6 +1281,9 @@ static unsigned int hyp_percpu_order(void)
 
 DECLARE_KVM_NVHE_SYM(__kvm_hyp_start);
 DECLARE_PER_CPU(struct kvm_nvhe_hyp_params, kvm_nvhe_sym(kvm_nvhe_hyp_params));
+u64 __kvm_call_hyp_init(phys_addr_t pgd_ptr,
+			unsigned long tpidr_el2,
+			void *start_hyp);
 
 static void cpu_init_hyp_mode(void)
 {
@@ -1326,7 +1329,7 @@ static void cpu_init_hyp_mode(void)
 	 * cpus_have_const_cap() wrapper.
 	 */
 	BUG_ON(!system_capabilities_finalized());
-	__kvm_call_hyp((void *)pgd_ptr, tpidr_el2, start_hyp);
+	__kvm_call_hyp_init(pgd_ptr, tpidr_el2, start_hyp);
 
 	/* Copy the arm64_ssbd_callback_required information to hyp. */
 	if (this_cpu_read(arm64_ssbd_callback_required))
