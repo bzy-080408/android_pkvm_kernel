@@ -6,6 +6,7 @@
 #define __KVM_ARM_VGIC_H
 
 #include <linux/kernel.h>
+#include <linux/kref.h>
 #include <linux/kvm.h>
 #include <linux/irqreturn.h>
 #include <linux/spinlock.h>

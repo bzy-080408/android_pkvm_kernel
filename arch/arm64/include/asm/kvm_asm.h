@@ -38,9 +38,36 @@
 
 #define __SMCCC_WORKAROUND_1_SMC_SZ 36
 
+#define KVM_HOST_SMCCC_ID(id)						\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_STANDARD_HYP,		\
+			   (id))
+
+#define KVM_HOST_SMCCC_FUNC(name) KVM_HOST_SMCCC_ID(__KVM_HOST_SMCCC_FUNC_##name)
+
+#define __KVM_HOST_SMCCC_FUNC___kvm_hyp_init			0
+#define __KVM_HOST_SMCCC_FUNC___kvm_flush_vm_context		1
+#define __KVM_HOST_SMCCC_FUNC___kvm_tlb_flush_vmid_ipa		2
+#define __KVM_HOST_SMCCC_FUNC___kvm_tlb_flush_vmid		3
+#define __KVM_HOST_SMCCC_FUNC___kvm_tlb_flush_local_vmid	4
+#define __KVM_HOST_SMCCC_FUNC___kvm_timer_set_cntvoff		5
+#define __KVM_HOST_SMCCC_FUNC___kvm_vcpu_run			6
+#define __KVM_HOST_SMCCC_FUNC___kvm_set_ssbd_callback_required	7
+#define __KVM_HOST_SMCCC_FUNC___kvm_enable_ssbs			8
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_get_ich_vtr_el2		9
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_read_vmcr		10
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_write_vmcr		11
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_init_lrs		12
+#define __KVM_HOST_SMCCC_FUNC___kvm_get_mdcr_el2		13
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_save_aprs		14
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_restore_aprs		15
+
 #ifndef __ASSEMBLY__
 
 #include <linux/mm.h>
+
+#include <kvm/arm_vgic.h>
 
 /*
  * Translate name of a symbol defined in nVHE hyp to the name seen
@@ -85,21 +112,17 @@ extern void __kvm_flush_vm_context(void);
 extern void __kvm_tlb_flush_vmid_ipa(struct kvm *kvm, phys_addr_t ipa);
 extern void __kvm_tlb_flush_vmid(struct kvm *kvm);
 extern void __kvm_tlb_flush_local_vmid(struct kvm_vcpu *vcpu);
-
 extern void __kvm_timer_set_cntvoff(u64 cntvoff);
-
 extern int __kvm_vcpu_run(struct kvm_vcpu *vcpu);
-
 extern void __kvm_set_ssbd_callback_required(void);
 extern void __kvm_enable_ssbs(void);
-
 extern u64 __vgic_v3_get_ich_vtr_el2(void);
 extern u64 __vgic_v3_read_vmcr(void);
 extern void __vgic_v3_write_vmcr(u32 vmcr);
 extern void __vgic_v3_init_lrs(void);
-
 extern u32 __kvm_get_mdcr_el2(void);
-
+extern void __vgic_v3_save_aprs(struct vgic_v3_cpu_if *cpu_if);
+extern void __vgic_v3_restore_aprs(struct vgic_v3_cpu_if *cpu_if);
 extern char __smccc_workaround_1_smc[__SMCCC_WORKAROUND_1_SMC_SZ];
 
 /*
