@@ -47,7 +47,7 @@ __asm__(".arch_extension	virt");
 #endif
 
 DEFINE_PER_CPU(kvm_host_data_t, kvm_host_data);
-static DEFINE_PER_CPU(unsigned long, kvm_arm_hyp_stack_page);
+static DEFINE_PER_CPU(struct page *, kvm_arm_hyp_stack_page);
 
 /* The VMID used in the VTTBR */
 static atomic64_t kvm_vmid_gen = ATOMIC64_INIT(1);
@@ -1270,6 +1270,7 @@ long kvm_arch_vm_ioctl(struct file *filp,
 static void cpu_init_hyp_mode(void)
 {
 	phys_addr_t pgd_ptr;
+	struct page *stack_page;
 	unsigned long hyp_stack_ptr;
 	unsigned long vector_ptr;
 	unsigned long tpidr_el2;
@@ -1286,7 +1287,8 @@ static void cpu_init_hyp_mode(void)
 		     (unsigned long)kvm_ksym_ref(kvm_host_data));
 
 	pgd_ptr = kvm_mmu_get_httbr();
-	hyp_stack_ptr = __this_cpu_read(kvm_arm_hyp_stack_page) + PAGE_SIZE;
+	stack_page = __this_cpu_read(kvm_arm_hyp_stack_page);
+	hyp_stack_ptr = (unsigned long)page_address(stack_page) + PAGE_SIZE;
 	vector_ptr = (unsigned long)kvm_get_hyp_vector();
 
 	/*
@@ -1471,7 +1473,7 @@ static void teardown_hyp_mode(void)
 
 	free_hyp_pgds();
 	for_each_possible_cpu(cpu)
-		free_page(per_cpu(kvm_arm_hyp_stack_page, cpu));
+		free_reserved_page(per_cpu(kvm_arm_hyp_stack_page, cpu));
 }
 
 /**
@@ -1493,14 +1495,15 @@ static int init_hyp_mode(void)
 	 * Allocate stack pages for Hypervisor-mode
 	 */
 	for_each_possible_cpu(cpu) {
-		unsigned long stack_page;
+		struct page *stack_page;
 
-		stack_page = __get_free_page(GFP_KERNEL);
+		stack_page = alloc_page(GFP_KERNEL);
 		if (!stack_page) {
 			err = -ENOMEM;
 			goto out_err;
 		}
 
+		mark_page_reserved(stack_page);
 		per_cpu(kvm_arm_hyp_stack_page, cpu) = stack_page;
 	}
 
@@ -1538,8 +1541,9 @@ static int init_hyp_mode(void)
 	 * Map the Hyp stack pages
 	 */
 	for_each_possible_cpu(cpu) {
-		char *stack_page = (char *)per_cpu(kvm_arm_hyp_stack_page, cpu);
-		err = create_hyp_mappings(stack_page, stack_page + PAGE_SIZE,
+		struct page *stack_page = per_cpu(kvm_arm_hyp_stack_page, cpu);
+		char *stack_base = (char*)page_address(stack_page);
+		err = create_hyp_mappings(stack_base, stack_base + PAGE_SIZE,
 					  PAGE_HYP);
 
 		if (err) {
