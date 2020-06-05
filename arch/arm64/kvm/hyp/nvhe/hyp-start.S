@@ -10,14 +10,13 @@
 #include <asm/asm-offsets.h>
 #include <asm/kvm_asm.h>
 
-	/*
-	 * x1: HYP stack
-	 * x2: HYP vectors
-	 */
 SYM_CODE_START(__kvm_hyp_start)
 	/* Set the stack and new vectors */
+	adr_this_cpu x0, kvm_nvhe_hyp_params, x1
+	ldr	x1, [x0, #HYP_PARAMS_STACK]
 	mov	sp, x1
-	msr	vbar_el2, x2
+	ldr	x1, [x0, #HYP_PARAMS_VECTOR]
+	msr	vbar_el2, x1
 
 	/* Hello, World! */
 	eret

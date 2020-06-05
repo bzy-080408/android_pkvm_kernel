@@ -28,6 +28,8 @@
 #include <asm/processor.h>
 #include <asm/thread_info.h>
 
+DEFINE_PER_CPU(struct kvm_nvhe_hyp_params, kvm_nvhe_hyp_params);
+
 /* kvm_host_data used by nVHE */
 DEFINE_PER_CPU(kvm_host_data_t, kvm_host_data);
 
