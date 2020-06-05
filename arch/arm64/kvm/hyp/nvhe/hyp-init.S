@@ -44,10 +44,8 @@ __invalid:
 
 	/*
 	 * x0: HYP pgd
-	 * x1: HYP stack
-	 * x2: HYP vectors
-	 * x3: __kvm_hyp_start HYP address
-	 * x4: per-CPU offset
+	 * x1: per-CPU offset
+	 * x2: __kvm_hyp_start HYP address
 	 */
 __do_hyp_init:
 	/* Check for a stub HVC call */
@@ -55,7 +53,7 @@ __do_hyp_init:
 	b.lo	__kvm_handle_stub_hvc
 
 	/* Set tpidr_el2 for use by HYP */
-	msr	tpidr_el2, x4
+	msr	tpidr_el2, x1
 
 	phys_to_ttbr x4, x0
 alternative_if ARM64_HAS_CNP
@@ -112,7 +110,7 @@ CPU_BE(	orr	x4, x4, #SCTLR_ELx_EE)
 	isb
 
 	/* Leave the idmap posthaste and head over to __kvm_hyp_start */
-	br	x3
+	br	x2
 SYM_CODE_END(__kvm_hyp_init)
 
 SYM_CODE_START(__kvm_handle_stub_hvc)
