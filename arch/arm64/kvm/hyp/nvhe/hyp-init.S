@@ -108,7 +108,6 @@ CPU_BE(	orr	x4, x4, #SCTLR_ELx_EE)
 	isb
 
 	/* Set the stack and new vectors */
-	kern_hyp_va	x1
 	mov	sp, x1
 	msr	vbar_el2, x2
 
