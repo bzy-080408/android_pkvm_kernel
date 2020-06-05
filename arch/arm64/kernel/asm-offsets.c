@@ -16,6 +16,7 @@
 #include <linux/suspend.h>
 #include <asm/cpufeature.h>
 #include <asm/fixmap.h>
+#include <asm/kvm_hyp.h>
 #include <asm/thread_info.h>
 #include <asm/memory.h>
 #include <asm/signal32.h>
@@ -111,6 +112,8 @@ int main(void)
   DEFINE(CPU_USER_PT_REGS,	offsetof(struct kvm_regs, regs));
   DEFINE(HOST_CONTEXT_VCPU,	offsetof(struct kvm_cpu_context, __hyp_running_vcpu));
   DEFINE(HOST_DATA_CONTEXT,	offsetof(struct kvm_host_data, host_ctxt));
+  DEFINE(HYP_PARAMS_STACK,	offsetof(struct kvm_nvhe_hyp_params, hyp_stack_ptr));
+  DEFINE(HYP_PARAMS_VECTOR,	offsetof(struct kvm_nvhe_hyp_params, vector_ptr));
 #endif
 #ifdef CONFIG_CPU_PM
   DEFINE(CPU_CTX_SP,		offsetof(struct cpu_suspend_ctx, sp));

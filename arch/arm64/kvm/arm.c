@@ -1284,6 +1284,7 @@ static unsigned int hyp_percpu_order(void)
 }
 
 DECLARE_KVM_NVHE_SYM(__kvm_hyp_start);
+DECLARE_PER_CPU(struct kvm_nvhe_hyp_params, __kvm_nvhe_sym(kvm_nvhe_hyp_params));
 
 static void cpu_init_hyp_mode(void)
 {
@@ -1291,8 +1292,9 @@ static void cpu_init_hyp_mode(void)
 	void *start_hyp;
 	struct page *stack_page;
 	struct page *percpu_base;
-	unsigned long hyp_stack_ptr;
-	unsigned long vector_ptr;
+	struct kvm_nvhe_hyp_params *params;
+	unsigned long percpu_base_address;
+	unsigned long params_offset;
 	unsigned long tpidr_el2;
 
 	/* Switch from the HYP stub to our own HYP init vector */
@@ -1304,14 +1306,22 @@ static void cpu_init_hyp_mode(void)
 	 * so that we can use adr_l to access per-cpu variables in EL2.
 	 */
 	percpu_base = __this_cpu_read(kvm_arm_hyp_percpu_base);
-	tpidr_el2 = ((unsigned long)page_address(percpu_base) -
+	percpu_base_address = (unsigned long)page_address(percpu_base);
+	tpidr_el2 = (percpu_base_address -
 		(unsigned long)kvm_ksym_ref(hyp_percpu_begin));
 
 	pgd_ptr = kvm_mmu_get_httbr();
 	stack_page = __this_cpu_read(kvm_arm_hyp_stack_page);
-	hyp_stack_ptr = kern_hyp_va(page_address(stack_page) + PAGE_SIZE);
-	vector_ptr = (unsigned long)kvm_get_hyp_vector();
 	start_hyp = kern_hyp_va(kvm_ksym_ref_nvhe(__kvm_hyp_start));
+	params_offset = (unsigned long)&__kvm_nvhe_sym(kvm_nvhe_hyp_params) -
+			(unsigned long)&__kvm_nvhe_sym(__per_cpu_start);
+	params = (struct kvm_nvhe_hyp_params *)(percpu_base_address + params_offset);
+
+	*params = (struct kvm_nvhe_hyp_params) {
+		.hyp_stack_ptr = kern_hyp_va(page_address(stack_page)
+					     + PAGE_SIZE),
+		.vector_ptr = kvm_get_hyp_vector(),
+	};
 
 	/*
 	 * Call initialization code, and switch to the full blown HYP code.
@@ -1320,8 +1330,7 @@ static void cpu_init_hyp_mode(void)
 	 * cpus_have_const_cap() wrapper.
 	 */
 	BUG_ON(!system_capabilities_finalized());
-	__kvm_call_hyp((void *)pgd_ptr, hyp_stack_ptr, vector_ptr, start_hyp,
-		       tpidr_el2);
+	__kvm_call_hyp((void *)pgd_ptr, tpidr_el2, start_hyp);
 
 	/* Copy the arm64_ssbd_callback_required information to hyp. */
 	if (this_cpu_read(arm64_ssbd_callback_required))

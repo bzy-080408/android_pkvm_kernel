@@ -26,6 +26,8 @@
 
 #include "../switch.h"
 
+DEFINE_PER_CPU(struct kvm_nvhe_hyp_params, kvm_nvhe_hyp_params);
+
 /*
  * This is the kvm_host_data used by nVHE. Giving it the same name
  * means ensures VHE/nVHE source-level compatibility. Source files

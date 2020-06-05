@@ -12,6 +12,11 @@
 #include <asm/alternative.h>
 #include <asm/sysreg.h>
 
+struct kvm_nvhe_hyp_params {
+	void *hyp_stack_ptr;
+	void *vector_ptr;
+};
+
 #define read_sysreg_elx(r,nvh,vh)					\
 	({								\
 		u64 reg;						\
