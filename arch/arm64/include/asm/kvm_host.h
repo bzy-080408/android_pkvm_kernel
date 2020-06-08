@@ -459,7 +459,9 @@ u64 __kvm_call_hyp(void *hypfn, ...);
 			f(__VA_ARGS__);					\
 			isb();						\
 		} else {						\
-			__kvm_call_hyp(kvm_ksym_ref(f), ##__VA_ARGS__); \
+			DECLARE_KVM_NVHE_SYM(f);			\
+			__kvm_call_hyp(kvm_ksym_ref_nvhe(f),		\
+				       ##__VA_ARGS__);			\
 		}							\
 	} while(0)
 
@@ -471,7 +473,8 @@ u64 __kvm_call_hyp(void *hypfn, ...);
 			ret = f(__VA_ARGS__);				\
 			isb();						\
 		} else {						\
-			ret = __kvm_call_hyp(kvm_ksym_ref(f),		\
+			DECLARE_KVM_NVHE_SYM(f);			\
+			ret = __kvm_call_hyp(kvm_ksym_ref_nvhe(f),	\
 					     ##__VA_ARGS__);		\
 		}							\
 									\
