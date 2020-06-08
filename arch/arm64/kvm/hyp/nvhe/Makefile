@@ -9,7 +9,7 @@ ccflags-y := -D__KVM_NVHE_HYPERVISOR__ -fno-stack-protector \
 
 obj-y := ../vgic-v3-sr.o ../timer-sr.o timer-sr.o ../aarch32.o \
 	 ../vgic-v2-cpuif-proxy.o sysreg-sr.o debug-sr.o ../entry.o switch.o \
-	 ../fpsimd.o tlb.o hyp-init.o hyp-start.o ../hyp-entry.o
+	 ../fpsimd.o tlb.o hyp-init.o hyp-start.o hyp-main.o ../hyp-entry.o
 obj-$(CONFIG_DEBUG_PREEMPT) += percpu.o
 
 obj-y := $(patsubst %.o,%.hyp.o,$(obj-y))
