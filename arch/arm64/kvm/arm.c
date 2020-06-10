@@ -1279,9 +1279,12 @@ static unsigned int hyp_percpu_order(void)
 	return hyp_percpu_size ? get_order(hyp_percpu_size) : 0;
 }
 
+DECLARE_KVM_NVHE_SYM(__kvm_hyp_start);
+
 static void cpu_init_hyp_mode(void)
 {
 	phys_addr_t pgd_ptr;
+	void *start_hyp;
 	struct page *stack_page;
 	struct page *percpu_base;
 	unsigned long hyp_stack_ptr;
@@ -1304,6 +1307,7 @@ static void cpu_init_hyp_mode(void)
 	stack_page = __this_cpu_read(kvm_arm_hyp_stack_page);
 	hyp_stack_ptr = kern_hyp_va(page_address(stack_page) + PAGE_SIZE);
 	vector_ptr = (unsigned long)kvm_get_hyp_vector();
+	start_hyp = kern_hyp_va(kvm_ksym_ref_nvhe(__kvm_hyp_start));
 
 	/*
 	 * Call initialization code, and switch to the full blown HYP code.
@@ -1312,7 +1316,8 @@ static void cpu_init_hyp_mode(void)
 	 * cpus_have_const_cap() wrapper.
 	 */
 	BUG_ON(!system_capabilities_finalized());
-	__kvm_call_hyp((void *)pgd_ptr, hyp_stack_ptr, vector_ptr, tpidr_el2);
+	__kvm_call_hyp((void *)pgd_ptr, hyp_stack_ptr, vector_ptr, start_hyp,
+		       tpidr_el2);
 
 	/* Copy the arm64_ssbd_callback_required information to hyp. */
 	if (this_cpu_read(arm64_ssbd_callback_required))
