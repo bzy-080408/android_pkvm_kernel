@@ -10,7 +10,7 @@
 #include <asm/kvm_mmu.h>
 #include <asm/tlbflush.h>
 
-#include "../tlb.h"
+#include <hyp/tlb.h>
 
 static void __tlb_switch_to_guest(struct kvm *kvm, struct tlb_inv_context *cxt)
 {

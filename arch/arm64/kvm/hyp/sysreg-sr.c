@@ -12,7 +12,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
 
-#include "sysreg-sr.h"
+#include <hyp/sysreg-sr.h>
 
 /*
  * VHE: Host and guest must save mdscr_el1 and sp_el0 (and the PC and

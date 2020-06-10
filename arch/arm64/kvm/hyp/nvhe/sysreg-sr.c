@@ -12,7 +12,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
 
-#include "../sysreg-sr.h"
+#include <hyp/sysreg-sr.h>
 
 /*
  * Non-VHE: Both host and guest must save everything.

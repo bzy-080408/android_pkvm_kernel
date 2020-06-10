@@ -12,7 +12,7 @@
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 
-#include "../debug-sr.h"
+#include <hyp/debug-sr.h>
 
 static void __debug_save_spe(u64 *pmscr_el1)
 {

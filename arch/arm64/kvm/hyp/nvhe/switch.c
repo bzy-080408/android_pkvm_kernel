@@ -24,7 +24,7 @@
 #include <asm/processor.h>
 #include <asm/thread_info.h>
 
-#include "../switch.h"
+#include <hyp/switch.h>
 
 /*
  * This is the kvm_host_data used by nVHE. Giving it the same name

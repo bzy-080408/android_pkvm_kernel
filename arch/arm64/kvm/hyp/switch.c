@@ -24,7 +24,7 @@
 #include <asm/processor.h>
 #include <asm/thread_info.h>
 
-#include "switch.h"
+#include <hyp/switch.h>
 
 const char __hyp_panic_string[] = "HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n";
 

@@ -4,7 +4,7 @@
  * Author: Marc Zyngier <marc.zyngier@arm.com>
  */
 
-#include "debug-sr.h"
+#include <hyp/debug-sr.h>
 
 void __debug_switch_to_guest(struct kvm_vcpu *vcpu)
 {
