@@ -107,17 +107,18 @@ void __noreturn kvm_hyp_main(struct kvm_nvhe_hyp_params *params)
 	struct kvm_vcpu *host_vcpu;
 	struct kvm_host_data *hyp_data;
 	struct kvm_cpu_context *hyp_ctxt;
-	int i;
 
 	host_vcpu = this_cpu_ptr(&kvm_host_vcpu);
 	hyp_data = this_cpu_ptr(&kvm_host_data);
 	hyp_ctxt = &hyp_data->host_ctxt;
 
-	/* Wipe the caller saved registers. */
-	for (i = 0; i < 18; ++i)
-		vcpu_gp_regs(host_vcpu)->regs.regs[i] = 0;
-
 	__sysreg_save_state_nvhe(&host_vcpu->arch.ctxt);
+
+	/*
+	 * The first time entering the host is seen by the host as the return
+	 * of the initialization HVC so mark it as successful.
+	 */
+	smccc_set_retval(host_vcpu, SMCCC_RET_SUCCESS, 0, 0, 0);
 
 	while (true) {
 		u64 exit_code;
