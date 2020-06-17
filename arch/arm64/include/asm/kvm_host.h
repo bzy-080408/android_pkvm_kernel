@@ -535,29 +535,33 @@ DECLARE_PER_CPU(kvm_host_data_t, kvm_host_data);
 DECLARE_PER_CPU(kvm_host_data_t, __kvm_nvhe_sym(kvm_host_data));
 DECLARE_PER_CPU(struct page *, kvm_arm_hyp_percpu_base);
 
+static inline void *__kvm_nvhe_this_cpu_ptr(void *ptr) {
+	struct page *page;
+	unsigned long base, off;
+
+	page = __this_cpu_read(kvm_arm_hyp_percpu_base);
+	if (!page) {
+		/* KVM per-cpu data have not been initialized. */
+		return NULL;
+	}
+
+	base = (unsigned long)page_address(page);
+	off = (unsigned long)ptr -
+		(unsigned long)&__kvm_nvhe_sym(__per_cpu_start);
+	return (void*)(base + off);
+}
+
+#define kvm_nvhe_this_cpu_ptr(sym) \
+	((__typeof__(&__kvm_nvhe_sym(sym)))__kvm_nvhe_this_cpu_ptr(&__kvm_nvhe_sym(sym)))
+
 /*
  * Returns kvm_host_data for this CPU core and KVM configuration.
  * Returns NULL if memory for kvm_host_data has not yet been allocated.
  */
 static inline kvm_host_data_t *kvm_this_cpu_host_data(void)
 {
-	if (has_vhe()) {
-		return this_cpu_ptr(&kvm_host_data);
-	} else {
-		struct page *page;
-		unsigned long base, off;
-
-		page = __this_cpu_read(kvm_arm_hyp_percpu_base);
-		if (!page) {
-			/* KVM per-cpu data have not been initialized. */
-			return NULL;
-		}
-
-		base = (unsigned long)page_address(page);
-		off = (unsigned long)&__kvm_nvhe_sym(kvm_host_data) -
-		      (unsigned long)&__kvm_nvhe_sym(__per_cpu_start);
-		return (kvm_host_data_t *)(base + off);
-	}
+	return has_vhe() ? this_cpu_ptr(&kvm_host_data)
+			 : kvm_nvhe_this_cpu_ptr(kvm_host_data);
 }
 
 #ifdef CONFIG_ARM64_SSBD
