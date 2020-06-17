@@ -57,9 +57,6 @@ static void handle_host_hcall(struct kvm_vcpu *host_vcpu)
 			ret = __kvm_vcpu_run(vcpu);
 			break;
 		}
-	case KVM_HOST_SMCCC_FUNC(__kvm_enable_ssbs):
-		__kvm_enable_ssbs();
-		break;
 	case KVM_HOST_SMCCC_FUNC(__vgic_v3_get_ich_vtr_el2):
 		ret = __vgic_v3_get_ich_vtr_el2();
 		break;
@@ -118,6 +115,14 @@ void __noreturn kvm_hyp_main(struct kvm_nvhe_hyp_params *params)
 		vcpu_gp_regs(host_vcpu)->regs.regs[i] = 0;
 
 	__sysreg_save_state_nvhe(&host_vcpu->arch.ctxt);
+
+	/* Handle init params */
+#ifdef CONFIG_ARM64_SSBD
+	if (params->ssbd_callback_required)
+		__this_cpu_write(arm64_ssbd_callback_required, 1);
+#endif
+	if (params->enable_ssbd)
+		__kvm_enable_ssbs();
 
 	while (true) {
 		u64 exit_code;

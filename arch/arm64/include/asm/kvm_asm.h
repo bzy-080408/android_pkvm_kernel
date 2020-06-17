@@ -53,15 +53,13 @@
 #define __KVM_HOST_SMCCC_FUNC___kvm_tlb_flush_local_vmid	4
 #define __KVM_HOST_SMCCC_FUNC___kvm_timer_set_cntvoff		5
 #define __KVM_HOST_SMCCC_FUNC___kvm_vcpu_run			6
-#define __KVM_HOST_SMCCC_FUNC___kvm_set_ssbd_callback_required	7
-#define __KVM_HOST_SMCCC_FUNC___kvm_enable_ssbs			8
-#define __KVM_HOST_SMCCC_FUNC___vgic_v3_get_ich_vtr_el2		9
-#define __KVM_HOST_SMCCC_FUNC___vgic_v3_read_vmcr		10
-#define __KVM_HOST_SMCCC_FUNC___vgic_v3_write_vmcr		11
-#define __KVM_HOST_SMCCC_FUNC___vgic_v3_init_lrs		12
-#define __KVM_HOST_SMCCC_FUNC___kvm_get_mdcr_el2		13
-#define __KVM_HOST_SMCCC_FUNC___vgic_v3_save_aprs		14
-#define __KVM_HOST_SMCCC_FUNC___vgic_v3_restore_aprs		15
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_get_ich_vtr_el2		7
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_read_vmcr		8
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_write_vmcr		9
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_init_lrs		10
+#define __KVM_HOST_SMCCC_FUNC___kvm_get_mdcr_el2		11
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_save_aprs		12
+#define __KVM_HOST_SMCCC_FUNC___vgic_v3_restore_aprs		13
 
 #ifndef __ASSEMBLY__
 
@@ -116,7 +114,6 @@ extern void __kvm_tlb_flush_vmid(struct kvm *kvm);
 extern void __kvm_tlb_flush_local_vmid(struct kvm_vcpu *vcpu);
 extern void __kvm_timer_set_cntvoff(u64 cntvoff);
 extern int __kvm_vcpu_run(struct kvm_vcpu *vcpu);
-extern void __kvm_set_ssbd_callback_required(void);
 extern void __kvm_enable_ssbs(void);
 extern u64 __vgic_v3_get_ich_vtr_el2(void);
 extern u64 __vgic_v3_read_vmcr(void);

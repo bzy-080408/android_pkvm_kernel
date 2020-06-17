@@ -1318,6 +1318,9 @@ static void cpu_init_hyp_mode(void)
 		.hyp_stack_ptr = kern_hyp_va(page_address(stack_page)
 					     + PAGE_SIZE),
 		.vector_ptr = kvm_get_hyp_vector(),
+		.ssbd_callback_required = this_cpu_read(arm64_ssbd_callback_required),
+		.enable_ssbd = this_cpu_has_cap(ARM64_SSBS) &&
+			       arm64_get_ssbd_state() == ARM64_SSBD_FORCE_DISABLE,
 	};
 
 	/*
@@ -1328,19 +1331,6 @@ static void cpu_init_hyp_mode(void)
 	 */
 	BUG_ON(!system_capabilities_finalized());
 	__kvm_call_hyp_init(pgd_ptr, tpidr_el2, start_hyp);
-
-	/* Copy the arm64_ssbd_callback_required information to hyp. */
-	if (this_cpu_read(arm64_ssbd_callback_required))
-		kvm_call_hyp(__kvm_set_ssbd_callback_required);
-
-	/*
-	 * Disabling SSBD on a non-VHE system requires us to enable SSBS
-	 * at EL2.
-	 */
-	if (this_cpu_has_cap(ARM64_SSBS) &&
-	    arm64_get_ssbd_state() == ARM64_SSBD_FORCE_DISABLE) {
-		kvm_call_hyp(__kvm_enable_ssbs);
-	}
 }
 
 static void cpu_hyp_reset(void)

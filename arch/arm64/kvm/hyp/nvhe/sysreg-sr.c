@@ -63,10 +63,3 @@ void __kvm_enable_ssbs(void)
 	"msr	sctlr_el2, %0"
 	: "=&r" (tmp) : "L" (SCTLR_ELx_DSSBS));
 }
-
-void __kvm_set_ssbd_callback_required(void)
-{
-#ifdef CONFIG_ARM64_SSBD
-	__this_cpu_write(arm64_ssbd_callback_required, 1);
-#endif
-}

@@ -9,12 +9,15 @@
 
 #include <linux/compiler.h>
 #include <linux/kvm_host.h>
+#include <linux/types.h>
 #include <asm/alternative.h>
 #include <asm/sysreg.h>
 
 struct kvm_nvhe_hyp_params {
 	void *hyp_stack_ptr;
 	void *vector_ptr;
+	bool ssbd_callback_required;
+	bool enable_ssbd;
 };
 
 #define read_sysreg_elx(r,nvh,vh)					\
