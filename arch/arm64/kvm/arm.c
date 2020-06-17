@@ -1296,8 +1296,6 @@ static void cpu_init_hyp_mode(void)
 	struct page *stack_page;
 	struct page *percpu_base;
 	struct kvm_nvhe_hyp_params *params;
-	unsigned long percpu_base_address;
-	unsigned long params_offset;
 	unsigned long tpidr_el2;
 
 	/* Switch from the HYP stub to our own HYP init vector */
@@ -1309,17 +1307,13 @@ static void cpu_init_hyp_mode(void)
 	 * so that we can use adr_l to access per-cpu variables in EL2.
 	 */
 	percpu_base = __this_cpu_read(kvm_arm_hyp_percpu_base);
-	percpu_base_address = (unsigned long)page_address(percpu_base);
-	tpidr_el2 = (percpu_base_address -
+	tpidr_el2 = ((unsigned long)page_address(percpu_base) -
 		(unsigned long)kvm_ksym_ref(hyp_percpu_begin));
 
 	pgd_ptr = kvm_mmu_get_httbr();
 	stack_page = __this_cpu_read(kvm_arm_hyp_stack_page);
 	start_hyp = kern_hyp_va(kvm_ksym_ref_nvhe(__kvm_hyp_start));
-	params_offset = (unsigned long)&__kvm_nvhe_sym(kvm_nvhe_hyp_params) -
-			(unsigned long)&__kvm_nvhe_sym(__per_cpu_start);
-	params = (struct kvm_nvhe_hyp_params *)(percpu_base_address + params_offset);
-
+	params = kvm_nvhe_this_cpu_ptr(kvm_nvhe_hyp_params);
 	*params = (struct kvm_nvhe_hyp_params) {
 		.hyp_stack_ptr = kern_hyp_va(page_address(stack_page)
 					     + PAGE_SIZE),
