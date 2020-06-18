@@ -533,7 +533,7 @@ struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 
 DECLARE_PER_CPU(kvm_host_data_t, kvm_host_data);
 DECLARE_PER_CPU(kvm_host_data_t, __kvm_nvhe_sym(kvm_host_data));
-DECLARE_PER_CPU(struct page *, kvm_arm_hyp_percpu_base);
+extern phys_addr_t *kvm_arm_hyp_percpu_base;
 
 /*
  * Returns kvm_host_data for this CPU core and KVM configuration.
@@ -544,16 +544,13 @@ static inline kvm_host_data_t *kvm_this_cpu_host_data(void)
 	if (has_vhe()) {
 		return this_cpu_ptr(&kvm_host_data);
 	} else {
-		struct page *page;
 		unsigned long base, off;
 
-		page = __this_cpu_read(kvm_arm_hyp_percpu_base);
-		if (!page) {
+		if (!kvm_arm_hyp_percpu_base) {
 			/* KVM per-cpu data have not been initialized. */
 			return NULL;
 		}
-
-		base = (unsigned long)page_address(page);
+		base = (unsigned long)__va(kvm_arm_hyp_percpu_base[smp_processor_id()]);
 		off = (unsigned long)&__kvm_nvhe_sym(kvm_host_data) -
 		      (unsigned long)&__kvm_nvhe_sym(__per_cpu_start);
 		return (kvm_host_data_t *)(base + off);
