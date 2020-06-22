@@ -9,15 +9,17 @@ ccflags-y := -D__KVM_NVHE_HYPERVISOR__
 lib-objs := clear_page.o copy_page.o memcpy.o memset.o
 lib-objs := $(addprefix ../../../lib/, $(lib-objs))
 
-obj-y := timer-sr.o sysreg-sr.o debug-sr.o switch.o tlb.o hyp-init.o \
+obj-y := el2.o
+
+hyp-y := timer-sr.o sysreg-sr.o debug-sr.o switch.o tlb.o hyp-init.o \
 	 hyp-start.o hyp-main.o early_alloc.o page_alloc.o setup.o mm.o \
 	 cache.o
-obj-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
+hyp-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
 	 ../fpsimd.o ../hyp-entry.o ../pgtable.o
-obj-y += $(lib-objs)
+hyp-y += $(lib-objs)
 
-obj-y := $(patsubst %.o,%.hyp.o,$(obj-y))
-extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(obj-y))
+hyp-y := $(patsubst %.o,%.hyp.o,$(hyp-y))
+extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(hyp-y))
 
 $(obj)/%.hyp.tmp.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
@@ -25,6 +27,9 @@ $(obj)/%.hyp.tmp.o: $(src)/%.S FORCE
 	$(call if_changed_rule,as_o_S)
 $(obj)/%.hyp.o: $(obj)/%.hyp.tmp.o FORCE
 	$(call if_changed,hypcopy)
+LDFLAGS_el2.o := --relocatable
+$(obj)/el2.o: $(addprefix $(obj)/,$(hyp-y)) FORCE
+	$(call if_changed,ld)
 
 # Disable reordering functions by GCC (enabled at -O2).
 # This pass puts functions into '.text.*' sections to aid the linker
