@@ -1313,6 +1313,7 @@ static void cpu_init_hyp_mode(void)
 		.hyp_stack_ptr = kern_hyp_va(page_address(stack_page)
 					     + PAGE_SIZE),
 		.vector_ptr = kvm_get_hyp_vector(),
+		.ssbd_callback_required = this_cpu_read(arm64_ssbd_callback_required),
 	};
 
 	/*
@@ -1325,10 +1326,6 @@ static void cpu_init_hyp_mode(void)
 	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__kvm_hyp_init),
 			  pgd_ptr, tpidr_el2, start_hyp, &res);
 	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
-
-	/* Copy the arm64_ssbd_callback_required information to hyp. */
-	if (this_cpu_read(arm64_ssbd_callback_required))
-		kvm_call_hyp_nvhe(__kvm_set_ssbd_callback_required);
 
 	/*
 	 * Disabling SSBD on a non-VHE system requires us to enable SSBS

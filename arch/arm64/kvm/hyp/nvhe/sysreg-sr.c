@@ -18,11 +18,6 @@
  * Non-VHE: Both host and guest must save everything.
  */
 
-/* nVHE copy of the arm64_ssbd_callback_required symbol. */
-#ifdef CONFIG_ARM64_SSBD
-DEFINE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
-#endif
-
 void __sysreg_save_state_nvhe(struct kvm_cpu_context *ctxt)
 {
 	__sysreg_save_el1_state(ctxt);
@@ -48,11 +43,4 @@ void __kvm_enable_ssbs(void)
 	"orr	%0, %0, %1\n"
 	"msr	sctlr_el2, %0"
 	: "=&r" (tmp) : "L" (SCTLR_ELx_DSSBS));
-}
-
-void __kvm_set_ssbd_callback_required(void)
-{
-#ifdef CONFIG_ARM64_SSBD
-	__this_cpu_write(arm64_ssbd_callback_required, 1);
-#endif
 }

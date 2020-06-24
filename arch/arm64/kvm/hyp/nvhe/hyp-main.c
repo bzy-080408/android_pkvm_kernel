@@ -14,6 +14,11 @@ typedef unsigned long (*hypcall_fn_t)(unsigned long, unsigned long, unsigned lon
 DEFINE_PER_CPU(struct kvm_nvhe_hyp_params, kvm_nvhe_hyp_params);
 DEFINE_PER_CPU(struct kvm_vcpu, kvm_host_vcpu);
 
+/* nVHE copy of the arm64_ssbd_callback_required symbol. */
+#ifdef CONFIG_ARM64_SSBD
+DEFINE_PER_CPU_READ_MOSTLY(u64, arm64_ssbd_callback_required);
+#endif
+
 static void handle_host_hcall(struct kvm_vcpu *host_vcpu)
 {
 	unsigned long ret = 0;
@@ -107,6 +112,11 @@ void __noreturn kvm_hyp_main(struct kvm_nvhe_hyp_params *params)
 	struct kvm_vcpu *host_vcpu;
 	struct kvm_host_data *hyp_data;
 	struct kvm_cpu_context *hyp_ctxt;
+
+#ifdef CONFIG_ARM64_SSBD
+	if (params->ssbd_callback_required)
+		__this_cpu_write(arm64_ssbd_callback_required, 1);
+#endif
 
 	host_vcpu = this_cpu_ptr(&kvm_host_vcpu);
 	hyp_data = this_cpu_ptr(&kvm_host_data);

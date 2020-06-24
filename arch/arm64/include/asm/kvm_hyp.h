@@ -15,6 +15,7 @@
 struct kvm_nvhe_hyp_params {
 	void *hyp_stack_ptr;
 	void *vector_ptr;
+	bool ssbd_callback_required;
 };
 
 #define read_sysreg_elx(r,nvh,vh)					\
