@@ -16,6 +16,7 @@ struct kvm_nvhe_hyp_params {
 	void *hyp_stack_ptr;
 	void *vector_ptr;
 	bool ssbd_callback_required;
+	bool enable_ssbs;
 };
 
 #define read_sysreg_elx(r,nvh,vh)					\
@@ -73,6 +74,7 @@ void __timer_disable_traps(struct kvm_vcpu *vcpu);
 #ifdef __KVM_NVHE_HYPERVISOR__
 void __sysreg_save_state_nvhe(struct kvm_cpu_context *ctxt);
 void __sysreg_restore_state_nvhe(struct kvm_cpu_context *ctxt);
+void __sysreg_enable_ssbs(void);
 #else
 void sysreg_save_host_state_vhe(struct kvm_cpu_context *ctxt);
 void sysreg_restore_host_state_vhe(struct kvm_cpu_context *ctxt);

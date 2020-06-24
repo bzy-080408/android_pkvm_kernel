@@ -62,9 +62,6 @@ static void handle_host_hcall(struct kvm_vcpu *host_vcpu)
 			ret = __kvm_vcpu_run(vcpu);
 			break;
 		}
-	case KVM_HOST_SMCCC_FUNC(__kvm_enable_ssbs):
-		__kvm_enable_ssbs();
-		break;
 	case KVM_HOST_SMCCC_FUNC(__vgic_v3_get_ich_vtr_el2):
 		ret = __vgic_v3_get_ich_vtr_el2();
 		break;
@@ -117,6 +114,10 @@ void __noreturn kvm_hyp_main(struct kvm_nvhe_hyp_params *params)
 	if (params->ssbd_callback_required)
 		__this_cpu_write(arm64_ssbd_callback_required, 1);
 #endif
+
+	/* Disabling SSBD on a nVHE system requires to enable SSBS at EL2. */
+	if (params->enable_ssbs)
+		__sysreg_enable_ssbs();
 
 	host_vcpu = this_cpu_ptr(&kvm_host_vcpu);
 	hyp_data = this_cpu_ptr(&kvm_host_data);

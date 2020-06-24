@@ -34,7 +34,7 @@ void __sysreg_restore_state_nvhe(struct kvm_cpu_context *ctxt)
 	__sysreg_restore_el2_return_state(ctxt);
 }
 
-void __kvm_enable_ssbs(void)
+void __sysreg_enable_ssbs(void)
 {
 	u64 tmp;
 
