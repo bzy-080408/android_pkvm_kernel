@@ -33,32 +33,12 @@ LDFLAGS_el2.o := --relocatable
 $(obj)/el2.o: $(addprefix $(obj)/,$(hyp-y)) FORCE
 	$(call if_changed,ld)
 
-# Generate hyp object to be used in nVHE EL2.
-# All symbols are prefixed to avoid clashes with corresponding VHE symbols.
-# Sections mapped at EL2 have their names prefixed to separate them from
-# corresponding sections in non-hyp objects. Sections not mapped at EL2 are
-# removed to avoid accidental references to unavailable symbols.
-# Essential ELF sections (.shstrtab, .strtab, .symtab, .rela*) must be
-# explicitly exempted for llvm-objcopy, GNU objcopy preserves them
-# automatically.
 quiet_cmd_hypcopy = HYPCOPY $@
-      cmd_hypcopy = $(OBJCOPY)	--prefix-symbols=__kvm_nvhe_			\
-				--remove-section=!.text				\
-				--rename-section=.text=.hyp.text		\
-				--remove-section=!.bss				\
+      cmd_hypcopy = $(OBJCOPY)	--prefix-symbols=__kvm_nvhe_		\
+				--rename-section=.text=.hyp.text	\
 				--rename-section=.bss=.hyp.bss			\
-				--remove-section=!.data..percpu		\
 				--rename-section=.data..percpu=.hyp.data..percpu \
-				--remove-section=!.data..percpu..read_mostly	\
 				--rename-section=.data..percpu..read_mostly=.hyp.data..percpu..read_mostly \
-				--remove-section=!.hyp.*			\
-				--remove-section=!.altinst*			\
-				--remove-section=!.rodata*			\
-				--remove-section=!.rela*			\
-				--remove-section=!.shstrtab			\
-				--remove-section=!.strtab			\
-				--remove-section=!.symtab			\
-				--remove-section=.*				\
 				$< $@
 
 # Remove ftrace and Shadow Call Stack CFLAGS.
