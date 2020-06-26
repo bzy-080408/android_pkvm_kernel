@@ -17,11 +17,12 @@ hyp-y := ../vgic-v3-sr.o ../timer-sr.o timer-sr.o ../aarch32.o \
 	 ../vgic-v2-cpuif-proxy.o sysreg-sr.o debug-sr.o ../entry.o switch.o \
 	 ../fpsimd.o tlb.o hyp-init.o hyp-start.o hyp-main.o ../hyp-entry.o \
 	$(lib-objs) early_alloc.o  page_alloc.o mm_init.o mmu.o setup.o
+hyp-y += stubs.o
 
 obj-$(CONFIG_DEBUG_PREEMPT) += percpu.o
 
 hyp-y := $(patsubst %.o,%.hyp.o,$(hyp-y))
-extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(hyp-y))
+extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(hyp-y)) el2.o
 
 $(obj)/%.hyp.tmp.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
@@ -29,7 +30,7 @@ $(obj)/%.hyp.tmp.o: $(src)/%.S FORCE
 	$(call if_changed_rule,as_o_S)
 $(obj)/%.hyp.o: $(obj)/%.hyp.tmp.o FORCE
 	$(call if_changed,hypcopy)
-LDFLAGS_el2.o := --relocatable
+
 $(obj)/el2.o: $(addprefix $(obj)/,$(hyp-y)) FORCE
 	$(call if_changed,ld)
 
