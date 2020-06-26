@@ -17,9 +17,10 @@ hyp-y := timer-sr.o sysreg-sr.o debug-sr.o switch.o tlb.o hyp-init.o \
 hyp-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
 	 ../fpsimd.o ../hyp-entry.o ../pgtable.o
 hyp-y += $(lib-objs)
+hyp-y += stubs.o
 
 hyp-y := $(patsubst %.o,%.hyp.o,$(hyp-y))
-extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(hyp-y))
+extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(hyp-y)) el2.o
 
 $(obj)/%.hyp.tmp.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
@@ -27,7 +28,7 @@ $(obj)/%.hyp.tmp.o: $(src)/%.S FORCE
 	$(call if_changed_rule,as_o_S)
 $(obj)/%.hyp.o: $(obj)/%.hyp.tmp.o FORCE
 	$(call if_changed,hypcopy)
-LDFLAGS_el2.o := --relocatable
+
 $(obj)/el2.o: $(addprefix $(obj)/,$(hyp-y)) FORCE
 	$(call if_changed,ld)
 
@@ -35,6 +36,9 @@ $(obj)/el2.o: $(addprefix $(obj)/,$(hyp-y)) FORCE
 # This pass puts functions into '.text.*' sections to aid the linker
 # in optimizing ELF layout. See HYPCOPY comment below for more info.
 ccflags-y += $(call cc-option,-fno-reorder-functions)
+
+# Limit compiler optimisations for the purpose of binary analysis
+ccflags-y += -O0
 
 # The HYPCOPY command uses `objcopy` to prefix all ELF symbol names
 # and relevant ELF section names to avoid clashes with VHE code/data.
