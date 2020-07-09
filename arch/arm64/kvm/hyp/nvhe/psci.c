@@ -4,6 +4,8 @@
  * Author: David Brazdil <dbrazdil@google.com>
  */
 
+#include <linux/compiler.h>
+
 #include <asm/kvm_asm.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
@@ -21,6 +23,14 @@ int kvm_host_psci_cpu_off(void)
 	return PSCI_RET_DENIED;
 }
 
+void __noreturn kvm_host_psci_system_off(void)
+{
+	struct arm_smccc_res res;
+	arm_smccc_1_1_smc(PSCI_0_2_FN_SYSTEM_OFF, &res);
+	/* SYSTEM_OFF should never return. */
+	for (;;) {}
+}
+
 int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
 	switch (func_id) {
@@ -28,6 +38,9 @@ int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 		return KVM_ARM_PSCI_0_2;
 	case PSCI_0_2_FN_CPU_OFF:
 		return kvm_host_psci_cpu_off();
+	case PSCI_0_2_FN_SYSTEM_OFF:
+		kvm_host_psci_system_off();
+		unreachable();
 	}
 
 	return -EINVAL;
