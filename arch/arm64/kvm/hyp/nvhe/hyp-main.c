@@ -159,8 +159,20 @@ static void smc_forward(struct kvm_vcpu *vcpu)
 
 static void handle_host_smc(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
+	int ret;
+
 	/* Skip the SMC instruction */
 	__kvm_skip_instr(host_vcpu);
+
+	/*
+	 * Try to handle as a PSCI call. Handler returns -EINVAL if the
+	 * function ID was not recognized.
+	 */
+	ret = kvm_host_psci_call(host_vcpu);
+	if (ret != -EINVAL) {
+		smccc_set_retval(host_vcpu, ret, 0, 0, 0);
+		return;
+	}
 
 	smc_forward(host_vcpu);
 }
