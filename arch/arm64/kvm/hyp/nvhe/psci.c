@@ -20,25 +20,24 @@ int kvm_host_psci_cpu_off(void)
 	return PSCI_RET_DENIED;
 }
 
-int kvm_host_psci_call(struct kvm_vcpu *host_vcpu)
+int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
-	bool is_32bit;
-	int ret = -EINVAL;
-	unsigned long fn_id = smccc_get_function(host_vcpu);
-	unsigned long fn_base = fn_id & ~PSCI_0_2_FN_ID_MASK;
-
-	if (fn_base == PSCI_0_2_FN_BASE)
-		is_32bit = true;
-	else if (fn_base == PSCI_0_2_FN64_BASE)
-		is_32bit = false;
-	else
-		return ret;
-
-	switch (fn_id) {
+	switch (func_id) {
 	case PSCI_0_2_FN_CPU_OFF:
-		ret = kvm_host_psci_cpu_off();
-		break;
+		return kvm_host_psci_cpu_off();
 	}
 
-	return ret;
+	return -EINVAL;
+}
+
+int kvm_host_psci_call(struct kvm_vcpu *host_vcpu)
+{
+	unsigned long func_id = smccc_get_function(host_vcpu);
+	unsigned long func_base = func_id & ~PSCI_0_2_FN_ID_MASK;
+
+	/* Early exit if this clearly isn't a PSCI call. */
+	if (func_base != PSCI_0_2_FN_BASE && func_base != PSCI_0_2_FN64_BASE)
+		return -EINVAL;
+
+	return kvm_host_psci_0_2_call(func_id, host_vcpu);
 }
