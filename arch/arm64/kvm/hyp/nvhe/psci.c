@@ -31,6 +31,14 @@ void __noreturn kvm_host_psci_system_off(void)
 	for (;;) {}
 }
 
+void __noreturn kvm_host_psci_system_reset(void)
+{
+	struct arm_smccc_res res;
+	arm_smccc_1_1_smc(PSCI_0_2_FN_SYSTEM_RESET, &res);
+	/* SYSTEM_RESET should never return. */
+	for (;;) {}
+}
+
 int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
 	switch (func_id) {
@@ -40,6 +48,9 @@ int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 		return kvm_host_psci_cpu_off();
 	case PSCI_0_2_FN_SYSTEM_OFF:
 		kvm_host_psci_system_off();
+		unreachable();
+	case PSCI_0_2_FN_SYSTEM_RESET:
+		kvm_host_psci_system_reset();
 		unreachable();
 	}
 
