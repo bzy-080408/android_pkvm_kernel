@@ -61,6 +61,11 @@ static bool vgic_present;
 static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 DEFINE_STATIC_KEY_FALSE(userspace_irqchip_in_use);
 
+bool kvm_is_protected_mode(void)
+{
+	return !is_kernel_in_hyp_mode();
+}
+
 int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
 {
 	return kvm_vcpu_exiting_guest_mode(vcpu) == IN_GUEST_MODE;
@@ -1317,13 +1322,17 @@ static void cpu_init_hyp_mode(void)
 
 static void cpu_hyp_reset(void)
 {
+	BUG_ON(kvm_is_protected_mode());
+
+	pr_info("cpu_hyp_reset %d\n", smp_processor_id());
 	if (!is_kernel_in_hyp_mode())
 		__hyp_reset_vectors();
 }
 
 static void cpu_hyp_reinit(void)
 {
-	cpu_hyp_reset();
+	if (!kvm_is_protected_mode())
+		cpu_hyp_reset();
 
 	if (is_kernel_in_hyp_mode()) {
 		kvm_init_host_cpu_context(this_cpu_ptr(&kvm_host_ctxt));
@@ -1354,7 +1363,8 @@ int kvm_arch_hardware_enable(void)
 
 static void _kvm_arch_hardware_disable(void *discard)
 {
-	if (__this_cpu_read(kvm_arm_hardware_enabled)) {
+	if (!kvm_is_protected_mode() &&
+	    __this_cpu_read(kvm_arm_hardware_enabled)) {
 		cpu_hyp_reset();
 		__this_cpu_write(kvm_arm_hardware_enabled, 0);
 	}

@@ -146,6 +146,25 @@ static void handle_host_hcall(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 	smccc_set_retval(host_vcpu, SMCCC_RET_SUCCESS, ret, 0, 0);
 }
 
+static void smc_forward(struct kvm_vcpu *vcpu)
+{
+	struct arm_smccc_res res;
+	arm_smccc_1_1_smc(smccc_get_function(vcpu),
+			  smccc_get_arg1(vcpu),
+			  smccc_get_arg2(vcpu),
+			  smccc_get_arg3(vcpu),
+			  &res);
+	smccc_set_retval(vcpu, res.a0, res.a1, res.a2, res.a3);
+}
+
+static void handle_host_smc(unsigned long func_id, struct kvm_vcpu *host_vcpu)
+{
+	/* Skip the SMC instruction */
+	__kvm_skip_instr(host_vcpu);
+
+	smc_forward(host_vcpu);
+}
+
 static void handle_trap(struct kvm_vcpu *host_vcpu) {
 	unsigned long func_id = smccc_get_function(host_vcpu);
 
@@ -158,8 +177,7 @@ static void handle_trap(struct kvm_vcpu *host_vcpu) {
 		break;
 	case ESR_ELx_EC_SMC32:
 	case ESR_ELx_EC_SMC64:
-		kvm_skip_instr(host_vcpu, kvm_vcpu_trap_il_is32bit(host_vcpu));
-		smccc_set_retval(host_vcpu, SMCCC_RET_NOT_SUPPORTED, 0, 0, 0);
+		handle_host_smc(func_id, host_vcpu);
 		break;
 	}
 
