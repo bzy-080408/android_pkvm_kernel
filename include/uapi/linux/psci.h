@@ -29,6 +29,7 @@
 #define PSCI_0_2_FN64_BASE			\
 					(PSCI_0_2_FN_BASE + PSCI_0_2_64BIT)
 #define PSCI_0_2_FN64(n)			(PSCI_0_2_FN64_BASE + (n))
+#define PSCI_0_2_FN_ID_MASK			0xffff
 
 #define PSCI_0_2_FN_PSCI_VERSION		PSCI_0_2_FN(0)
 #define PSCI_0_2_FN_CPU_SUSPEND			PSCI_0_2_FN(1)
