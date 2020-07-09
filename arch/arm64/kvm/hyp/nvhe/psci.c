@@ -9,6 +9,7 @@
 #include <asm/kvm_mmu.h>
 
 #include <kvm/arm_hypercalls.h>
+#include <kvm/arm_psci.h>
 
 #include <uapi/linux/psci.h>
 
@@ -23,6 +24,8 @@ int kvm_host_psci_cpu_off(void)
 int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
 	switch (func_id) {
+	case PSCI_0_2_FN_PSCI_VERSION:
+		return KVM_ARM_PSCI_0_2;
 	case PSCI_0_2_FN_CPU_OFF:
 		return kvm_host_psci_cpu_off();
 	}
