@@ -177,6 +177,9 @@ reset:
 	msr	sctlr_el2, x5
 	isb
 
+	mov_q 	x5, HCR_HOST_NVHE_FLAGS_EARLY
+	msr	hcr_el2, x5
+
 	/* Install stub vectors */
 	adr_l	x5, __hyp_stub_vectors
 	msr	vbar_el2, x5

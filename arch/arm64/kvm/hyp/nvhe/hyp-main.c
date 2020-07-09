@@ -147,13 +147,20 @@ static void handle_host_hcall(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 }
 
 static void handle_trap(struct kvm_vcpu *host_vcpu) {
-	if (kvm_vcpu_trap_get_class(host_vcpu) == ESR_ELx_EC_HVC64) {
-		unsigned long func_id = smccc_get_function(host_vcpu);
+	unsigned long func_id = smccc_get_function(host_vcpu);
 
+	switch (kvm_vcpu_trap_get_class(host_vcpu)) {
+	case ESR_ELx_EC_HVC64:
 		if (func_id < HVC_STUB_HCALL_NR)
 			handle_stub_hvc(func_id, host_vcpu);
 		else
 			handle_host_hcall(func_id, host_vcpu);
+		break;
+	case ESR_ELx_EC_SMC32:
+	case ESR_ELx_EC_SMC64:
+		kvm_skip_instr(host_vcpu, kvm_vcpu_trap_il_is32bit(host_vcpu));
+		smccc_set_retval(host_vcpu, SMCCC_RET_NOT_SUPPORTED, 0, 0, 0);
+		break;
 	}
 
 	/* Other traps are ignored. */

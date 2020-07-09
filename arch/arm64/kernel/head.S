@@ -519,7 +519,7 @@ SYM_FUNC_START(el2_setup)
 #endif
 
 	/* Hyp configuration. */
-	mov_q	x0, HCR_HOST_NVHE_FLAGS
+	mov_q	x0, HCR_HOST_NVHE_FLAGS_EARLY
 	cbz	x2, set_hcr
 	mov_q	x0, HCR_HOST_VHE_FLAGS
 set_hcr:
