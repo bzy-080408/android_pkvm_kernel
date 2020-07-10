@@ -1628,6 +1628,13 @@ static int init_hyp_mode(void)
 	/*
 	 * Map Hyp percpu pages
 	 */
+	err = create_hyp_mappings(kvm_arm_hyp_percpu_base,
+				  kvm_arm_hyp_percpu_base + 1, PAGE_HYP);
+	if (err) {
+		kvm_err("Cannot map hyp percpu bases\n");
+		goto out_err;
+	}
+
 	for_each_possible_cpu(cpu) {
 		char *percpu_begin = (char *)kvm_arm_hyp_percpu_base[cpu];
 		char *percpu_end = percpu_begin + PAGE_ALIGN(kvm_hyp_percpu_size);

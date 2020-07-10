@@ -105,6 +105,9 @@ KVM_NVHE_ALIAS(gic_pmr_sync);
 KVM_NVHE_ALIAS(kvm_hyp_debug_uart_set_basep);
 #endif
 
+KVM_NVHE_ALIAS(kvm_arm_hyp_percpu_base);
+KVM_NVHE_ALIAS(nr_cpu_ids);
+
 #endif /* CONFIG_KVM */
 
 #endif /* __ARM64_KERNEL_IMAGE_VARS_H */
