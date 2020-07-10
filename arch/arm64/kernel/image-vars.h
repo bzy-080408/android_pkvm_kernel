@@ -145,6 +145,9 @@ KVM_NVHE_ALIAS(__hyp_bss_end);
 KVM_NVHE_ALIAS(kvm_hyp_debug_uart_set_basep);
 #endif
 
+/* Array containing bases of nVHE per-CPU memory regions. */
+KVM_NVHE_ALIAS(kvm_arm_hyp_percpu_base);
+
 #endif /* CONFIG_KVM */
 
 #endif /* __ARM64_KERNEL_IMAGE_VARS_H */
