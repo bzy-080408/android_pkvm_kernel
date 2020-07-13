@@ -74,13 +74,32 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
 		vcpu->arch.flags |= KVM_ARM64_HOST_SVE_ENABLED;
 }
 
+
+/*
+ * If TIF_FOREIGN_FPSTATE is set, the FPSIMD regs do not contain the state of
+ * current or the guest. However, the state will have been saved where it was
+ * needed. This means the guest's state will have to be loaded if it is needed,
+ * without saving the FPSIMD regs.
+ */
+void kvm_arch_vcpu_sync_fp_before_hyp(struct kvm_vcpu *vcpu)
+{
+	WARN_ON_ONCE(!irqs_disabled());
+
+	if (!system_supports_fpsimd())
+		return;
+
+	if (test_thread_flag(TIF_FOREIGN_FPSTATE))
+		vcpu->arch.flags &= ~(KVM_ARM64_FP_ENABLED |
+				      KVM_ARM64_FP_HOST);
+}
+
 /*
  * If the guest FPSIMD state was loaded, update the host's context
  * tracking data mark the CPU FPSIMD regs as dirty and belonging to vcpu
  * so that they will be written back if the kernel clobbers them due to
  * kernel-mode NEON before re-entry into the guest.
  */
-void kvm_arch_vcpu_ctxsync_fp(struct kvm_vcpu *vcpu)
+void kvm_arch_vcpu_sync_fp_after_hyp(struct kvm_vcpu *vcpu)
 {
 	WARN_ON_ONCE(!irqs_disabled());
 

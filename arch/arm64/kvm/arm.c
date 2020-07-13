@@ -738,6 +738,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		local_irq_disable();
 
+		kvm_arch_vcpu_sync_fp_before_hyp(vcpu);
+
 		kvm_vgic_flush_hwstate(vcpu);
 
 		/*
@@ -825,7 +827,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		if (static_branch_unlikely(&userspace_irqchip_in_use))
 			kvm_timer_sync_user(vcpu);
 
-		kvm_arch_vcpu_ctxsync_fp(vcpu);
+		kvm_arch_vcpu_sync_fp_after_hyp(vcpu);
 
 		/*
 		 * We may have taken a host interrupt in HYP mode (ie
