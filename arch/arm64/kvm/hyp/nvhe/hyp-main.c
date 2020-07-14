@@ -4,6 +4,7 @@
  * Author: Andrew Scull <ascull@google.com>
  */
 
+#include "asm/sysreg.h"
 #include <hyp/switch.h>
 
 #include <asm/kvm_asm.h>
@@ -19,6 +20,8 @@ typedef __noreturn unsigned long (*stub_hvc_handler_t)
 
 extern char __kvm_handle_stub_hvc_soft_restart[];
 extern char __kvm_handle_stub_hvc_reset_vectors[];
+
+DEFINE_PER_CPU(struct kvm_hyp_init_params, kvm_cpu_params);
 
 static void handle_stub_hvc(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
@@ -215,6 +218,10 @@ void __noreturn kvm_hyp_main(void)
 	host_vcpu->arch.hcr_el2 = HCR_HOST_NVHE_FLAGS;
 	host_vcpu->arch.mdcr_el2 = mdcr_el2;
 	host_vcpu->arch.debug_ptr = &host_vcpu->arch.vcpu_debug_state;
+
+	kvm_host_psci_init_cpu(host_vcpu);
+
+	write_sysreg(HCR_HOST_NVHE_FLAGS, hcr_el2);
 
 	/*
 	 * The first time entering the host is seen by the host as the return

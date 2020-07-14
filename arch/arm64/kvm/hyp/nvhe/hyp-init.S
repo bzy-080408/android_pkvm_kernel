@@ -60,6 +60,10 @@ __do_hyp_init:
 	cmp	x0, #HVC_STUB_HCALL_NR
 	b.lo	__kvm_handle_stub_hvc
 
+	ldp	x4, x5, [x1, #24]
+	ldp	x2, x3, [x1,  #8]
+	ldr	x1, [x1]
+
 	/* Set tpidr_el2 for use by HYP to free a register */
 	msr	tpidr_el2, x2
 
@@ -135,6 +139,13 @@ alternative_else_nop_endif
 	/* Leave the idmap posthaste and head over to __kvm_hyp_start */
 	br	x3
 SYM_CODE_END(__kvm_hyp_init)
+
+SYM_CODE_START(__kvm_cpu_start)
+	mov	x1, x0
+	mov	x0, #KVM_HOST_SMCCC_FUNC(__kvm_hyp_init)
+
+	b	__do_hyp_init
+SYM_CODE_END(__kvm_cpu_start)
 
 SYM_CODE_START(__kvm_handle_stub_hvc)
 	cmp	x0, #HVC_SOFT_RESTART

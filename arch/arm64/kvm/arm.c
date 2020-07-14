@@ -1270,6 +1270,8 @@ long kvm_arch_vm_ioctl(struct file *filp,
 #define kvm_hyp_percpu_order		(kvm_hyp_percpu_size \
 						? get_order(kvm_hyp_percpu_size) : 0)
 
+DECLARE_KVM_NVHE_PER_CPU(struct kvm_hyp_init_params, kvm_cpu_params);
+
 static void cpu_init_hyp_mode(void)
 {
 	DECLARE_KVM_NVHE_SYM(__kvm_hyp_start);
@@ -1280,9 +1282,14 @@ static void cpu_init_hyp_mode(void)
 	unsigned long start_hyp;
 	unsigned long tpidr_el2;
 	struct arm_smccc_res res;
+	struct kvm_hyp_init_params *cpu_params;
+
+	pr_info("cpu_init_hyp_mode %d\n", smp_processor_id());
 
 	/* Switch from the HYP stub to our own HYP init vector */
 	__hyp_set_vectors(kvm_get_idmap_vector());
+
+	cpu_params = this_cpu_ptr_nvhe(kvm_cpu_params);
 
 	/*
 	 * Calculate the raw per-cpu offset without a translation from the
@@ -1298,6 +1305,13 @@ static void cpu_init_hyp_mode(void)
 	vector_ptr = (unsigned long)kvm_get_hyp_vector();
 	start_hyp = (unsigned long)kern_hyp_va(kvm_ksym_ref_nvhe(__kvm_hyp_start));
 
+	cpu_params->pgd = pgd_ptr;
+	cpu_params->percpu_off = tpidr_el2;
+	cpu_params->hyp_start_addr = start_hyp;
+	cpu_params->hyp_stack = hyp_stack_ptr;
+	cpu_params->hyp_vectors = vector_ptr;
+	cpu_params->this_phys_addr = __virt_to_phys(cpu_params);
+
 	/*
 	 * Call initialization code, and switch to the full blown HYP code.
 	 * If the cpucaps haven't been finalized yet, something has gone very
@@ -1306,8 +1320,7 @@ static void cpu_init_hyp_mode(void)
 	 */
 	BUG_ON(!system_capabilities_finalized());
 	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__kvm_hyp_init),
-			  pgd_ptr, tpidr_el2, start_hyp, hyp_stack_ptr,
-			  vector_ptr, &res);
+			  __virt_to_phys(cpu_params), &res);
 	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
 
 	/*
@@ -1612,6 +1625,13 @@ static int init_hyp_mode(void)
 				  kvm_ksym_ref(__bss_stop), PAGE_HYP_RO);
 	if (err) {
 		kvm_err("Cannot map bss section\n");
+		goto out_err;
+	}
+
+	err = create_hyp_mappings(kvm_ksym_ref(_data), kvm_ksym_ref(_edata),
+				  PAGE_HYP_RO);
+	if (err) {
+		kvm_err("Cannot map data section\n");
 		goto out_err;
 	}
 

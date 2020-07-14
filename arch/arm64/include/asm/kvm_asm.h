@@ -189,6 +189,15 @@ extern u32 __kvm_get_mdcr_el2(void);
 
 extern char __smccc_workaround_1_smc[__SMCCC_WORKAROUND_1_SMC_SZ];
 
+struct kvm_hyp_init_params {
+	unsigned long pgd;
+	unsigned long percpu_off;
+	unsigned long hyp_start_addr;
+	unsigned long hyp_stack;
+	unsigned long hyp_vectors;
+	unsigned long this_phys_addr;
+};
+
 /*
  * Obtain the PC-relative address of a kernel symbol
  * s: symbol

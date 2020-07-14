@@ -107,6 +107,7 @@ KVM_NVHE_ALIAS(kvm_hyp_debug_uart_set_basep);
 
 KVM_NVHE_ALIAS(kvm_arm_hyp_percpu_base);
 KVM_NVHE_ALIAS(nr_cpu_ids);
+KVM_NVHE_ALIAS(__cpu_logical_map);
 
 #endif /* CONFIG_KVM */
 

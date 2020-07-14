@@ -119,6 +119,7 @@ void __noreturn hyp_panic(void);
 void __noreturn __hyp_do_panic(unsigned long, ...);
 #endif
 
+void kvm_host_psci_init_cpu(struct kvm_vcpu *host_vcpu);
 int kvm_host_psci_call(struct kvm_vcpu *host_vcpu);
 
 #endif /* __ARM64_KVM_HYP_H__ */
