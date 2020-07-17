@@ -39,7 +39,6 @@ static inline int kvm_psci_version(struct kvm_vcpu *vcpu, struct kvm *kvm)
 	return KVM_ARM_PSCI_0_1;
 }
 
-
 int kvm_psci_call(struct kvm_vcpu *vcpu);
 
 struct kvm_one_reg;

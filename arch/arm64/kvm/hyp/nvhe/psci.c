@@ -7,9 +7,11 @@
 #include <linux/compiler.h>
 
 #include <asm/kvm_asm.h>
+#include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_host.h>
+#include <asm/kvm_psci.h>
 
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
@@ -20,30 +22,28 @@
 
 #include "../debug-pl011.h"
 
-static void kvm_psci_narrow_to_32bit(struct kvm_vcpu *vcpu)
-{
-	int i;
-
-	/*
-	 * Zero the input registers' upper 32 bits. They will be fully
-	 * zeroed on exit, so we're fine changing them in place.
-	 */
-	for (i = 1; i < 4; i++)
-		vcpu_set_reg(vcpu, i, lower_32_bits(vcpu_get_reg(vcpu, i)));
-}
-
 static DEFINE_PER_CPU(nvhe_spinlock_t, kvm_psci_cpu_lock)= NVHE_SPIN_LOCK_INIT;
 DECLARE_PER_CPU(struct kvm_hyp_init_params, kvm_cpu_params);
+
+#define kvm_next_host_vcpu(idx)					\
+	({							\
+		do {						\
+			idx++;					\
+		} while (idx < nr_cpu_ids &&			\
+			 cpu_logical_map(idx) == INVALID_HWID);	\
+		idx;						\
+	})
+
+#define kvm_for_each_host_vcpu(idx)				\
+	for (idx = 0; idx < nr_cpu_ids; kvm_next_host_vcpu(idx))
 
 static int find_cpu_id(u64 mpidr)
 {
 	int cpu;
 
-	if (mpidr != INVALID_HWID) {
-		for (cpu = 0; cpu < nr_cpu_ids; ++cpu) {
-			if (cpu_logical_map(cpu) == mpidr)
-				return cpu;
-		}
+	kvm_for_each_host_vcpu(cpu) {
+		if (cpu_logical_map(cpu) == mpidr)
+			return cpu;
 	}
 	return -1;
 }
@@ -62,6 +62,7 @@ void kvm_host_psci_init_cpu(struct kvm_vcpu *vcpu)
 	nvhe_spinlock_t *cpu_lock = this_cpu_ptr(&kvm_psci_cpu_lock);
 
 	nvhe_spin_lock(cpu_lock);
+	vcpu->arch.power_off = false;
 	if (vcpu->arch.reset_state.reset) {
 		vcpu->arch.reset_state.reset = false;
 
@@ -93,7 +94,7 @@ static int kvm_host_psci_cpu_on(unsigned long mpidr, unsigned long pc,
 
 	nvhe_spin_lock(cpu_lock);
 
-	// if (cpu->affinity_level < 0) {
+	/* XXX - check that this CPU had KVM initialized on it */
 	// 	ret = PSCI_RET_INTERNAL_FAILURE;
 	// 	goto out;
 	// }
@@ -142,6 +143,34 @@ int kvm_host_psci_cpu_off(void)
 	return PSCI_RET_DENIED;
 }
 
+int kvm_host_psci_affinity_info(unsigned long target_affinity,
+				unsigned long lowest_affinity_level)
+{
+	unsigned int cpu_id;
+	unsigned long target_affinity_mask;
+	bool found_matching_cpu;
+	struct kvm_vcpu *vcpu;
+
+	target_affinity_mask = kvm_psci_affinity_mask(lowest_affinity_level);
+	if (!target_affinity_mask)
+		return PSCI_RET_INVALID_PARAMS;
+
+	found_matching_cpu = false;
+	kvm_for_each_host_vcpu(cpu_id) {
+		if ((cpu_logical_map(cpu_id) & target_affinity_mask) == target_affinity) {
+			found_matching_cpu = true;
+			vcpu = per_cpu_ptr(&kvm_host_vcpu, cpu_id);
+			if (!vcpu->arch.power_off)
+				return PSCI_0_2_AFFINITY_LEVEL_ON;
+		}
+	}
+
+	if (!found_matching_cpu)
+		return PSCI_RET_INVALID_PARAMS;
+
+	return PSCI_0_2_AFFINITY_LEVEL_OFF;
+}
+
 void __noreturn kvm_host_psci_system_off(void)
 {
 	struct arm_smccc_res res;
@@ -163,6 +192,12 @@ int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 	switch (func_id) {
 	case PSCI_0_2_FN_PSCI_VERSION:
 		return KVM_ARM_PSCI_0_2;
+	case PSCI_0_2_FN_AFFINITY_INFO:
+		kvm_psci_narrow_to_32bit(host_vcpu);
+		fallthrough;
+	case PSCI_0_2_FN64_AFFINITY_INFO:
+		return kvm_host_psci_affinity_info(smccc_get_arg1(host_vcpu),
+					           smccc_get_arg2(host_vcpu));
 	case PSCI_0_2_FN_CPU_OFF:
 		return kvm_host_psci_cpu_off();
 	case PSCI_0_2_FN_CPU_ON:
