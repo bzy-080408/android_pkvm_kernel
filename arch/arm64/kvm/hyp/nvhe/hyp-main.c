@@ -14,6 +14,8 @@
 
 #include <kvm/arm_hypercalls.h>
 
+#include "../debug-pl011.h"
+
 typedef __noreturn unsigned long (*stub_hvc_handler_t)
 	(unsigned long, unsigned long, unsigned long, unsigned long,
 	 unsigned long, struct kvm_cpu_context *);

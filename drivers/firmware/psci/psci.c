@@ -175,8 +175,10 @@ static int psci_cpu_off(u32 state)
 	int err;
 	u32 fn;
 
+	pr_info("CPU_OFF %lx...\n", smp_processor_id());
 	fn = psci_function_id[PSCI_FN_CPU_OFF];
 	err = invoke_psci_fn(fn, state, 0, 0);
+	pr_info("CPU_OFF %lx => %d\n", smp_processor_id(), err);
 	return psci_to_linux_errno(err);
 }
 
@@ -185,8 +187,10 @@ static int psci_cpu_on(unsigned long cpuid, unsigned long entry_point)
 	int err;
 	u32 fn;
 
+	pr_info("CPU_ON %lx...\n", cpuid);
 	fn = psci_function_id[PSCI_FN_CPU_ON];
 	err = invoke_psci_fn(fn, cpuid, entry_point, 0);
+	pr_info("CPU_ON %lx => %d\n", cpuid, err);
 	return psci_to_linux_errno(err);
 }
 
@@ -203,8 +207,12 @@ static int psci_migrate(unsigned long cpuid)
 static int psci_affinity_info(unsigned long target_affinity,
 		unsigned long lowest_affinity_level)
 {
-	return invoke_psci_fn(PSCI_FN_NATIVE(0_2, AFFINITY_INFO),
-			      target_affinity, lowest_affinity_level, 0);
+	int ret;
+	pr_info("AFFINITY_INFO %lx...\n", target_affinity);
+	ret = invoke_psci_fn(PSCI_FN_NATIVE(0_2, AFFINITY_INFO),
+			     target_affinity, lowest_affinity_level, 0);
+	pr_info("AFFINITY_INFO %lx => %d\n", target_affinity, ret);
+	return ret;
 }
 
 static int psci_migrate_info_type(void)

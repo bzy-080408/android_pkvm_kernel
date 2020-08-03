@@ -2237,7 +2237,7 @@ int add_preferred_console(char *name, int idx, char *options)
 	return __add_preferred_console(name, idx, options, NULL, false);
 }
 
-bool console_suspend_enabled = true;
+bool console_suspend_enabled = false;
 EXPORT_SYMBOL(console_suspend_enabled);
 
 static int __init console_suspend_disable(char *str)
@@ -2261,9 +2261,13 @@ void suspend_console(void)
 	if (!console_suspend_enabled)
 		return;
 	pr_info("Suspending console(s) (use no_console_suspend to debug)\n");
+	pr_info("CHECKPOINT 0.0.1\n");
 	console_lock();
+	pr_info("CHECKPOINT 0.0.2\n");
 	console_suspended = 1;
+	pr_info("CHECKPOINT 0.0.3\n");
 	up_console_sem();
+	pr_info("CHECKPOINT 0.0.4\n");
 }
 
 void resume_console(void)

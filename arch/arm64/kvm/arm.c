@@ -1400,7 +1400,8 @@ static int hyp_init_cpu_pm_notifier(struct notifier_block *self,
 	 */
 	switch (cmd) {
 	case CPU_PM_ENTER:
-		if (__this_cpu_read(kvm_arm_hardware_enabled))
+		if (!kvm_is_protected_mode() &&
+		    __this_cpu_read(kvm_arm_hardware_enabled))
 			/*
 			 * don't update kvm_arm_hardware_enabled here
 			 * so that the hardware will be re-enabled
@@ -1411,7 +1412,8 @@ static int hyp_init_cpu_pm_notifier(struct notifier_block *self,
 		return NOTIFY_OK;
 	case CPU_PM_ENTER_FAILED:
 	case CPU_PM_EXIT:
-		if (__this_cpu_read(kvm_arm_hardware_enabled))
+		if (!kvm_is_protected_mode() &&
+		    __this_cpu_read(kvm_arm_hardware_enabled))
 			/* The hardware was enabled before suspend. */
 			cpu_hyp_reinit();
 

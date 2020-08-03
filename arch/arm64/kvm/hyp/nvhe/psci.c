@@ -118,7 +118,6 @@ static int kvm_host_psci_cpu_on(unsigned long mpidr, unsigned long pc,
 				  per_cpu_ptr(&kvm_cpu_params, cpu_id)->this_phys_addr,
 				  &res);
 		ret = res.a0;
-		hyp_putx32(ret);
 	} while (ret == PSCI_RET_ALREADY_ON);
 
 	vcpu->arch.power_off = false;
@@ -128,7 +127,7 @@ out:
 	return ret;
 }
 
-int kvm_host_psci_cpu_off(void)
+static int kvm_host_psci_cpu_off(void)
 {
 	nvhe_spinlock_t *cpu_lock = this_cpu_ptr(&kvm_psci_cpu_lock);
 	struct kvm_vcpu *vcpu = this_cpu_ptr(&kvm_host_vcpu);
@@ -137,14 +136,15 @@ int kvm_host_psci_cpu_off(void)
 	vcpu->arch.power_off = true;
 	nvhe_spin_unlock(cpu_lock);
 
+	hyp_puts("CPU_OFF");
 	arm_smccc_1_1_smc(PSCI_0_2_FN_CPU_OFF, NULL);
 
 	/* XXX - do we want to panic? */
 	return PSCI_RET_DENIED;
 }
 
-int kvm_host_psci_affinity_info(unsigned long target_affinity,
-				unsigned long lowest_affinity_level)
+static int kvm_host_psci_affinity_info(unsigned long target_affinity,
+				       unsigned long lowest_affinity_level)
 {
 	unsigned int cpu_id;
 	unsigned long target_affinity_mask;
@@ -171,7 +171,7 @@ int kvm_host_psci_affinity_info(unsigned long target_affinity,
 	return PSCI_0_2_AFFINITY_LEVEL_OFF;
 }
 
-void __noreturn kvm_host_psci_system_off(void)
+static void __noreturn kvm_host_psci_system_off(void)
 {
 	struct arm_smccc_res res;
 	arm_smccc_1_1_smc(PSCI_0_2_FN_SYSTEM_OFF, &res);
@@ -179,7 +179,7 @@ void __noreturn kvm_host_psci_system_off(void)
 	for (;;) {}
 }
 
-void __noreturn kvm_host_psci_system_reset(void)
+static void __noreturn kvm_host_psci_system_reset(void)
 {
 	struct arm_smccc_res res;
 	arm_smccc_1_1_smc(PSCI_0_2_FN_SYSTEM_RESET, &res);
@@ -187,7 +187,7 @@ void __noreturn kvm_host_psci_system_reset(void)
 	for (;;) {}
 }
 
-int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
+static int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_vcpu)
 {
 	switch (func_id) {
 	case PSCI_0_2_FN_PSCI_VERSION:
@@ -222,10 +222,13 @@ int kvm_host_psci_call(struct kvm_vcpu *host_vcpu)
 {
 	unsigned long func_id = smccc_get_function(host_vcpu);
 	unsigned long func_base = func_id & ~PSCI_0_2_FN_ID_MASK;
+	int ret;
 
 	/* Early exit if this clearly isn't a PSCI call. */
 	if (func_base != PSCI_0_2_FN_BASE && func_base != PSCI_0_2_FN64_BASE)
 		return -EINVAL;
 
-	return kvm_host_psci_0_2_call(func_id, host_vcpu);
+	hyp_putx32(func_id);
+	ret = kvm_host_psci_0_2_call(func_id, host_vcpu);
+	return ret;
 }
