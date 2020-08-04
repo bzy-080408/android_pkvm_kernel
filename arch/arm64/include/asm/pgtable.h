@@ -506,9 +506,15 @@ static inline phys_addr_t pmd_page_paddr(pmd_t pmd)
 	return __pmd_to_phys(pmd);
 }
 
+#ifndef __hyp_va
+#define __to_va(x)	__va(x)
+#else
+#define __to_va(x)	__hyp_va(x)
+#endif
+
 static inline unsigned long pmd_page_vaddr(pmd_t pmd)
 {
-	return (unsigned long)__va(pmd_page_paddr(pmd));
+	return (unsigned long)__to_va(pmd_page_paddr(pmd));
 }
 
 /* Find an entry in the third-level page table. */
@@ -568,7 +574,7 @@ static inline phys_addr_t pud_page_paddr(pud_t pud)
 
 static inline unsigned long pud_page_vaddr(pud_t pud)
 {
-	return (unsigned long)__va(pud_page_paddr(pud));
+	return (unsigned long)__to_va(pud_page_paddr(pud));
 }
 
 /* Find an entry in the second-level page table. */
@@ -628,7 +634,7 @@ static inline phys_addr_t p4d_page_paddr(p4d_t p4d)
 
 static inline unsigned long p4d_page_vaddr(p4d_t p4d)
 {
-	return (unsigned long)__va(p4d_page_paddr(p4d));
+	return (unsigned long)__to_va(p4d_page_paddr(p4d));
 }
 
 /* Find an entry in the frst-level page table. */

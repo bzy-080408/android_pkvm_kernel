@@ -6,10 +6,15 @@
 asflags-y := -D__KVM_NVHE_HYPERVISOR__
 ccflags-y := -D__KVM_NVHE_HYPERVISOR__
 
+lib-objs := clear_page.o copy_page.o memcpy.o memset.o
+lib-objs := $(addprefix ../../../lib/, $(lib-objs))
+
 obj-y := timer-sr.o sysreg-sr.o debug-sr.o switch.o tlb.o hyp-init.o \
-	 hyp-start.o hyp-main.o
+	 hyp-start.o hyp-main.o early_alloc.o  page_alloc.o mm_init.o mmu.o \
+	 setup.o
 obj-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
 	 ../fpsimd.o ../hyp-entry.o
+obj-y += $(lib-objs)
 
 obj-y := $(patsubst %.o,%.hyp.o,$(obj-y))
 extra-y := $(patsubst %.hyp.o,%.hyp.tmp.o,$(obj-y))
@@ -36,6 +41,11 @@ ccflags-y += $(call cc-option,-fno-reorder-functions)
 # ELF layout. HYPCOPY checks that no such sections exist in the input
 # using `objdump`, otherwise they would be linked together with other
 # kernel code and not memory-mapped correctly at runtime.
+#
+# Sections not mapped at EL2 are removed to avoid accidental references
+# to unavailable symbols. Essential ELF sections (.shstrtab, .strtab,
+# .symtab, .rela*) must be explicitly exempted for llvm-objcopy, GNU
+# objcopy preserves them automatically.
 quiet_cmd_hypcopy = HYPCOPY $@
       cmd_hypcopy =							\
 	if $(OBJDUMP) -h $< | grep -F '.text.'; then			\
@@ -43,9 +53,22 @@ quiet_cmd_hypcopy = HYPCOPY $@
 		/bin/false;						\
 	fi;								\
 	$(OBJCOPY) --prefix-symbols=__kvm_nvhe_				\
+		   --remove-section=!.text				\
 		   --rename-section=.text=.hyp.text			\
+		   --remove-section=!.bss				\
+		   --rename-section=.bss=.hyp.bss			\
+		   --remove-section=!.data..percpu			\
 		   --rename-section=.data..percpu=.hyp.data..percpu	\
+		   --remove-section=!.data..percpu..read_mostly		\
 		   --rename-section=.data..percpu..read_mostly=.hyp.data..percpu..read_mostly \
+		   --remove-section=!.hyp.*				\
+		   --remove-section=!.altinst*				\
+		   --remove-section=!.rodata*				\
+		   --remove-section=!.rela*				\
+		   --remove-section=!.shstrtab				\
+		   --remove-section=!.strtab				\
+		   --remove-section=!.symtab				\
+		   --remove-section=.*					\
 		   $< $@
 
 # Remove ftrace and Shadow Call Stack CFLAGS.

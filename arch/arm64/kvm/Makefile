@@ -3,7 +3,7 @@
 # Makefile for Kernel-based Virtual Machine module
 #
 
-ccflags-y += -I $(srctree)/$(src)
+ccflags-y += -I $(srctree)/$(src) -I$(srctree)/$(src)/hyp/include
 
 KVM=../../../virt/kvm
 

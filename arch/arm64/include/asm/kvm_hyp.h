@@ -31,6 +31,8 @@ static inline struct kvm_cpu_context *get_hyp_ctxt(void)
 #endif
 }
 
+#define __hyp_bss __section(.hyp.bss)
+
 #define read_sysreg_elx(r,nvh,vh)					\
 	({								\
 		u64 reg;						\
@@ -119,5 +121,15 @@ void __noreturn hyp_panic(void);
 void __noreturn __hyp_do_panic(unsigned long, ...);
 #endif
 
+int __kvm_hyp_setup(phys_addr_t phys, void* virt, unsigned long size,
+		    phys_addr_t bp_vect_pa, unsigned long nr_cpus,
+		    phys_addr_t *per_cpu_base);
+
+int __kvm_hyp_create_mappings(unsigned long start, unsigned long end,
+			      unsigned long pfn, unsigned long prot);
+
+unsigned long __kvm_hyp_create_private_mapping(phys_addr_t phys_addr,
+					       unsigned long size,
+					       unsigned long prot);
 #endif /* __ARM64_KVM_HYP_H__ */
 
