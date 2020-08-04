@@ -46,11 +46,6 @@ ccflags-y += $(call cc-option,-fno-reorder-functions)
 # ELF layout. HYPCOPY checks that no such sections exist in the input
 # using `objdump`, otherwise they would be linked together with other
 # kernel code and not memory-mapped correctly at runtime.
-#
-# Sections not mapped at EL2 are removed to avoid accidental references
-# to unavailable symbols. Essential ELF sections (.shstrtab, .strtab,
-# .symtab, .rela*) must be explicitly exempted for llvm-objcopy, GNU
-# objcopy preserves them automatically.
 quiet_cmd_hypcopy = HYPCOPY $@
       cmd_hypcopy =							\
 	if $(OBJDUMP) -h $< | grep -F '.text.'; then			\
@@ -58,22 +53,9 @@ quiet_cmd_hypcopy = HYPCOPY $@
 		/bin/false;						\
 	fi;								\
 	$(OBJCOPY) --prefix-symbols=__kvm_nvhe_				\
-		   --remove-section=!.text				\
 		   --rename-section=.text=.hyp.text			\
-		   --remove-section=!.bss				\
-		   --rename-section=.bss=.hyp.bss			\
-		   --remove-section=!.data..percpu			\
 		   --rename-section=.data..percpu=.hyp.data..percpu	\
-		   --remove-section=!.data..percpu..read_mostly		\
 		   --rename-section=.data..percpu..read_mostly=.hyp.data..percpu..read_mostly \
-		   --remove-section=!.hyp.*				\
-		   --remove-section=!.altinst*				\
-		   --remove-section=!.rodata*				\
-		   --remove-section=!.rela*				\
-		   --remove-section=!.shstrtab				\
-		   --remove-section=!.strtab				\
-		   --remove-section=!.symtab				\
-		   --remove-section=.*					\
 		   $< $@
 
 # Remove ftrace and Shadow Call Stack CFLAGS.
