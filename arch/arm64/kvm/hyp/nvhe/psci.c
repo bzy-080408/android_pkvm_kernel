@@ -139,8 +139,40 @@ static int kvm_host_psci_cpu_off(void)
 	hyp_puts("CPU_OFF");
 	arm_smccc_1_1_smc(PSCI_0_2_FN_CPU_OFF, NULL);
 
-	/* XXX - do we want to panic? */
+	/* XXX - do we want to panic instead? */
+	nvhe_spin_lock(cpu_lock);
+	vcpu->arch.power_off = false;
+	nvhe_spin_unlock(cpu_lock);
 	return PSCI_RET_DENIED;
+}
+
+static int kvm_host_psci_cpu_suspend(unsigned long power_state,
+				     unsigned long pc, unsigned long r0)
+{
+	struct arm_smccc_res res;
+	nvhe_spinlock_t *cpu_lock;
+	struct kvm_vcpu *vcpu;
+
+	hyp_puts("CPU_SUSPEND");
+
+	cpu_lock = this_cpu_ptr(&kvm_psci_cpu_lock);
+	vcpu = this_cpu_ptr(&kvm_host_vcpu);
+
+	nvhe_spin_lock(cpu_lock);
+	vcpu->arch.reset_state.reset = true;
+	vcpu->arch.reset_state.pc = pc;
+	vcpu->arch.reset_state.r0 = r0;
+
+	/* Unlock here? There would be a race with CPU_ON... */
+	nvhe_spin_unlock(cpu_lock);
+
+	hyp_puts("ENTER");
+	arm_smccc_1_1_smc(PSCI_0_2_FN64_CPU_SUSPEND,
+			  power_state, kvm_cpu_start_pa(),
+			  this_cpu_ptr(&kvm_cpu_params)->this_phys_addr,
+			  &res);
+	hyp_puts("EXIT");
+	return res.a0;
 }
 
 static int kvm_host_psci_affinity_info(unsigned long target_affinity,
@@ -207,6 +239,13 @@ static int kvm_host_psci_0_2_call(unsigned long func_id, struct kvm_vcpu *host_v
 		return kvm_host_psci_cpu_on(smccc_get_arg1(host_vcpu),
 					    smccc_get_arg2(host_vcpu),
 					    smccc_get_arg3(host_vcpu));
+	case PSCI_0_2_FN_CPU_SUSPEND:
+		kvm_psci_narrow_to_32bit(host_vcpu);
+		fallthrough;
+	case PSCI_0_2_FN64_CPU_SUSPEND:
+		return kvm_host_psci_cpu_suspend(smccc_get_arg1(host_vcpu),
+						 smccc_get_arg2(host_vcpu),
+						 smccc_get_arg3(host_vcpu));
 	case PSCI_0_2_FN_SYSTEM_OFF:
 		kvm_host_psci_system_off();
 		unreachable();
