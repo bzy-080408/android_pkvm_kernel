@@ -91,7 +91,7 @@
 
 		sw4 {
 			label = "sw4";
-			linux,code = <BTN_0>;
+			linux,code = <KEY_POWER>;
 			gpios = <&r_pio 0 3 GPIO_ACTIVE_LOW>;
 		};
 	};
@@ -146,6 +146,14 @@
 	};
 };
 
+&hdmi_sound {
+	status = "okay";
+};
+
+&i2s2 {
+	status = "okay";
+};
+
 &ir {
 	pinctrl-names = "default";
 	pinctrl-0 = <&r_ir_rx_pin>;
@@ -193,7 +201,8 @@
 		 * Use 1.0V as the minimum voltage instead.
 		 */
 		regulator-min-microvolt = <1000000>;
-		regulator-max-microvolt = <1300000>;
+		regulator-max-microvolt = <1400000>;
+		regulator-ramp-delay = <200>;
 		regulator-boot-on;
 		regulator-always-on;
 	};

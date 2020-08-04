@@ -199,6 +199,8 @@ static const struct resource axp22x_usb_power_supply_resources[] = {
 static const struct resource axp803_usb_power_supply_resources[] = {
 	DEFINE_RES_IRQ_NAMED(AXP803_IRQ_VBUS_PLUGIN, "VBUS_PLUGIN"),
 	DEFINE_RES_IRQ_NAMED(AXP803_IRQ_VBUS_REMOVAL, "VBUS_REMOVAL"),
+	DEFINE_RES_IRQ_NAMED(AXP803_IRQ_BC_USB_CHNG, "BC_USB_CHNG"),
+	DEFINE_RES_IRQ_NAMED(AXP803_IRQ_MV_CHNG, "MV_CHNG"),
 };
 
 static const struct resource axp22x_pek_resources[] = {
@@ -806,6 +808,9 @@ static const struct mfd_cell axp813_cells[] = {
 		.num_resources	= ARRAY_SIZE(axp803_usb_power_supply_resources),
 		.resources	= axp803_usb_power_supply_resources,
 		.of_compatible	= "x-powers,axp813-usb-power-supply",
+	}, {
+		.name		= "axp20x-charger-led",
+		.of_compatible	= "x-powers,axp813-charger-led",
 	},
 };
 
