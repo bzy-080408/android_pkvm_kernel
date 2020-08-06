@@ -131,6 +131,30 @@ static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
 	host_ctxt->regs.regs[1] = ret;
 }
 
+static void forward_host_smc(struct kvm_cpu_context *host_ctxt)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(host_ctxt->regs.regs[0], host_ctxt->regs.regs[1],
+			  host_ctxt->regs.regs[2], host_ctxt->regs.regs[3],
+			  &res);
+	host_ctxt->regs.regs[0] = res.a0;
+	host_ctxt->regs.regs[1] = res.a1;
+	host_ctxt->regs.regs[2] = res.a2;
+	host_ctxt->regs.regs[3] = res.a3;
+}
+
+static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
+{
+	struct arm_smccc_res res;
+
+	/* Move the host's PC past the SMC instruction. */
+	host_ctxt->regs.pc += 4;
+
+	/* Forward SMCs not handled in hyp to EL2. */
+	forward_host_smc(host_ctx);
+}
+
 void handle_trap(struct kvm_cpu_context *host_ctxt)
 {
 	u64 esr = read_sysreg_el2(SYS_ESR);
@@ -138,6 +162,10 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 	switch (ESR_ELx_EC(esr)) {
 	case ESR_ELx_EC_HVC64:
 		handle_host_hcall(host_ctxt);
+		break;
+	case ESR_ELx_EC_SMC32:
+	case ESR_ELx_EC_SMC64:
+		handle_host_smc(host_ctxt);
 		break;
 	default:
 		hyp_panic();
