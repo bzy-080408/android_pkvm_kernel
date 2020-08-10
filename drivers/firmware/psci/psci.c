@@ -49,6 +49,8 @@ static int resident_cpu = -1;
 struct psci_operations psci_ops;
 static enum arm_smccc_conduit psci_conduit = SMCCC_CONDUIT_NONE;
 
+int psci_driver_version = PSCI_VERSION(0, 0);
+
 bool psci_tos_resident_on(int cpu)
 {
 	return cpu == resident_cpu;
@@ -458,6 +460,8 @@ static int __init psci_probe(void)
 		return -EINVAL;
 	}
 
+	psci_driver_version = ver;
+
 	psci_0_2_set_functions();
 
 	psci_init_migrate();
@@ -510,6 +514,8 @@ static int __init psci_0_1_init(struct device_node *np)
 		return err;
 
 	pr_info("Using PSCI v0.1 Function IDs from DT\n");
+
+	psci_driver_version = PSCI_VERSION(0, 1);
 
 	if (!of_property_read_u32(np, "cpu_suspend", &id)) {
 		psci_function_id[PSCI_FN_CPU_SUSPEND] = id;

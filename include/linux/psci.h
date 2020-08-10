@@ -21,6 +21,14 @@ bool psci_power_state_is_valid(u32 state);
 int psci_set_osi_mode(void);
 bool psci_has_osi_support(void);
 
+/**
+ * The version of the PSCI specification followed by the driver.
+ * This is equivalent to calling PSCI_VERSION except:
+ *   (a) it also works for PSCI v0.1, which does not support PSCI_VERSION, and
+ *   (b) it is set to v0.0 if the PSCI driver was not initialized.
+ */
+extern int psci_driver_version;
+
 struct psci_operations {
 	u32 (*get_version)(void);
 	int (*cpu_suspend)(u32 state, unsigned long entry_point);
