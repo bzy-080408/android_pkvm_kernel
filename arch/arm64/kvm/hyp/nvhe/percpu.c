@@ -10,6 +10,16 @@
 
 #include <nvhe/memory.h>
 
+/* nVHE copy of data structures tracking available CPU cores. */
+u64 __cpu_logical_map[NR_CPUS];
+
+u64 cpu_logical_map(int cpu) {
+	if (cpu < 0 || cpu >= ARRAY_SIZE(__cpu_logical_map))
+		hyp_panic();
+
+	return __cpu_logical_map[cpu];
+}
+
 unsigned long __hyp_per_cpu_offset(unsigned int cpu)
 {
 	unsigned long *cpu_base_array;

@@ -1469,6 +1469,21 @@ static inline void hyp_cpu_pm_exit(void)
 }
 #endif
 
+static void init_cpu_logical_map(void)
+{
+	extern u64 kvm_nvhe_sym(__cpu_logical_map)[NR_CPUS];
+
+	size_t orig_total_size = sizeof(__cpu_logical_map);
+	size_t nvhe_total_size = sizeof(CHOOSE_NVHE_SYM(__cpu_logical_map));
+	size_t orig_elem_size = sizeof(__cpu_logical_map[0]);
+	size_t nvhe_elem_size = sizeof(CHOOSE_NVHE_SYM(__cpu_logical_map)[0]);
+
+	BUILD_BUG_ON(orig_total_size != nvhe_total_size);
+	BUILD_BUG_ON(orig_elem_size != nvhe_elem_size);
+
+	memcpy(CHOOSE_NVHE_SYM(__cpu_logical_map), __cpu_logical_map, orig_total_size);
+}
+
 static int init_common_resources(void)
 {
 	return kvm_set_ipa_limit();
@@ -1671,6 +1686,8 @@ static int init_hyp_mode(void)
 			goto out_err;
 		}
 	}
+
+	init_cpu_logical_map();
 
 	/*
 	 * Jump to EL2, and do the actual hyp setup
