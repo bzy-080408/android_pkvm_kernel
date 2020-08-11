@@ -43,6 +43,19 @@ static bool is_psci_0_2_fn64_call(u64 func_id)
 	return (func_id & ~PSCI_0_2_FN_ID_MASK) == PSCI_0_2_FN64_BASE;
 }
 
+static unsigned long psci_call(unsigned long fn, unsigned long arg0,
+			       unsigned long arg1, unsigned long arg2)
+{
+	struct arm_smccc_res res;
+	arm_smccc_1_1_smc(fn, arg0, arg1, arg2, &res);
+	return res.a0;
+}
+
+static unsigned int psci_version(void)
+{
+	return (unsigned int)psci_call(PSCI_0_2_FN_PSCI_VERSION, 0, 0, 0);
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -68,6 +81,8 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 		psci_narrow_to_32bit(host_ctxt);
 
 	switch (func_id) {
+	case PSCI_0_2_FN_PSCI_VERSION:
+		return psci_version();
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
