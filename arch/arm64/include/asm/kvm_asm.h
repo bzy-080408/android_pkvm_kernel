@@ -158,6 +158,9 @@ struct kvm_nvhe_init_params {
 	unsigned long tpidr_el2;
 	unsigned long hyp_stack_ptr;
 	unsigned long vector_ptr;
+#ifdef CONFIG_ARM_PSCI_FW
+	unsigned long psci_cpu_start_fn;
+#endif
 };
 
 /* Translate a kernel address @ptr into its equivalent linear mapping */

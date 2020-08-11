@@ -114,6 +114,9 @@ int main(void)
   DEFINE(NVHE_INIT_TPIDR_EL2,	offsetof(struct kvm_nvhe_init_params, tpidr_el2));
   DEFINE(NVHE_INIT_STACK_PTR,	offsetof(struct kvm_nvhe_init_params, hyp_stack_ptr));
   DEFINE(NVHE_INIT_VECTOR_PTR,	offsetof(struct kvm_nvhe_init_params, vector_ptr));
+#ifdef CONFIG_ARM_PSCI_FW
+  DEFINE(NVHE_INIT_PSCI_CPU_ENTRY_FN,	offsetof(struct kvm_nvhe_init_params, psci_cpu_start_fn));
+#endif
 #endif
 #ifdef CONFIG_CPU_PM
   DEFINE(CPU_CTX_SP,		offsetof(struct cpu_suspend_ctx, sp));

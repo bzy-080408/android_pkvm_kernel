@@ -97,6 +97,7 @@ void deactivate_traps_vhe_put(void);
 u64 __guest_enter(struct kvm_vcpu *vcpu);
 
 #ifdef __KVM_NVHE_HYPERVISOR__
+void kvm_host_psci_cpu_init(struct kvm_cpu_context *host_ctxt);
 bool kvm_host_is_psci_call(struct kvm_cpu_context *host_ctxt);
 void kvm_host_psci_handler(struct kvm_cpu_context *host_ctxt);
 #endif

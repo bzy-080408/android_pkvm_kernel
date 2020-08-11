@@ -1322,6 +1322,9 @@ static int kvm_map_vectors(void)
 
 static void cpu_init_hyp_mode(unsigned long hyp_stack_ptr)
 {
+#ifdef CONFIG_ARM_PSCI_FW
+	DECLARE_KVM_NVHE_SYM(kvm_host_psci_cpu_init);
+#endif
 	struct kvm_nvhe_init_params *params = this_cpu_ptr_nvhe_sym(kvm_init_params);
 	struct arm_smccc_res res;
 
@@ -1339,6 +1342,11 @@ static void cpu_init_hyp_mode(unsigned long hyp_stack_ptr)
 	params->pgd_ptr = kvm_mmu_get_httbr();
 	params->vector_ptr = (unsigned long)kern_hyp_va(kvm_ksym_ref(__kvm_hyp_host_vector));
 	params->hyp_stack_ptr = hyp_stack_ptr;
+
+#ifdef CONFIG_ARM_PSCI_FW
+	params->psci_cpu_start_fn =
+		(unsigned long)kern_hyp_va(&CHOOSE_NVHE_SYM(kvm_host_psci_cpu_init));
+#endif
 
 	/*
 	 * Flush the init params from the data cache because the struct will

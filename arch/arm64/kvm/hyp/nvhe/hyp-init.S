@@ -60,16 +60,50 @@ __do_hyp_init:
 	mov	x0, #SMCCC_RET_NOT_SUPPORTED
 	eret
 
-1:	ldr	x0, [x1, #NVHE_INIT_TPIDR_EL2]
-	msr	tpidr_el2, x0
+1:	mov	x0, x1
+	mov	x4, lr /* preserve */
+	bl	__kvm_hyp_init_common
+	mov	lr, x4
 
-	ldr	x0, [x1, #NVHE_INIT_STACK_PTR]
+	/* Hello, World! */
+	mov	x0, #SMCCC_RET_SUCCESS
+	eret
+SYM_CODE_END(__kvm_hyp_init)
+
+#ifdef CONFIG_ARM_PSCI_FW
+SYM_CODE_START(__kvm_hyp_cpu_entry)
+	mov	x10, x0
+
+	msr	SPsel, #1			// We want to use SP_EL{1,2}
+	mov_q	x0, (SCTLR_EL2_RES1 | ENDIAN_SET_EL2)
+	msr	sctlr_el2, x0
+
+	/* Basic CPU state setup for EL2. */
+	bl	hyp_setup
+
+	/* Enable MMU, set vectors and stack. */
+	mov	x0, x10
+	bl	__kvm_hyp_init_common
+
+	/* Jump to C handler before ERET to host. */
+	get_host_ctxt	x0, x1
+	ldr	x1, [x10, #NVHE_INIT_PSCI_CPU_ENTRY_FN]
+	br	x1
+SYM_CODE_END(__kvm_hyp_cpu_entry)
+#endif // CONFIG_ARM_PSCI_FW
+
+// Can only modify x0-x3
+SYM_CODE_START(__kvm_hyp_init_common)
+1:	ldr	x1, [x0, #NVHE_INIT_TPIDR_EL2]
+	msr	tpidr_el2, x1
+
+	ldr	x1, [x0, #NVHE_INIT_STACK_PTR]
 	mov	sp, x0
 
-	ldr	x0, [x1, #NVHE_INIT_VECTOR_PTR]
-	msr	vbar_el2, x0
+	ldr	x1, [x0, #NVHE_INIT_VECTOR_PTR]
+	msr	vbar_el2, x1
 
-	ldr	x1, [x1, #NVHE_INIT_PGD_PTR]
+	ldr	x1, [x0, #NVHE_INIT_PGD_PTR]
 	phys_to_ttbr x0, x1
 alternative_if ARM64_HAS_CNP
 	orr	x0, x0, #TTBR_CNP_BIT
@@ -129,10 +163,8 @@ alternative_else_nop_endif
 	msr	sctlr_el2, x0
 	isb
 
-	/* Hello, World! */
-	mov	x0, #SMCCC_RET_SUCCESS
-	eret
-SYM_CODE_END(__kvm_hyp_init)
+	ret
+SYM_CODE_END(__kvm_hyp_init_common)
 
 SYM_CODE_START(__kvm_handle_stub_hvc)
 	cmp	x0, #HVC_SOFT_RESTART

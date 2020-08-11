@@ -13,7 +13,10 @@
 #include <kvm/arm_psci.h>
 #include <uapi/linux/psci.h>
 
+#include <nvhe/memory.h>
 #include <nvhe/spinlock.h>
+
+#define INVALID_CPU_ID UINT_MAX
 
 /* Config options set by the host. */
 u32 kvm_host_psci_version = PSCI_VERSION(0, 0);
@@ -28,6 +31,8 @@ enum kvm_host_cpu_power_state {
 struct kvm_host_psci_cpu {
 	nvhe_spinlock_t lock;
 	enum kvm_host_cpu_power_state power_state;
+
+	struct vcpu_reset_state reset_state;
 };
 
 static DEFINE_PER_CPU(struct kvm_host_psci_cpu, kvm_psci_host_cpu) =
@@ -70,6 +75,29 @@ static unsigned long psci_call(unsigned long fn, unsigned long arg0,
 	return res.a0;
 }
 
+static unsigned int find_cpu_id(u64 mpidr)
+{
+	unsigned int i;
+
+	if (mpidr != INVALID_HWID) {
+		for (i = 0; i < nr_cpu_ids; i++) {
+			if (cpu_logical_map(i) == mpidr)
+				return i;
+		}
+	}
+
+	return INVALID_CPU_ID;
+}
+
+static phys_addr_t cpu_entry_pa(void)
+{
+	extern char __kvm_hyp_cpu_entry[];
+	unsigned long kern_va;
+
+	asm volatile("ldr %0, =%1" : "=r" (kern_va) : "S" (__kvm_hyp_cpu_entry));
+	return kern_va - kimage_voffset;
+}
+
 static unsigned int psci_version(void)
 {
 	return (unsigned int)psci_call(PSCI_0_2_FN_PSCI_VERSION, 0, 0, 0);
@@ -101,6 +129,63 @@ static int psci_cpu_off(struct kvm_cpu_context *host_ctxt)
 	return ret;
 }
 
+static int psci_cpu_on(struct kvm_cpu_context *host_ctxt)
+{
+	u64 mpidr = host_ctxt->regs.regs[1] & MPIDR_HWID_BITMASK;
+	unsigned long pc = host_ctxt->regs.regs[2];
+	unsigned long r0 = host_ctxt->regs.regs[3];
+	unsigned int target_cpu_id;
+	struct kvm_host_psci_cpu *target_cpu;
+	struct kvm_nvhe_init_params *target_init_params;
+	int ret;
+
+	target_cpu_id = find_cpu_id(mpidr);
+	if (target_cpu_id == INVALID_CPU_ID)
+		return PSCI_RET_INVALID_PARAMS;
+
+	target_cpu = per_cpu_ptr(&kvm_psci_host_cpu, target_cpu_id);
+	target_init_params = per_cpu_ptr(&kvm_init_params, target_cpu_id);
+
+	do {
+		nvhe_spin_lock(&target_cpu->lock);
+
+		if (target_cpu->power_state != KVM_HOST_CPU_POWER_OFF) {
+			if (kvm_host_psci_version == PSCI_VERSION(0, 1))
+				ret = PSCI_RET_INVALID_PARAMS;
+			else if (target_cpu->power_state == KVM_HOST_CPU_POWER_ON)
+				ret = PSCI_RET_ALREADY_ON;
+			else
+				ret = PSCI_RET_ON_PENDING;
+			nvhe_spin_unlock(&target_cpu->lock);
+			return ret;
+		}
+
+		target_cpu->reset_state = (struct vcpu_reset_state){
+			.pc = pc,
+			.r0 = r0,
+			.reset = true,
+		};
+
+		ret = psci_call(kvm_host_psci_function_id[PSCI_FN_CPU_ON],
+				mpidr,
+				cpu_entry_pa(),
+				__hyp_pa(target_init_params));
+
+		if (ret == PSCI_RET_SUCCESS)
+			target_cpu->power_state = KVM_HOST_CPU_POWER_PENDING_ON;
+
+		nvhe_spin_unlock(&target_cpu->lock);
+
+		/*
+		 * If recorded CPU state is OFF but EL3 reports that it's ON,
+		 * we must have hit a race with CPU_OFF on the target core.
+		 * Loop to try again.
+		 */
+	} while (ret == PSCI_RET_ALREADY_ON);
+
+	return ret;
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -118,6 +203,8 @@ static unsigned long psci_0_1_handler(struct kvm_cpu_context *host_ctxt)
 	// TODO: Need to narrow here?
 	if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_OFF])
 		return psci_cpu_off(host_ctxt);
+	else if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_ON])
+		return psci_cpu_on(host_ctxt);
 	else
 		return PSCI_RET_NOT_SUPPORTED;
 }
@@ -134,6 +221,8 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 		return psci_version();
 	case PSCI_0_2_FN_CPU_OFF:
 		return psci_cpu_off(host_ctxt);
+	case PSCI_0_2_FN64_CPU_ON:
+		return psci_cpu_on(host_ctxt);
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
@@ -158,6 +247,26 @@ static unsigned long psci_1_0_handler(struct kvm_cpu_context *host_ctxt)
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
+}
+
+void __noreturn __host_enter(struct kvm_cpu_context *host_ctxt);
+
+void kvm_host_psci_cpu_init(struct kvm_cpu_context *host_ctxt)
+{
+	struct kvm_host_psci_cpu *host_cpu = this_cpu_ptr(&kvm_psci_host_cpu);
+
+	nvhe_spin_lock(&host_cpu->lock);
+	if (host_cpu->reset_state.reset) {
+		/* XXX - need a full wipe here? */
+		host_ctxt->regs.regs[0] = host_cpu->reset_state.r0;
+		host_ctxt->regs.pc = host_cpu->reset_state.pc;
+		host_cpu->reset_state.reset = false;
+		write_sysreg_el2(host_ctxt->regs.pc, SYS_ELR);
+	}
+	host_cpu->power_state = KVM_HOST_CPU_POWER_ON;
+	nvhe_spin_unlock(&host_cpu->lock);
+
+	__host_enter(host_ctxt);
 }
 
 bool kvm_host_is_psci_call(struct kvm_cpu_context *host_ctxt)
