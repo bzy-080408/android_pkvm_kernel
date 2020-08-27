@@ -30,9 +30,11 @@ typedef union nvhe_spinlock {
 #endif
 } nvhe_spinlock_t;
 
-#define nvhe_spin_lock_init(l)						\
-do {									\
-	*(l) = (nvhe_spinlock_t){ .__val = 0 };				\
+#define NVHE_SPIN_LOCK_INIT ((nvhe_spinlock_t){ .__val = 0 })
+
+#define nvhe_spin_lock_init(l)		\
+do {					\
+	*(l) = NVHE_SPIN_LOCK_INIT;	\
 } while (0)
 
 static inline void nvhe_spin_lock(nvhe_spinlock_t *lock)
