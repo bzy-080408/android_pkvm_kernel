@@ -153,6 +153,13 @@ extern void *__vhe_undefined_symbol;
 
 #endif
 
+struct kvm_nvhe_init_params {
+	phys_addr_t pgd_ptr;
+	unsigned long tpidr_el2;
+	unsigned long hyp_stack_ptr;
+	unsigned long vector_ptr;
+};
+
 /* Translate a kernel address @ptr into its equivalent linear mapping */
 #define kvm_ksym_ref(ptr)						\
 	({								\
