@@ -1503,8 +1503,10 @@ static void init_psci(void)
 {
 	extern u32 kvm_nvhe_sym(kvm_host_psci_version);
 	extern u32 kvm_nvhe_sym(kvm_host_psci_function_id)[PSCI_FN_MAX];
+	extern u32 kvm_nvhe_sym(kvm_host_psci_cpu_suspend_feature);
 
 	kvm_nvhe_sym(kvm_host_psci_version) = psci_driver_version;
+	kvm_nvhe_sym(kvm_host_psci_cpu_suspend_feature) = psci_cpu_suspend_feature;
 	memcpy(kvm_nvhe_sym(kvm_host_psci_function_id),
 		psci_function_id, sizeof(psci_function_id));
 }

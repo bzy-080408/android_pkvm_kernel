@@ -21,6 +21,7 @@
 /* Config options set by the host. */
 u32 kvm_host_psci_version = PSCI_VERSION(0, 0);
 u32 kvm_host_psci_function_id[PSCI_FN_MAX];
+u32 kvm_host_psci_cpu_suspend_feature;
 
 enum kvm_host_cpu_power_state {
 	KVM_HOST_CPU_POWER_OFF = 0,
@@ -75,6 +76,20 @@ static unsigned long psci_call(unsigned long fn, unsigned long arg0,
 	return res.a0;
 }
 
+static bool psci_has_ext_power_state(void)
+{
+	return kvm_host_psci_cpu_suspend_feature & PSCI_1_0_FEATURES_CPU_SUSPEND_PF_MASK;
+}
+
+static bool psci_power_state_loses_context(u32 state)
+{
+	const u32 mask = psci_has_ext_power_state() ?
+					PSCI_1_0_EXT_POWER_STATE_TYPE_MASK :
+					PSCI_0_2_POWER_STATE_TYPE_MASK;
+
+	return state & mask;
+}
+
 static unsigned int find_cpu_id(u64 mpidr)
 {
 	unsigned int i;
@@ -108,6 +123,43 @@ static int psci_features(struct kvm_cpu_context *host_ctxt)
 	u32 psci_func_id = (u32)host_ctxt->regs.regs[1];
 
 	return (int)psci_call(PSCI_1_0_FN_PSCI_FEATURES, psci_func_id, 0, 0);
+}
+
+static int psci_cpu_suspend(struct kvm_cpu_context *host_ctxt)
+{
+	u64 state = host_ctxt->regs.regs[1];
+	unsigned long pc = host_ctxt->regs.regs[1];
+	unsigned long r0 = host_ctxt->regs.regs[2];
+	struct kvm_host_psci_cpu *host_cpu = this_cpu_ptr(&kvm_psci_host_cpu);
+	struct kvm_nvhe_init_params *init_params = this_cpu_ptr(&kvm_init_params);
+	int ret;
+
+	if (!psci_power_state_loses_context(state)) {
+		// Resuming from this state has the same semantics as WFI.
+		return (int)psci_call(PSCI_0_2_FN64_CPU_SUSPEND, 0, 0, 0);
+	}
+
+	/* If successful, resuming from this state has the same semantics as CPU_ON. */
+	nvhe_spin_lock(&host_cpu->lock);
+	host_cpu->reset_state = (struct vcpu_reset_state){
+		.pc = pc,
+		.r0 = r0,
+		.reset = true,
+	};
+	nvhe_spin_unlock(&host_cpu->lock);
+
+	ret = (int)psci_call(kvm_host_psci_function_id[PSCI_FN_CPU_SUSPEND],
+			     state,
+			     cpu_entry_pa(),
+			     __hyp_pa(init_params));
+
+	nvhe_spin_lock(&host_cpu->lock);
+	host_cpu->reset_state = (struct vcpu_reset_state){
+		.reset = false,
+	};
+	nvhe_spin_unlock(&host_cpu->lock);
+
+	return ret;
 }
 
 static int psci_cpu_off(struct kvm_cpu_context *host_ctxt)
@@ -231,7 +283,9 @@ static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 static unsigned long psci_0_1_handler(struct kvm_cpu_context *host_ctxt)
 {
 	// TODO: Need to narrow here?
-	if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_OFF])
+	if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_SUSPEND])
+		return psci_cpu_suspend(host_ctxt);
+	else if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_OFF])
 		return psci_cpu_off(host_ctxt);
 	else if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_ON])
 		return psci_cpu_on(host_ctxt);
@@ -249,6 +303,8 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 	switch (func_id) {
 	case PSCI_0_2_FN_PSCI_VERSION:
 		return psci_version();
+	case PSCI_0_2_FN64_CPU_SUSPEND:
+		return psci_cpu_suspend(host_ctxt);
 	case PSCI_0_2_FN_CPU_OFF:
 		return psci_cpu_off(host_ctxt);
 	case PSCI_0_2_FN64_CPU_ON:

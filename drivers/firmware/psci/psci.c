@@ -62,15 +62,6 @@ static psci_fn *invoke_psci_fn;
 
 u32 psci_function_id[PSCI_FN_MAX];
 
-#define PSCI_0_2_POWER_STATE_MASK		\
-				(PSCI_0_2_POWER_STATE_ID_MASK | \
-				PSCI_0_2_POWER_STATE_TYPE_MASK | \
-				PSCI_0_2_POWER_STATE_AFFL_MASK)
-
-#define PSCI_1_0_EXT_POWER_STATE_MASK		\
-				(PSCI_1_0_EXT_POWER_STATE_ID_MASK | \
-				PSCI_1_0_EXT_POWER_STATE_TYPE_MASK)
-
 u32 psci_cpu_suspend_feature;
 static bool psci_system_reset2_supported;
 
