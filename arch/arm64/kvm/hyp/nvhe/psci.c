@@ -13,9 +13,28 @@
 #include <kvm/arm_psci.h>
 #include <uapi/linux/psci.h>
 
+#include <nvhe/spinlock.h>
+
 /* Config options set by the host. */
 u32 kvm_host_psci_version = PSCI_VERSION(0, 0);
 u32 kvm_host_psci_function_id[PSCI_FN_MAX];
+
+enum kvm_host_cpu_power_state {
+	KVM_HOST_CPU_POWER_OFF = 0,
+	KVM_HOST_CPU_POWER_PENDING_ON,
+	KVM_HOST_CPU_POWER_ON,
+};
+
+struct kvm_host_psci_cpu {
+	nvhe_spinlock_t lock;
+	enum kvm_host_cpu_power_state power_state;
+};
+
+static DEFINE_PER_CPU(struct kvm_host_psci_cpu, kvm_psci_host_cpu) =
+	(struct kvm_host_psci_cpu){
+		.lock = NVHE_SPIN_LOCK_INIT,
+		.power_state = KVM_HOST_CPU_POWER_OFF,
+	};
 
 static u64 get_psci_func_id(struct kvm_cpu_context *host_ctxt)
 {
@@ -63,6 +82,25 @@ static int psci_features(struct kvm_cpu_context *host_ctxt)
 	return (int)psci_call(PSCI_1_0_FN_PSCI_FEATURES, psci_func_id, 0, 0);
 }
 
+static int psci_cpu_off(struct kvm_cpu_context *host_ctxt)
+{
+	u64 func_id = get_psci_func_id(host_ctxt);
+	u32 state = host_ctxt->regs.regs[1];
+	struct kvm_host_psci_cpu *host_cpu = this_cpu_ptr(&kvm_psci_host_cpu);
+	int ret;
+
+	nvhe_spin_lock(&host_cpu->lock);
+	host_cpu->power_state = KVM_HOST_CPU_POWER_OFF;
+	nvhe_spin_unlock(&host_cpu->lock);
+
+	ret = psci_call(func_id, state, 0, 0);
+
+	nvhe_spin_lock(&host_cpu->lock);
+	host_cpu->power_state = KVM_HOST_CPU_POWER_ON;
+	nvhe_spin_unlock(&host_cpu->lock);
+	return ret;
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -77,7 +115,11 @@ static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 
 static unsigned long psci_0_1_handler(struct kvm_cpu_context *host_ctxt)
 {
-	return PSCI_RET_NOT_SUPPORTED;
+	// TODO: Need to narrow here?
+	if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_OFF])
+		return psci_cpu_off(host_ctxt);
+	else
+		return PSCI_RET_NOT_SUPPORTED;
 }
 
 static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
@@ -90,6 +132,8 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 	switch (func_id) {
 	case PSCI_0_2_FN_PSCI_VERSION:
 		return psci_version();
+	case PSCI_0_2_FN_CPU_OFF:
+		return psci_cpu_off(host_ctxt);
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
