@@ -186,6 +186,36 @@ static int psci_cpu_on(struct kvm_cpu_context *host_ctxt)
 	return ret;
 }
 
+static int psci_affinity_info(struct kvm_cpu_context *host_ctxt)
+{
+	u64 mpidr = host_ctxt->regs.regs[1] & MPIDR_HWID_BITMASK;
+	unsigned long affinity_level = host_ctxt->regs.regs[2];
+	unsigned int target_cpu_id;
+	struct kvm_host_psci_cpu *target_cpu;
+
+	/* The PSCI host driver only ever queries about level zero. */
+	if (affinity_level != 0)
+		return PSCI_RET_INVALID_PARAMS;
+
+	target_cpu_id = find_cpu_id(mpidr);
+
+	if (target_cpu_id == INVALID_CPU_ID)
+		return PSCI_RET_INVALID_PARAMS;
+
+	target_cpu = per_cpu_ptr(&kvm_psci_host_cpu, target_cpu_id);
+
+	switch (target_cpu->power_state) {
+	case KVM_HOST_CPU_POWER_OFF:
+		return PSCI_0_2_AFFINITY_LEVEL_OFF;
+	case KVM_HOST_CPU_POWER_PENDING_ON:
+		return PSCI_0_2_AFFINITY_LEVEL_ON_PENDING;
+	case KVM_HOST_CPU_POWER_ON:
+		return PSCI_0_2_AFFINITY_LEVEL_ON;
+	default:
+		hyp_panic();
+	}
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -223,6 +253,8 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 		return psci_cpu_off(host_ctxt);
 	case PSCI_0_2_FN64_CPU_ON:
 		return psci_cpu_on(host_ctxt);
+	case PSCI_0_2_FN64_AFFINITY_INFO:
+		return psci_affinity_info(host_ctxt);
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
