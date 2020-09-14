@@ -146,13 +146,16 @@ static void forward_host_smc(struct kvm_cpu_context *host_ctxt)
 
 static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 {
-	struct arm_smccc_res res;
-
 	/* Move the host's PC past the SMC instruction. */
 	host_ctxt->regs.pc += 4;
 
-	/* Forward SMCs not handled in hyp to EL2. */
-	forward_host_smc(host_ctx);
+	if (kvm_host_is_psci_call(host_ctxt)) {
+		/* Handle host's PSCI SMCs. */
+		kvm_host_psci_handler(host_ctxt);
+	} else {
+		/* Forward SMCs not handled in hyp to EL2. */
+		forward_host_smc(host_ctxt);
+	}
 }
 
 void handle_trap(struct kvm_cpu_context *host_ctxt)

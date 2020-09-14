@@ -19,6 +19,7 @@
 #include <linux/kvm_irqfd.h>
 #include <linux/irqbypass.h>
 #include <linux/sched/stat.h>
+#include <linux/psci.h>
 #include <trace/events/kvm.h>
 
 #define CREATE_TRACE_POINTS
@@ -1489,6 +1490,20 @@ static void init_cpu_logical_map(void)
 	memcpy(CHOOSE_NVHE_SYM(__cpu_logical_map), __cpu_logical_map, orig_total_size);
 }
 
+#ifdef CONFIG_ARM_PSCI_FW
+static void init_psci(void)
+{
+	extern u32 kvm_nvhe_sym(kvm_host_psci_version);
+	extern u32 kvm_nvhe_sym(kvm_host_psci_function_id)[PSCI_FN_MAX];
+
+	kvm_nvhe_sym(kvm_host_psci_version) = psci_driver_version;
+	memcpy(kvm_nvhe_sym(kvm_host_psci_function_id),
+		psci_function_id, sizeof(psci_function_id));
+}
+#else
+static void init_psci(void) {}
+#endif
+
 static int init_common_resources(void)
 {
 	return kvm_set_ipa_limit();
@@ -1693,6 +1708,7 @@ static int init_hyp_mode(void)
 	}
 
 	init_cpu_logical_map();
+	init_psci();
 
 	/*
 	 * Jump to EL2, and do the actual hyp setup
