@@ -268,6 +268,27 @@ static int psci_affinity_info(struct kvm_cpu_context *host_ctxt)
 	}
 }
 
+static int __noreturn psci_system_off(void)
+{
+	psci_call(PSCI_0_2_FN_SYSTEM_OFF, 0, 0, 0);
+	hyp_panic(); /* unreachable */
+}
+
+static int __noreturn psci_system_reset(void)
+{
+	psci_call(PSCI_0_2_FN_SYSTEM_RESET, 0, 0, 0);
+	hyp_panic(); /* unreachable */
+}
+
+static int psci_system_reset2(struct kvm_cpu_context *host_ctxt)
+{
+	u32 reset_type = (u32)host_ctxt->regs.regs[1];
+	u64 cookie = host_ctxt->regs.regs[2];
+
+	/* Returns either NOT_SUPPORTED or INVALID_PARAMETERS. */
+	return psci_call(PSCI_1_1_FN64_SYSTEM_RESET2, reset_type, cookie, 0);
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -311,6 +332,12 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 		return psci_cpu_on(host_ctxt);
 	case PSCI_0_2_FN64_AFFINITY_INFO:
 		return psci_affinity_info(host_ctxt);
+	case PSCI_0_2_FN_SYSTEM_OFF:
+		psci_system_off();
+		unreachable();
+	case PSCI_0_2_FN_SYSTEM_RESET:
+		psci_system_reset();
+		unreachable();
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
@@ -332,6 +359,8 @@ static unsigned long psci_1_0_handler(struct kvm_cpu_context *host_ctxt)
 	switch (get_psci_func_id(host_ctxt)) {
 	case PSCI_1_0_FN_PSCI_FEATURES:
 		return psci_features(host_ctxt);
+	case PSCI_1_1_FN64_SYSTEM_RESET2:
+		return psci_system_reset2(host_ctxt);
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
