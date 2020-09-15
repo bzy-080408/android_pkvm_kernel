@@ -56,6 +56,13 @@ static unsigned int psci_version(void)
 	return (unsigned int)psci_call(PSCI_0_2_FN_PSCI_VERSION, 0, 0, 0);
 }
 
+static int psci_features(struct kvm_cpu_context *host_ctxt)
+{
+	u32 psci_func_id = (u32)host_ctxt->regs.regs[1];
+
+	return (int)psci_call(PSCI_1_0_FN_PSCI_FEATURES, psci_func_id, 0, 0);
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -102,6 +109,8 @@ static unsigned long psci_1_0_handler(struct kvm_cpu_context *host_ctxt)
 	 */
 
 	switch (get_psci_func_id(host_ctxt)) {
+	case PSCI_1_0_FN_PSCI_FEATURES:
+		return psci_features(host_ctxt);
 	default:
 		return PSCI_RET_NOT_SUPPORTED;
 	}
