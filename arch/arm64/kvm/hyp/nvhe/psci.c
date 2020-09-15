@@ -289,6 +289,13 @@ static int psci_system_reset2(struct kvm_cpu_context *host_ctxt)
 	return psci_call(PSCI_1_1_FN64_SYSTEM_RESET2, reset_type, cookie, 0);
 }
 
+static int psci_set_suspend_mode(struct kvm_cpu_context *host_ctxt)
+{
+	bool osi_mode = (bool)host_ctxt->regs.regs[1];
+
+	return psci_call(PSCI_1_0_FN_SET_SUSPEND_MODE, osi_mode, 0, 0);
+}
+
 static void psci_narrow_to_32bit(struct kvm_cpu_context *cpu_ctxt)
 {
 	int i;
@@ -359,6 +366,8 @@ static unsigned long psci_1_0_handler(struct kvm_cpu_context *host_ctxt)
 	switch (get_psci_func_id(host_ctxt)) {
 	case PSCI_1_0_FN_PSCI_FEATURES:
 		return psci_features(host_ctxt);
+	case PSCI_1_0_FN_SET_SUSPEND_MODE:
+		return psci_set_suspend_mode(host_ctxt);
 	case PSCI_1_1_FN64_SYSTEM_RESET2:
 		return psci_system_reset2(host_ctxt);
 	default:
