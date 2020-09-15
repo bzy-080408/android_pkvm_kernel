@@ -268,6 +268,27 @@ static int psci_affinity_info(struct kvm_cpu_context *host_ctxt)
 	}
 }
 
+static int psci_migrate(struct kvm_cpu_context *host_ctxt)
+{
+	u64 mpidr = host_ctxt->regs.regs[1] & MPIDR_HWID_BITMASK;
+
+	return psci_call(kvm_host_psci_function_id[PSCI_FN_MIGRATE], mpidr, 0, 0);
+}
+
+static int psci_migrate_info_type(void)
+{
+	return psci_call(PSCI_0_2_FN_MIGRATE_INFO_TYPE, 0, 0, 0);
+}
+
+/*
+ * Note that unlike other PSCI calls, MIGRATE_INFO_UP_CPU returns a u64.
+ * Fortunately PSCI error codes are not valid MPIDR values.
+ */
+static u64 psci_migrate_info_up_cpu(void)
+{
+	return psci_call(PSCI_0_2_FN64_MIGRATE_INFO_UP_CPU, 0, 0, 0);
+}
+
 static int __noreturn psci_system_off(void)
 {
 	psci_call(PSCI_0_2_FN_SYSTEM_OFF, 0, 0, 0);
@@ -317,6 +338,8 @@ static unsigned long psci_0_1_handler(struct kvm_cpu_context *host_ctxt)
 		return psci_cpu_off(host_ctxt);
 	else if (func_id == kvm_host_psci_function_id[PSCI_FN_CPU_ON])
 		return psci_cpu_on(host_ctxt);
+	else if (func_id == kvm_host_psci_function_id[PSCI_FN_MIGRATE])
+		return psci_migrate(host_ctxt);
 	else
 		return PSCI_RET_NOT_SUPPORTED;
 }
@@ -339,6 +362,12 @@ static unsigned long psci_0_2_handler(struct kvm_cpu_context *host_ctxt)
 		return psci_cpu_on(host_ctxt);
 	case PSCI_0_2_FN64_AFFINITY_INFO:
 		return psci_affinity_info(host_ctxt);
+	case PSCI_0_2_FN64_MIGRATE:
+		return psci_migrate(host_ctxt);
+	case PSCI_0_2_FN_MIGRATE_INFO_TYPE:
+		return psci_migrate_info_type();
+	case PSCI_0_2_FN64_MIGRATE_INFO_UP_CPU:
+		return psci_migrate_info_up_cpu();
 	case PSCI_0_2_FN_SYSTEM_OFF:
 		psci_system_off();
 		unreachable();
