@@ -29,12 +29,14 @@ static inline bool force_dma_unencrypted(struct device *dev)
 static inline int set_memory_encrypted(unsigned long addr, int numpages)
 {
 	// TODO: unshare the page from the host
+	trace_printk("0x%lx - 0x%lx\n", addr, addr + numpages * PAGE_SIZE);
 	return 0;
 }
 
 static inline int set_memory_decrypted(unsigned long addr, int numpages)
 {
 	// TODO: share the page with the host
+	trace_printk("0x%lx - 0x%lx\n", addr, addr + numpages * PAGE_SIZE);
 	return 0;
 }
 #endif	/* __ASM_MEM_ENCRYPT_H */
