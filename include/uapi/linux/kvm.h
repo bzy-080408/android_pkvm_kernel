@@ -248,6 +248,8 @@ struct kvm_hyperv_exit {
 #define KVM_EXIT_IOAPIC_EOI       26
 #define KVM_EXIT_HYPERV           27
 #define KVM_EXIT_ARM_NISV         28
+#define KVM_EXIT_DMA_SHARE	  29
+#define KVM_EXIT_DMA_UNSHARE	  30
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -413,6 +415,11 @@ struct kvm_run {
 			__u64 esr_iss;
 			__u64 fault_ipa;
 		} arm_nisv;
+		/* DMA_SHARE/DMA_UNSHARE */
+		struct {
+			__u64 addr;
+			__u64 len;
+		} dma_sharing;
 		/* Fix the size of the union. */
 		char padding[256];
 	};

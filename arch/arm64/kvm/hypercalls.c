@@ -15,6 +15,7 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 	long val = SMCCC_RET_NOT_SUPPORTED;
 	u32 feature;
 	gpa_t gpa;
+	int ret = 1;
 
 	switch (func_id) {
 	case ARM_SMCCC_VERSION_FUNC_ID:
@@ -62,10 +63,24 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		if (gpa != GPA_INVALID)
 			val = gpa;
 		break;
+	case ARM_SMCCC_DMA_SHARE:
+		vcpu->run->exit_reason      = KVM_EXIT_DMA_SHARE;
+		vcpu->run->dma_sharing.addr = smccc_get_arg1(vcpu);
+		vcpu->run->dma_sharing.len  = smccc_get_arg2(vcpu);
+		val = SMCCC_RET_SUCCESS;
+		ret = 0;
+		break;
+	case ARM_SMCCC_DMA_UNSHARE:
+		vcpu->run->exit_reason      = KVM_EXIT_DMA_UNSHARE;
+		vcpu->run->dma_sharing.addr = smccc_get_arg1(vcpu);
+		vcpu->run->dma_sharing.len  = smccc_get_arg2(vcpu);
+		val = SMCCC_RET_SUCCESS;
+		ret = 0;
+		break;
 	default:
 		return kvm_psci_call(vcpu);
 	}
 
 	smccc_set_retval(vcpu, val, 0, 0, 0);
-	return 1;
+	return ret;
 }
