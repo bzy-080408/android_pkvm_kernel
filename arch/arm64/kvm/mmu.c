@@ -1166,10 +1166,12 @@ static int handle_hva_to_gpa(struct kvm *kvm,
 
 static int kvm_unmap_hva_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
 {
+#if 0
 	unsigned flags = *(unsigned *)data;
 	bool may_block = flags & MMU_NOTIFIER_RANGE_BLOCKABLE;
 
 	__unmap_stage2_range(&kvm->arch.mmu, gpa, size, may_block);
+#endif
 	return 0;
 }
 
@@ -1381,6 +1383,44 @@ void kvm_arch_commit_memory_region(struct kvm *kvm,
 	}
 }
 
+static void __will_hack_pin_s2(struct kvm *kvm, struct kvm_memory_slot *slot,
+			       phys_addr_t guest_ipa, hva_t start, hva_t end)
+{
+	struct kvm_mmu_memory_cache cache = { 0, __GFP_ZERO, NULL, };
+	struct kvm_pgtable *pgt = kvm->arch.mmu.pgt;
+
+	pr_info("HACK: pinning guest ipa 0x%llx - 0x%llx\n",
+			guest_ipa, guest_ipa + (end - start));
+
+	while (start < end) {
+		kvm_pfn_t pfn;
+
+		WARN_ON(kvm_mmu_topup_memory_cache(&cache,
+					   kvm_mmu_cache_min_pages(kvm)));
+
+
+		// Yeah, yeah, we should be checking the mmu notifier sequence number
+		pfn = gfn_to_pfn_memslot(slot, guest_ipa >> PAGE_SHIFT);
+
+		spin_lock(&kvm->mmu_lock);
+		clean_dcache_guest_page(pfn, PAGE_SIZE);
+		invalidate_icache_guest_page(pfn, PAGE_SIZE);
+
+		WARN_ON(kvm_pgtable_stage2_map(pgt, guest_ipa, PAGE_SIZE,
+				       __pfn_to_phys(pfn),
+				       KVM_PGTABLE_PROT_R |
+				       KVM_PGTABLE_PROT_W |
+				       KVM_PGTABLE_PROT_X,
+				       &cache));
+		spin_unlock(&kvm->mmu_lock);
+
+		guest_ipa += PAGE_SIZE;
+		start += PAGE_SIZE;
+	}
+
+	kvm_mmu_free_memory_cache(&cache);
+}
+
 int kvm_arch_prepare_memory_region(struct kvm *kvm,
 				   struct kvm_memory_slot *memslot,
 				   const struct kvm_userspace_memory_region *mem,
@@ -1419,6 +1459,7 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	do {
 		struct vm_area_struct *vma = find_vma(current->mm, hva);
 		hva_t vm_start, vm_end;
+		gpa_t gpa;
 
 		if (!vma || vma->vm_start >= reg_end)
 			break;
@@ -1429,11 +1470,10 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		vm_start = max(hva, vma->vm_start);
 		vm_end = min(reg_end, vma->vm_end);
 
-		if (vma->vm_flags & VM_PFNMAP) {
-			gpa_t gpa = mem->guest_phys_addr +
-				    (vm_start - mem->userspace_addr);
-			phys_addr_t pa;
+		gpa = mem->guest_phys_addr + (vm_start - mem->userspace_addr);
 
+		if (vma->vm_flags & VM_PFNMAP) {
+			phys_addr_t pa;
 			pa = (phys_addr_t)vma->vm_pgoff << PAGE_SHIFT;
 			pa += vm_start - vma->vm_start;
 
@@ -1448,6 +1488,8 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 						    writable);
 			if (ret)
 				break;
+		} else {
+			__will_hack_pin_s2(kvm, memslot, gpa, vm_start, vm_end);
 		}
 		hva = vm_end;
 	} while (hva < reg_end);
