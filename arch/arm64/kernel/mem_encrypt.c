@@ -13,26 +13,35 @@
 #include <linux/kernel.h>
 #include <linux/mem_encrypt.h>
 #include <linux/swiotlb.h>
+#include <linux/arm-smccc.h>
 
 int set_memory_encrypted(unsigned long addr, int numpages)
 {
+	struct arm_smccc_res res;
+
 	/* TODO: unshare the page from the host */
 	trace_printk("0x%lx - 0x%lx\n", addr, addr + numpages * PAGE_SIZE);
 	dump_stack();
 	arm_smccc_1_1_invoke(ARM_SMCCC_DMA_UNSHARE,
-			     virt_to_phys((void *)addr),
-			     numpages * PAGE_SIZE);
+			     virt_to_phys((void *)addr), numpages * PAGE_SIZE,
+			     &res);
+	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+
 	return 0;
 }
 
 int set_memory_decrypted(unsigned long addr, int numpages)
 {
+	struct arm_smccc_res res;
+
 	/* TODO: share the page with the host */
 	trace_printk("0x%lx - 0x%lx\n", addr, addr + numpages * PAGE_SIZE);
 	dump_stack();
 	arm_smccc_1_1_invoke(ARM_SMCCC_DMA_SHARE,
-			     virt_to_phys((void *)addr),
-			     numpages * PAGE_SIZE);
+			     virt_to_phys((void *)addr), numpages * PAGE_SIZE,
+			     &res);
+	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+
 	return 0;
 }
 
