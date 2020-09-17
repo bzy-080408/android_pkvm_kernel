@@ -19,6 +19,9 @@ int set_memory_encrypted(unsigned long addr, int numpages)
 	/* TODO: unshare the page from the host */
 	trace_printk("0x%lx - 0x%lx\n", addr, addr + numpages * PAGE_SIZE);
 	dump_stack();
+	arm_smccc_1_1_invoke(ARM_SMCCC_DMA_UNSHARE,
+			     virt_to_phys((void *)addr),
+			     numpages * PAGE_SIZE);
 	return 0;
 }
 
@@ -27,6 +30,9 @@ int set_memory_decrypted(unsigned long addr, int numpages)
 	/* TODO: share the page with the host */
 	trace_printk("0x%lx - 0x%lx\n", addr, addr + numpages * PAGE_SIZE);
 	dump_stack();
+	arm_smccc_1_1_invoke(ARM_SMCCC_DMA_SHARE,
+			     virt_to_phys((void *)addr),
+			     numpages * PAGE_SIZE);
 	return 0;
 }
 
