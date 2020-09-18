@@ -140,6 +140,8 @@ KVM_NVHE_ALIAS(__hyp_bss_end);
 KVM_NVHE_ALIAS(kvm_hyp_debug_uart_set_basep);
 #endif
 
+KVM_NVHE_ALIAS(__flush_dcache_area);
+
 #endif /* CONFIG_KVM */
 
 #endif /* __ARM64_KERNEL_IMAGE_VARS_H */
