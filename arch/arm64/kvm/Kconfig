@@ -68,6 +68,9 @@ choice
 config KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011
 	bool "pl011"
 
+config KVM_ARM_HYP_DEBUG_UART_DRIVER_8250
+	bool "8250"
+
 endchoice
 
 config KVM_ARM_HYP_DEBUG_UART_ADDR

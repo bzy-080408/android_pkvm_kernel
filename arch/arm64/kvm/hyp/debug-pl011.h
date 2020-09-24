@@ -68,6 +68,37 @@ static inline void __hyp_uart_wait_tx_flush(void *base)
 
 #endif /* __ASSEMBLY__ */
 
+#elif defined(CONFIG_KVM_ARM_HYP_DEBUG_UART_DRIVER_8250)
+
+#define HYP_8250_UART_LSR	(5 << 2)
+#define HYP_8250_UART_LSR_TEMT	6
+
+#ifdef __ASSEMBLY__
+
+.macro hyp_uart_wait_tx_ready, tmpnr
+9992:	hyp_uart_base	x\tmpnr
+	ldr		w\tmpnr, [x\tmpnr, HYP_8250_UART_LSR]
+	tbz		w\tmpnr, HYP_8250_UART_LSR_TEMT, 9992b
+.endm
+
+.macro hyp_uart_wait_tx_flush, tmpnr
+.endm
+
+#else /* __ASSEMBLY__ */
+
+static inline void __hyp_uart_wait_tx_ready(void *base)
+{
+	unsigned int val;
+
+	do {
+		val = __hyp_readw(base + HYP_8250_UART_LSR);
+	} while (!(val & (1u << HYP_8250_UART_LSR_TEMT)));
+}
+
+static inline void __hyp_uart_wait_tx_flush(void *base) {}
+
+#endif /* __ASSEMBLY__ */
+
 #endif /* CONFIG_KVM_ARM_HYP_DEBUG_UART_DRIVER_* */
 
 #ifdef __ASSEMBLY__
