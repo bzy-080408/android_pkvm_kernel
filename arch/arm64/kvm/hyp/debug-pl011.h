@@ -17,7 +17,16 @@
 
 #ifdef CONFIG_KVM_ARM_HYP_DEBUG_UART
 
-#define HYP_PL011_BASE_PHYS	CONFIG_KVM_ARM_HYP_DEBUG_UART_ADDR
+#ifndef __ASSEMBLY__
+static inline unsigned int __hyp_readw(void *ioaddr);
+static inline void __hyp_writew(unsigned int val, void *ioaddr);
+#endif /* __ASSEMBLY__ */
+
+/**
+ * UART drivers
+ */
+#if defined(CONFIG_KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011)
+
 #define HYP_PL011_UARTFR	0x18
 
 #define HYP_PL011_UARTFR_BUSY	3
@@ -25,7 +34,45 @@
 
 #ifdef __ASSEMBLY__
 
-.macro hyp_pl011_base, tmp
+.macro hyp_uart_wait_tx_ready, tmpnr
+9992:	hyp_uart_base	x\tmpnr
+	ldr		w\tmpnr, [x\tmpnr, HYP_PL011_UARTFR]
+	tbnz		w\tmpnr, HYP_PL011_UARTFR_FULL, 9992b
+.endm
+
+.macro hyp_uart_wait_tx_flush, tmpnr
+9992:	hyp_uart_base	x\tmpnr
+	ldr		w\tmpnr, [x\tmpnr, HYP_PL011_UARTFR]
+	tbnz		w\tmpnr, HYP_PL011_UARTFR_BUSY, 9992b
+.endm
+
+#else /* __ASSEMBLY__ */
+
+static inline void __hyp_uart_wait_tx_ready(void *base)
+{
+	unsigned int val;
+
+	do {
+		val = __hyp_readw(base + HYP_PL011_UARTFR);
+	} while (val & (1U << HYP_PL011_UARTFR_FULL));
+}
+
+static inline void __hyp_uart_wait_tx_flush(void *base)
+{
+	unsigned int val;
+
+	do {
+		val = __hyp_readw(base + HYP_PL011_UARTFR);
+	} while (val & (1U << HYP_PL011_UARTFR_BUSY));
+}
+
+#endif /* __ASSEMBLY__ */
+
+#endif /* CONFIG_KVM_ARM_HYP_DEBUG_UART_DRIVER_* */
+
+#ifdef __ASSEMBLY__
+
+.macro hyp_uart_base, tmp
 	mrs		\tmp, sctlr_el2
 	tbz		\tmp, #0, 9990f
 	isb
@@ -40,7 +87,7 @@ alternative_cb_end
 	kern_hyp_va	\tmp
 	ldr		\tmp, [\tmp]
 	b		9991f
-9990:	mov		\tmp, HYP_PL011_BASE_PHYS
+9990:	mov		\tmp, CONFIG_KVM_ARM_HYP_DEBUG_UART_ADDR
 9991:
 .endm
 
@@ -49,14 +96,10 @@ alternative_cb_end
  * 'tmpnr' is the number of another scratch register. Clobbered.
  */
 .macro hyp_putc, c, tmpnr
-9992:	hyp_pl011_base	x\tmpnr
-	ldr		w\tmpnr, [x\tmpnr, HYP_PL011_UARTFR]
-	tbnz		w\tmpnr, HYP_PL011_UARTFR_FULL, 9992b
-	hyp_pl011_base	x\tmpnr
+	hyp_uart_wait_tx_ready \tmpnr
+	hyp_uart_base	x\tmpnr
 	str		\c, [x\tmpnr]
-9992:	hyp_pl011_base	x\tmpnr
-	ldr		w\tmpnr, [x\tmpnr, HYP_PL011_UARTFR]
-	tbnz		w\tmpnr, HYP_PL011_UARTFR_BUSY, 9992b
+	hyp_uart_wait_tx_flush \tmpnr
 .endm
 
 /*
@@ -108,9 +151,21 @@ alternative_cb_end
 	hyp_putc	w\tmpnr1, \tmpnr2
 .endm
 
-#else
+#else /* __ASSEMBLY__ */
 
-static inline void *__hyp_pl011_base(void)
+static inline unsigned int __hyp_readw(void *ioaddr)
+{
+	unsigned int val;
+	asm volatile("ldr %w0, [%1]" : "=r" (val) : "r" (ioaddr));
+	return val;
+}
+
+static inline void __hyp_writew(unsigned int val, void *ioaddr)
+{
+	asm volatile("str %w0, [%1]" : : "r" (val), "r" (ioaddr));
+}
+
+static inline void *__hyp_uart_base(void)
 {
 	unsigned long ioaddr;
 
@@ -125,32 +180,13 @@ static inline void *__hyp_pl011_base(void)
 	return *((void **)kern_hyp_va(ioaddr));
 }
 
-static inline unsigned int __hyp_readw(void *ioaddr)
-{
-	unsigned int val;
-	asm volatile("ldr %w0, [%1]" : "=r" (val) : "r" (ioaddr));
-	return val;
-}
-
-static inline void __hyp_writew(unsigned int val, void *ioaddr)
-{
-	asm volatile("str %w0, [%1]" : : "r" (val), "r" (ioaddr));
-}
-
 static inline void hyp_putc(char c)
 {
-	unsigned int val;
-	void *base = __hyp_pl011_base();
+	void *base = __hyp_uart_base();
 
-	do {
-		val = __hyp_readw(base + HYP_PL011_UARTFR);
-	} while (val & (1U << HYP_PL011_UARTFR_FULL));
-
+	__hyp_uart_wait_tx_ready(base);
 	__hyp_writew(c, base);
-
-	do {
-		val = __hyp_readw(base + HYP_PL011_UARTFR);
-	} while (val & (1U << HYP_PL011_UARTFR_BUSY));
+	__hyp_uart_wait_tx_flush(base);
 }
 
 /*

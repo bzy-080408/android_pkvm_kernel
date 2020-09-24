@@ -60,6 +60,16 @@ config KVM_ARM_PMU
 config KVM_ARM_HYP_DEBUG_UART
 	bool "Hack up some basic UART functionality at EL2"
 
+choice
+	prompt "UART driver"
+	depends on KVM_ARM_HYP_DEBUG_UART
+	default KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011
+
+config KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011
+	bool "pl011"
+
+endchoice
+
 config KVM_ARM_HYP_DEBUG_UART_ADDR
 	hex "Physical address of the PL011 for EL2 to use"
 	depends on KVM_ARM_HYP_DEBUG_UART
