@@ -149,6 +149,8 @@ alternative_cb_end
 	b		9993b
 9993:	mov		w\tmpnr1, '\n'
 	hyp_putc	w\tmpnr1, \tmpnr2
+	mov		w\tmpnr1, '\r'
+	hyp_putc	w\tmpnr1, \tmpnr2
 .endm
 
 .macro __hyp_putx4, xnr, tmpnr
@@ -179,6 +181,8 @@ alternative_cb_end
 	ror		x\tmpnr1, x\tmpnr1, #32
 	b		9995b
 9995:	mov		w\tmpnr1, '\n'
+	hyp_putc	w\tmpnr1, \tmpnr2
+	mov		w\tmpnr1, '\r'
 	hyp_putc	w\tmpnr1, \tmpnr2
 .endm
 
@@ -229,6 +233,7 @@ static inline void hyp_puts(char *s)
 	while (*s)
 		hyp_putc(*s++);
 	hyp_putc('\n');
+	hyp_putc('\r');
 }
 
 static inline void __hyp_putx4(unsigned int x)
@@ -252,6 +257,7 @@ static inline void __hyp_putx4n(unsigned long x, int n)
 		__hyp_putx4(x >> (4 * i));
 
 	hyp_putc('\n');
+	hyp_putc('\r');
 }
 
 static inline void hyp_putx32(unsigned int x)
