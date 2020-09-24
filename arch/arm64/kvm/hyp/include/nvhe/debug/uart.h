@@ -18,6 +18,7 @@
 #ifdef CONFIG_KVM_ARM_HYP_DEBUG_UART
 
 #include <nvhe/debug/uart_pl011.h>
+#include <nvhe/debug/uart_8250.h>
 
 #ifdef __ASSEMBLY__
 
