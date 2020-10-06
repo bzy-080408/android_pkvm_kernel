@@ -1801,10 +1801,10 @@ int __pkvm_host_reclaim_page(u64 pfn)
 	}
 
 	switch (kvm_get_owner_id(pte)) {
-	case pkvm_host_id:
+	case PKVM_HOST_ID:
 		ret = 0;
 		break;
-	case pkvm_host_poison:
+	case PKVM_HOST_POISON:
 		ret = hyp_zero_page(addr);
 		if (ret)
 			goto unlock;
