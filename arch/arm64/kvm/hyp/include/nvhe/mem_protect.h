@@ -54,10 +54,14 @@ struct host_kvm {
 };
 extern struct host_kvm host_kvm;
 
+#define PKVM_HOST_ID	0
+#define PKVM_HYP_ID	(1 << 16)
+#define PKVM_FFA_ID	(PKVM_HYP_ID + 1)
+
 typedef u32 pkvm_id;
-static const pkvm_id pkvm_host_id	= 0;
-static const pkvm_id pkvm_hyp_id	= (1 << 16);
-static const pkvm_id pkvm_ffa_id	= pkvm_hyp_id + 1; /* Secure world */
+static const pkvm_id pkvm_host_id	= PKVM_HOST_ID;
+static const pkvm_id pkvm_hyp_id	= PKVM_HYP_ID;
+static const pkvm_id pkvm_host_poison	= PKVM_FFA_ID; /* Secure world */
 
 extern unsigned long hyp_nr_cpus;
 
