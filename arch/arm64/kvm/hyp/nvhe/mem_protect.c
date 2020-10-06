@@ -28,9 +28,13 @@ struct host_kvm host_kvm;
 
 static struct hyp_pool host_s2_pool;
 
-const pkvm_id pkvm_host_id	= 0;
-const pkvm_id pkvm_hyp_id	= (1 << 16);
-const pkvm_id pkvm_host_poison	= pkvm_hyp_id + 1;
+#define PKVM_HOST_ID	0
+#define PKVM_HYP_ID	(1 << 16)
+#define PKVM_HOST_POISON (PKVM_HYP_ID + 1)
+
+const pkvm_id pkvm_host_id	= PKVM_HOST_ID;
+const pkvm_id pkvm_hyp_id	= PKVM_HYP_ID;
+const pkvm_id pkvm_host_poison	= PKVM_HOST_POISON;
 
 static pkvm_id pkvm_guest_id(struct kvm_vcpu *vcpu)
 {
@@ -1814,10 +1818,10 @@ int __pkvm_host_reclaim_page(u64 pfn)
 	}
 
 	switch (kvm_get_owner_id(pte)) {
-	case pkvm_host_id:
+	case PKVM_HOST_ID:
 		ret = 0;
 		break;
-	case pkvm_host_poison:
+	case PKVM_HOST_POISON:
 		ret = hyp_zero_page(addr);
 		if (ret)
 			goto unlock;
