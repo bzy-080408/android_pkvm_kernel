@@ -35,9 +35,10 @@ static int create_hyp_debug_uart_mapping(void)
 {
 	phys_addr_t base = CONFIG_KVM_ARM_HYP_DEBUG_UART_ADDR;
 	unsigned long haddr;
+	int err;
 
-	haddr = __pkvm_create_private_mapping(base, PAGE_SIZE, PAGE_HYP_DEVICE);
-	if (!haddr)
+	err = __pkvm_create_private_mapping(base, PAGE_SIZE, PAGE_HYP_DEVICE, &haddr);
+	if (err)
 		return -1;
 
 	arm64_kvm_hyp_debug_uart_addr = haddr;
