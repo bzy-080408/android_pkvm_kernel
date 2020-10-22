@@ -102,7 +102,7 @@ alternative_else_nop_endif
 
 	msr	tcr_el2, x0
 
-	mrs	x0, mair_el1
+	mov_q	x0, MAIR_EL1_SET
 	msr	mair_el2, x0
 	isb
 
