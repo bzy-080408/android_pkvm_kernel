@@ -29,6 +29,8 @@ bool psci_has_osi_support(void);
  */
 extern int psci_driver_version;
 
+extern u32 psci_cpu_suspend_feature;
+
 enum psci_function {
 	PSCI_FN_CPU_SUSPEND,
 	PSCI_FN_CPU_ON,

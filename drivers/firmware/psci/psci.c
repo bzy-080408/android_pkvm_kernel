@@ -71,7 +71,7 @@ u32 psci_function_id[PSCI_FN_MAX];
 				(PSCI_1_0_EXT_POWER_STATE_ID_MASK | \
 				PSCI_1_0_EXT_POWER_STATE_TYPE_MASK)
 
-static u32 psci_cpu_suspend_feature;
+u32 psci_cpu_suspend_feature;
 static bool psci_system_reset2_supported;
 
 static inline bool psci_has_ext_power_state(void)
