@@ -18,7 +18,7 @@ obj-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
 
 hyp-obj := $(patsubst %.o,%.nvhe.o,$(obj-y))
 obj-y := kvm_nvhe.o
-extra-y := $(hyp-obj) kvm_nvhe.tmp.o hyp.lds
+extra-y := $(hyp-obj) kvm_nvhe.tmp.o hyp.lds hyp-import.sym
 
 # 1) Compile all source files to `.nvhe.o` object files. The file extension
 #    avoids file name clashes for files shared with VHE.
@@ -41,15 +41,27 @@ LDFLAGS_kvm_nvhe.tmp.o := -r -T
 $(obj)/kvm_nvhe.tmp.o: $(obj)/hyp.lds $(addprefix $(obj)/,$(hyp-obj)) FORCE
 	$(call if_changed,ld)
 
-# 4) Produce the final 'kvm_nvhe.o', ready to be linked into 'vmlinux'.
-#    Prefixes names of ELF symbols with '__kvm_nvhe_'.
-$(obj)/kvm_nvhe.o: $(obj)/kvm_nvhe.tmp.o FORCE
+# 4) Generate a list of symbols that should not be prefixed.
+#    These are symbols used before the host is deprivileged, eg. alternative
+#    callbacks and static keys.
+gen_auto_alias := $(srctree)/$(src)/gen_auto_alias.sh
+$(obj)/hyp-import.sym: $(obj)/kvm_nvhe.tmp.o $(gen_auto_alias) FORCE
+	$(call if_changed,hypinfo)
+
+quiet_cmd_hypinfo = HYPINFO $@
+      cmd_hypinfo = $(gen_auto_alias) $< > $@
+
+# 5) Produce the final 'kvm_nvhe.o', ready to be linked into 'vmlinux'.
+#    Prefixes names of ELF symbols with '__kvm_nvhe_', except for those
+#    enumerated in hyp-import.txt.
+$(obj)/kvm_nvhe.o: $(obj)/kvm_nvhe.tmp.o $(obj)/hyp-import.sym FORCE
 	$(call if_changed,hypcopy)
 
 # The HYPCOPY command uses `objcopy` to prefix all ELF symbol names
 # to avoid clashes with VHE code/data.
 quiet_cmd_hypcopy = HYPCOPY $@
-      cmd_hypcopy = $(OBJCOPY) --prefix-symbols=__kvm_nvhe_ $< $@
+      cmd_hypcopy = $(OBJCOPY) --prefix-symbols=__kvm_nvhe_ $< $@ && \
+		    $(OBJCOPY) --redefine-syms=$(obj)/hyp-alias.lds $@
 
 # Remove ftrace and Shadow Call Stack CFLAGS.
 # This is equivalent to the 'notrace' and '__noscs' annotations.
