@@ -51,8 +51,65 @@ static int __init pkvm_firmware_rmem_init(struct reserved_mem *rmem)
 RESERVEDMEM_OF_DECLARE(pkvm_firmware, "linux,pkvm-guest-firmware-memory",
 		       pkvm_firmware_rmem_init);
 
+int kvm_arm_vcpu_pkvm_init(struct kvm_vcpu *vcpu)
+{
+	struct kvm *kvm = vcpu->kvm;
+
+	if (!kvm_vm_is_protected(kvm))
+		return 0;
+
+	if (!vcpu->vcpu_id) {
+		int i;
+		struct kvm_memory_slot *slot = kvm->arch.pkvm.firmware_slot;
+		struct user_pt_regs *regs = vcpu_gp_regs(vcpu);
+
+		if (!slot)
+			return 0;
+
+		/* X0 - X14 provided by VMM (preserved) */
+
+		/* X15: Boot protocol version */
+		regs->regs[15] = 0;
+
+		/* X16 - X30 reserved (zeroed) */
+		for (i = 16; i <= 30; ++i)
+			regs->regs[i] = 0;
+
+		/* PC: IPA base of bootloader memslot */
+		regs->pc = slot->base_gfn << PAGE_SHIFT;
+
+		/* SP: IPA end of bootloader memslot */
+		regs->sp = (slot->base_gfn + slot->npages) << PAGE_SHIFT;
+	} else if (!test_bit(KVM_ARM_VCPU_POWER_OFF, vcpu->arch.features)) {
+		return -EPERM;
+	}
+
+	return 0;
+}
+
+static int __do_not_call_this_function(struct kvm_memory_slot *slot)
+{
+	int uncopied;
+	size_t sz = pkvm_firmware_mem->size;
+	void *src, __user *dst = (__force void __user *)slot->userspace_addr;
+
+	if (clear_user(dst, slot->npages * PAGE_SIZE))
+		return -EFAULT;
+
+	src = memremap(pkvm_firmware_mem->base, sz, MEMREMAP_WB);
+	if (!src)
+		return -EFAULT;
+
+	//((u32 *)src)[0] = 0xaa0f03e0; // MOV	X0, X15
+	//((u32 *)src)[1] = 0xd61f0200; // BR	X16
+	uncopied = copy_to_user(dst, src, sz);
+	memunmap(src);
+	return uncopied ? -EFAULT : 0;
+}
+
 static int pkvm_init_el2_context(struct kvm *kvm)
 {
+#if 0
 	/*
 	 * TODO:
 	 * Eventually, this will involve a call to EL2 to:
@@ -66,6 +123,9 @@ static int pkvm_init_el2_context(struct kvm *kvm)
 	 */
 	kvm_pr_unimpl("Stage-2 protection is not yet implemented; ignoring\n");
 	return 0;
+#else
+	return __do_not_call_this_function(kvm->arch.pkvm.firmware_slot);
+#endif
 }
 
 static int pkvm_init_firmware_slot(struct kvm *kvm, u64 slotid)
