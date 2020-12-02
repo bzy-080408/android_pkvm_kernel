@@ -57,13 +57,37 @@ config KVM_ARM_PMU
 	  Adds support for a virtual Performance Monitoring Unit (PMU) in
 	  virtual machines.
 
-config KVM_ARM_HYP_DEBUG_UART
+menuconfig KVM_ARM_HYP_DEBUG_UART
 	bool "Hack up some basic UART functionality at EL2"
+
+if KVM_ARM_HYP_DEBUG_UART
+
+choice
+	prompt "Development board"
+	default KVM_ARM_HYP_DEBUG_UART_BOARD_QEMU
+
+config KVM_ARM_HYP_DEBUG_UART_BOARD_QEMU
+	bool "QEMU"
+
+config KVM_ARM_HYP_DEBUG_UART_BOARD_OTHER
+	bool "other"
+
+endchoice
+
+choice
+	prompt "UART driver"
+	default KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011
+
+config KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011
+	bool "pl011"
+
+endchoice
 
 config KVM_ARM_HYP_DEBUG_UART_ADDR
 	hex "Physical address of the PL011 for EL2 to use"
-	depends on KVM_ARM_HYP_DEBUG_UART
 	default 0x09000000
+
+endif # KVM_ARM_HYP_DEBUG_UART
 
 endif # KVM
 

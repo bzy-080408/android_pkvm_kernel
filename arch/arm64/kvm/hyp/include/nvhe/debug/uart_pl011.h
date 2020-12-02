@@ -15,6 +15,8 @@
 #ifndef __ARM64_KVM_NVHE_DEBUG_UART_PL011_H__
 #define __ARM64_KVM_NVHE_DEBUG_UART_PL011_H__
 
+#ifdef KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011
+
 #include <nvhe/debug/uart_driver.h>
 
 #define HYP_PL011_UARTFR	0x18
@@ -58,4 +60,5 @@ static inline void __hyp_uart_wait_tx_flush(void *base)
 
 #endif /* __ASSEMBLY__ */
 
+#endif  /* KVM_ARM_HYP_DEBUG_UART_DRIVER_PL011 */
 #endif	/* __ARM64_KVM_NVHE_DEBUG_UART_PL011_H__ */
