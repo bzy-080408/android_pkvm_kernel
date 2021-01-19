@@ -80,25 +80,25 @@ int kvm_arch_check_processor_compat(void *opaque)
 int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
 			    struct kvm_enable_cap *cap)
 {
-	int r;
-
-	if (cap->flags)
-		return -EINVAL;
+	int r = 0;
 
 	switch (cap->cap) {
 	case KVM_CAP_ARM_NISV_TO_USER:
-		r = 0;
-		kvm->arch.return_nisv_io_abort_to_user = true;
+		if (cap->flags)
+			r = -EINVAL;
+		else
+			kvm->arch.return_nisv_io_abort_to_user = true;
 		break;
 	case KVM_CAP_ARM_MTE:
 		mutex_lock(&kvm->lock);
-		if (!system_supports_mte() || kvm->created_vcpus) {
+		if (cap->flags || !system_supports_mte() || kvm->created_vcpus)
 			r = -EINVAL;
-		} else {
-			r = 0;
+		else
 			kvm->arch.mte_enabled = true;
-		}
 		mutex_unlock(&kvm->lock);
+		break;
+	case KVM_CAP_ARM_PROTECTED_VM:
+		r = kvm_arm_vm_ioctl_pkvm(kvm, cap);
 		break;
 	default:
 		r = -EINVAL;
@@ -272,6 +272,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_ARM_PTRAUTH_ADDRESS:
 	case KVM_CAP_ARM_PTRAUTH_GENERIC:
 		r = system_has_full_ptr_auth();
+		break;
+	case KVM_CAP_ARM_PROTECTED_VM:
+		r = is_protected_kvm_enabled();
 		break;
 	default:
 		r = 0;
