@@ -169,6 +169,22 @@ static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 	kvm_skip_host_instr();
 }
 
+static void handle_host_fpsimd(struct kvm_cpu_context *host_ctxt)
+{
+	/*
+	 * An FPSIMD trap from the host means the host's state has been saved
+	 * by hyp and needs to be restored.
+	 */
+	if (this_cpu_ptr(&kvm_host_data)->fpsimd_last_vcpu == NULL)
+		goto out;
+
+	this_cpu_ptr(&kvm_host_data)->fpsimd_last_vcpu = NULL;
+	__fpsimd_restore_state(&this_cpu_ptr(&kvm_host_data)->fpsimd_state);
+
+out:
+	write_sysreg(read_sysreg(cptr_el2) & ~(u64)CPTR_EL2_TFP, cptr_el2);
+}
+
 void handle_trap(struct kvm_cpu_context *host_ctxt)
 {
 	u64 esr = read_sysreg_el2(SYS_ESR);
@@ -179,6 +195,9 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 		break;
 	case ESR_ELx_EC_SMC64:
 		handle_host_smc(host_ctxt);
+		break;
+	case ESR_ELx_EC_FP_ASIMD:
+		handle_host_fpsimd(host_ctxt);
 		break;
 	default:
 		hyp_panic();

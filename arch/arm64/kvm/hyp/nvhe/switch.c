@@ -32,6 +32,8 @@ DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
+static DEFINE_PER_CPU(struct kvm_vcpu_arch_run *, kvm_hyp_vcpu_run);
+
 static void __activate_traps(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *run)
 {
 	u64 val;
@@ -64,10 +66,12 @@ static void __activate_traps(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *ru
 	}
 }
 
-static void __deactivate_traps(struct kvm_vcpu *vcpu)
+static void __deactivate_traps(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *run)
 {
 	extern char __kvm_hyp_host_vector[];
 	u64 mdcr_el2;
+	u64 hcr_el2;
+	u64 cptr_el2;
 
 	___deactivate_traps(vcpu);
 
@@ -95,12 +99,18 @@ static void __deactivate_traps(struct kvm_vcpu *vcpu)
 	mdcr_el2 &= MDCR_EL2_HPMN_MASK;
 	mdcr_el2 |= MDCR_EL2_E2PB_MASK << MDCR_EL2_E2PB_SHIFT;
 
-	write_sysreg(mdcr_el2, mdcr_el2);
 	if (is_protected_kvm_enabled())
-		write_sysreg(HCR_HOST_NVHE_PROTECTED_FLAGS, hcr_el2);
+		hcr_el2 = HCR_HOST_NVHE_PROTECTED_FLAGS;
 	else
-		write_sysreg(HCR_HOST_NVHE_FLAGS, hcr_el2);
-	write_sysreg(CPTR_EL2_DEFAULT, cptr_el2);
+		hcr_el2 = HCR_HOST_NVHE_FLAGS;
+
+	cptr_el2 = CPTR_EL2_DEFAULT;
+	if (run->protected)
+		cptr_el2 |= CPTR_EL2_TFP;
+
+	write_sysreg(mdcr_el2, mdcr_el2);
+	write_sysreg(hcr_el2, hcr_el2);
+	write_sysreg(cptr_el2, cptr_el2);
 	write_sysreg(__kvm_hyp_host_vector, vbar_el2);
 }
 
@@ -172,11 +182,36 @@ void __sync_vcpu_before_run(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *run
 
 	/* Clear host state to make misuse apparent. */
 	vcpu->arch.run.flags = 0;
+
+	if (run->protected) {
+		/*
+		 * For protected vCPUs, always initially disable FPSIMD so we
+		 * can avoid saving the state if it isn't used, but if it is
+		 * used, only save the state for the host if the host state is
+		 * loaded.
+		 */
+		run->flags &= ~(KVM_ARM64_RUN_FP_ENABLED |
+				KVM_ARM64_RUN_FP_HOST);
+		if (this_cpu_ptr(&kvm_host_data)->fpsimd_last_vcpu == NULL)
+			run->flags |= KVM_ARM64_RUN_FP_HOST;
+	} else {
+		/*
+		 * For non-protecetd vCPUs on a system that can also host
+		 * protected vCPUs, ensure protected vCPU FPSIMD state isn't
+		 * used by another vCPU or saved as the host state.
+		 */
+		if (this_cpu_ptr(&kvm_host_data)->fpsimd_last_vcpu != NULL)
+			run->flags &= ~(KVM_ARM64_RUN_FP_ENABLED |
+					KVM_ARM64_RUN_FP_HOST);
+	}
 }
 
 /* Sanitize the run state before writing it back to the host. */
 void __sync_vcpu_after_run(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *run)
 {
+	if (run->protected)
+		return;
+
 	vcpu->arch.run.flags = run->flags;
 }
 
@@ -203,10 +238,12 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 
 	if (is_protected_kvm_enabled()) {
 		run = &protected_run;
+		/* TODO: safely check vcpu and set run->protected accordingly. */
 		__sync_vcpu_before_run(vcpu, run);
 	} else {
 		run = &vcpu->arch.run;
 	}
+	__this_cpu_write(kvm_hyp_vcpu_run, run);
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	host_ctxt->__hyp_running_vcpu = vcpu;
@@ -249,13 +286,16 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__timer_disable_traps(vcpu);
 	__hyp_vgic_save_state(vcpu);
 
-	__deactivate_traps(vcpu);
+	__deactivate_traps(vcpu, run);
 	__load_host_stage2();
 
 	__sysreg_restore_state_nvhe(host_ctxt);
 
-	if (run->flags & KVM_ARM64_RUN_FP_ENABLED)
+	if (run->flags & KVM_ARM64_RUN_FP_ENABLED) {
 		__fpsimd_save_fpexc32(vcpu);
+		if (run->protected)
+			__fpsimd_save_state(&vcpu->arch.ctxt.fp_regs);
+	}
 
 	/*
 	 * This must come after restoring the host sysregs, since a non-VHE
@@ -284,15 +324,17 @@ void __noreturn hyp_panic(void)
 	u64 elr = read_sysreg_el2(SYS_ELR);
 	u64 par = read_sysreg_par();
 	bool restore_host = true;
+	struct kvm_vcpu_arch_run *run;
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_vcpu *vcpu;
 
+	run = __this_cpu_read(kvm_hyp_vcpu_run);
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	vcpu = host_ctxt->__hyp_running_vcpu;
 
 	if (vcpu) {
 		__timer_disable_traps(vcpu);
-		__deactivate_traps(vcpu);
+		__deactivate_traps(vcpu, run);
 		__load_host_stage2();
 		__sysreg_restore_state_nvhe(host_ctxt);
 	}

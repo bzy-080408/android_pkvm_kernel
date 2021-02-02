@@ -228,12 +228,21 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu,
 
 	isb();
 
+	/* A protected vcpu's state might already be in registers. */
+	if (run->protected &&
+	    this_cpu_ptr(&kvm_host_data)->fpsimd_last_vcpu == vcpu &&
+	    vcpu->arch.fpsimd_cpu == smp_processor_id()) {
+		goto out;
+	}
+
 	if (run->flags & KVM_ARM64_RUN_FP_HOST) {
 		/*
 		 * In the SVE case, VHE is assumed: it is enforced by
 		 * Kconfig and kvm_arch_init().
 		 */
-		if (sve_host) {
+		if (run->protected) {
+			__fpsimd_save_state(&this_cpu_ptr(&kvm_host_data)->fpsimd_state);
+		} else if (sve_host) {
 			struct thread_struct *thread = container_of(
 				vcpu->arch.host_fpsimd_state,
 				struct thread_struct, uw.fpsimd_state);
@@ -260,6 +269,12 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu,
 	if (!(read_sysreg(hcr_el2) & HCR_RW))
 		write_sysreg(__vcpu_sys_reg(vcpu, FPEXC32_EL2), fpexc32_el2);
 
+	if (run->protected) {
+		this_cpu_ptr(&kvm_host_data)->fpsimd_last_vcpu = vcpu;
+		vcpu->arch.fpsimd_cpu = smp_processor_id();
+	}
+
+out:
 	run->flags |= KVM_ARM64_RUN_FP_ENABLED;
 
 	return true;

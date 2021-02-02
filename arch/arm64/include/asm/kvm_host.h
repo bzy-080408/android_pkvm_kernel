@@ -237,6 +237,8 @@ struct kvm_pmu_events {
 
 struct kvm_host_data {
 	struct kvm_cpu_context host_ctxt;
+	struct kvm_vcpu* fpsimd_last_vcpu;
+	struct user_fpsimd_state fpsimd_state;
 	struct kvm_pmu_events pmu_events;
 };
 
@@ -275,6 +277,9 @@ struct vcpu_reset_state {
  * cannot interfere with the hyp while it is running.
  */
 struct kvm_vcpu_arch_run {
+	/* Whether the vcpu is running as part of a protected vm */
+	bool protected;
+
 	/* Miscellaneous vcpu run state flags */
 	u64 flags;
 };
