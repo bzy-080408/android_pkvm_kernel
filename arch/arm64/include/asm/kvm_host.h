@@ -107,6 +107,7 @@ struct kvm_arch_memory_slot {
 struct kvm_protected_vm {
 	bool enabled;
 	struct kvm_memory_slot *firmware_slot;
+	int shadow_handle;
 };
 
 struct kvm_arch {
@@ -279,6 +280,14 @@ struct vcpu_reset_state {
 	bool		reset;
 };
 
+struct kvm_protected_vcpu {
+	/* The handle id to the core struct in the hyp shadow area. */
+	int shadow_handle;
+
+	/* A pointer to the associated KVM structure. */
+	struct kvm *kvm;
+};
+
 struct kvm_vcpu_arch_core {
 	struct kvm_cpu_context ctxt;
 
@@ -298,6 +307,9 @@ struct kvm_vcpu_arch_core {
 	/* True when deferrable sysregs are loaded on the physical CPU,
 	 * see kvm_vcpu_load_sysregs_vhe and kvm_vcpu_put_sysregs_vhe. */
 	bool sysregs_loaded_on_cpu;
+
+	/* State required for protected VMs. */
+	struct kvm_protected_vcpu pkvm;
 };
 
 struct kvm_vcpu_arch {

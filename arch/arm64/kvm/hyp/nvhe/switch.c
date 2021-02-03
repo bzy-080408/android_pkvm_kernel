@@ -29,6 +29,7 @@
 #include <asm/thread_info.h>
 
 #include <nvhe/mem_protect.h>
+#include <nvhe/pkvm.h>
 
 /* Non-VHE specific context */
 DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
@@ -274,13 +275,44 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 /* Switch to the protected guest */
 static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 {
-	/* TODO: This will be the shadow core_state. */
-	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	struct kvm_vcpu_arch_core *core_state = hyp_get_shadow_core(vcpu);
 	/* TODO: This will be the shadow KVM. */
 	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	u64 exit_code;
+
+	// TODO: Sanity checking for testing only. To be removed.
+	{
+		const struct kvm *shadow_kvm;
+
+		HYP_ASSERT(core_state);
+		HYP_ASSERT(core_state != &vcpu->arch.core_state);
+
+		shadow_kvm = core_state->pkvm.kvm;
+		HYP_ASSERT(shadow_kvm);
+		HYP_ASSERT(shadow_kvm != vcpu->kvm);
+		HYP_ASSERT(shadow_kvm != kvm);
+		HYP_ASSERT(shadow_kvm->created_vcpus == kvm->created_vcpus);
+		HYP_ASSERT(shadow_kvm->arch.max_vcpus == kvm->arch.max_vcpus);
+		HYP_ASSERT(shadow_kvm->arch.pfr0_csv2 == kvm->arch.pfr0_csv2);
+		HYP_ASSERT(shadow_kvm->arch.pfr0_csv3 == kvm->arch.pfr0_csv3);
+		HYP_ASSERT(shadow_kvm->arch.pkvm.enabled);
+		HYP_ASSERT(shadow_kvm->arch.pkvm.shadow_handle > 0);
+		HYP_ASSERT(shadow_kvm->arch.pkvm.shadow_handle ==
+			   kvm->arch.pkvm.shadow_handle);
+		HYP_ASSERT(shadow_kvm->arch.pkvm.shadow_handle ==
+			   core_state->pkvm.shadow_handle);
+		HYP_ASSERT(shadow_kvm->arch.pkvm.firmware_slot ==
+			   kern_hyp_va(kvm->arch.pkvm.firmware_slot));
+	}
+
+	/*
+	 * TODO: The rest of the code to only depend on the shadow state isn't
+	 * in place. Continue using the host's for now. This will be fixed later
+	 * in this patch series.
+	 */
+	core_state = &vcpu->arch.core_state;
 
 	/*
 	 * Having IRQs masked via PMR when entering the guest means the GIC

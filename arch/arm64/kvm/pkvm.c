@@ -11,6 +11,9 @@
 #include <linux/of_fdt.h>
 #include <linux/of_reserved_mem.h>
 
+#include <asm/kvm_emulate.h>
+#include <asm/kvm_mmu.h>
+
 static struct reserved_mem *pkvm_firmware_mem;
 
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,
@@ -82,7 +85,8 @@ int kvm_arm_vcpu_pkvm_init(struct kvm_vcpu *vcpu)
 		/* SP: IPA end of bootloader memslot */
 		regs->sp = (slot->base_gfn + slot->npages) << PAGE_SHIFT;
 	} else if (!test_bit(KVM_ARM_VCPU_POWER_OFF, vcpu->arch.features)) {
-		return -EPERM;
+		if (kvm->arch.pkvm.firmware_slot)
+			return -EPERM;
 	}
 
 	return 0;
@@ -108,8 +112,158 @@ static int __do_not_call_this_function(struct kvm_memory_slot *slot)
 	return uncopied ? -EFAULT : 0;
 }
 
+static size_t shadow_size(const struct kvm *kvm)
+{
+	/*
+	 * Allocate shadow space only for struct kvm and its corresponding
+	 * kvm_vcpu_arch_core structures.
+	 * The remaining structs are not needed (for now).
+	 */
+	return sizeof(struct kvm) +
+	       sizeof(struct kvm_vcpu_arch_core) * kvm->created_vcpus;
+}
+
+/*
+ * Copy the host's kvm and core states into the donated shadow memory.
+ * struct kvm is placed first, followed by a copy of all its cores.
+ *
+ * The copies are all shallow copies, without any pointer values being fixed or
+ * reset. It's up to hyp to fix these values.
+ */
+static void copy_shadow_structs(void *shadow_addr, const struct kvm *host_kvm)
+{
+	int i;
+	struct kvm_vcpu_arch_core *shadow_cores;
+	struct kvm *kvm = shadow_addr;
+
+	memcpy(kvm, host_kvm, sizeof(*kvm));
+
+	/* Place shadow vcpus immediately after the shadow kvm struct. */
+	shadow_cores = (struct kvm_vcpu_arch_core *)
+		       ((unsigned long)shadow_addr + sizeof(*kvm));
+
+	for (i = 0; i < host_kvm->created_vcpus; i++) {
+		struct kvm_vcpu_arch_core *shadow_core = &shadow_cores[i];
+		const struct kvm_vcpu_arch_core *host_core = &host_kvm->vcpus[i]->arch.core_state;
+
+		memcpy(shadow_core, host_core, sizeof(*shadow_core));
+	}
+}
+
+/*
+ * Initializes the state of the host's version of the vcpu structure.
+ */
+static void init_host_core(struct kvm_vcpu_arch_core *core, int shadow_handle)
+{
+	core->pkvm.shadow_handle = shadow_handle;
+
+	/* Set the PC to 0x0 so it doesn't confuse on traces and debugs. */
+	//*vcpu_pc(core) = 0x0;
+
+	/*
+	 * Treat the guest as if it were in EL1/H mode.
+	 * For WFI: What matters here is whether it's treated as privileged.
+	 * For exception injection: inject into the guest's kernel.
+	 * Ensure that everything else is cleared.
+	 */
+	//*vcpu_cpsr(core) = PSR_MODE_EL1h;
+}
+
+/*
+ * Allocate and donate memory for EL2 shadow structs.
+ *
+ * Allocates space for struct kvm and all its created vcpus (struct kvm_vcpu).
+ * Unmaps the donated memory at stage 1.
+ *
+ * Stores an opaque handler in the kvm struct for future reference.
+ *
+ * Return 0 on success, negative error code on failure.
+ */
+static int create_el2_shadow(struct kvm *kvm)
+{
+	unsigned int shadow_order = 0;
+	struct page *shadow_pages;
+	void *shadow_addr = NULL;
+	size_t shadow_total_size;
+	int ret = 0;
+	int shadow_handle;
+	int i;
+
+	if (kvm->created_vcpus < 1) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	/* Allocate memory to donate to hyp for the kvm and vcpu state. */
+	/* TODO: alloc_pages allocates base-2 order pages, wastefull? */
+	shadow_order = get_order(shadow_size(kvm));
+	shadow_pages = alloc_pages(GFP_KERNEL, shadow_order);
+	if (!shadow_pages) {
+		ret = -ENOMEM;
+		goto err_dealloc;
+	}
+	shadow_addr = page_address(shadow_pages);
+	shadow_total_size = (1u << shadow_order) * PAGE_SIZE;
+
+	/*
+	 * Copy the shadow structs to the memory to be donated.
+	 *
+	 * Places a copy of struct kvm first, followed by copies of all the
+	 * struct vcpus.
+	 *
+	 * The copies are all shallow copies, without any pointer values being
+	 * fixed or reset. It's up to hyp to fix these values.
+	 */
+	copy_shadow_structs(shadow_addr, kvm);
+
+	/* Unmap the shadow memory at stage 1. Hyp will unmap it at stage 2. */
+	unmap_kernel_range((u64) shadow_addr, shadow_total_size);
+
+	/* Donate the shadow memory to hyp. */
+	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow,
+				kvm, shadow_addr, shadow_total_size);
+	if (ret < 0)
+		goto err_dealloc;
+
+	shadow_handle = ret;
+
+	/* Store the handle given by hyp for reference in future calls. */
+	kvm->arch.pkvm.shadow_handle = shadow_handle;
+
+	/* Adjust the host's core state to reflect the new reality. */
+	for (i = 0; i < kvm->created_vcpus; i++)
+		init_host_core(&kvm->vcpus[i]->arch.core_state, shadow_handle);
+
+	/* TODO: Only for debugging and sanity checking. */
+	printk(KERN_ALERT
+	       "%s:%d: SUCCESS: created_vcpus %d, shadow_order %u, shadow_num_pages %u, shadow_size(kvm) %lu, shadow_addr 0x%lx, sizeof(kvm) %lu, sizeof(kvm_vcpu_arch_core) %lu, ret %d, handle %d\n",
+	       __func__, __LINE__, kvm->created_vcpus, shadow_order,
+	       (1u << shadow_order), shadow_size(kvm),
+	       (unsigned long)shadow_addr,
+	       sizeof(*kvm), sizeof(struct kvm_vcpu_arch_core), ret,
+	       kvm->arch.pkvm.shadow_handle);
+
+	return 0;
+
+err_dealloc:
+	free_pages((unsigned long)shadow_addr, shadow_order);
+
+err:
+	return ret;
+}
+
 static int pkvm_init_el2_context(struct kvm *kvm)
 {
+	int ret = 0;
+
+	ret = create_el2_shadow(kvm);
+
+	if (ret < 0) {
+		/* TODO: panic is for testing only. To be removed. */
+		panic("create_el2_shadow failed.");
+		return ret;
+	}
+
 #if 0
 	/*
 	 * TODO:
@@ -120,11 +274,15 @@ static int pkvm_init_el2_context(struct kvm *kvm)
 	 * - Force reset state and lock down access
 	 * - Prevent attempts to run unknown vCPUs
 	 * - Ensure that no vCPUs have previously entered the VM
+	 * - Handle failures that happen after create_el2_shadow() is called.
 	 * - ...
 	 */
 	kvm_pr_unimpl("Stage-2 protection is not yet implemented; ignoring\n");
 	return 0;
 #else
+	if (!kvm->arch.pkvm.firmware_slot)
+		return 0;
+
 	return __do_not_call_this_function(kvm->arch.pkvm.firmware_slot);
 #endif
 }
@@ -133,6 +291,9 @@ static int pkvm_init_firmware_slot(struct kvm *kvm, u64 slotid)
 {
 	struct kvm_memslots *slots;
 	struct kvm_memory_slot *slot;
+
+	if (slotid == -1)
+		return 0;
 
 	if (slotid >= KVM_MEM_SLOTS_NUM || !pkvm_firmware_mem)
 		return -EINVAL;
@@ -168,9 +329,13 @@ static int pkvm_enable(struct kvm *kvm, u64 slotid)
 	if (ret)
 		return ret;
 
+	kvm->arch.pkvm.enabled = true;
+
 	ret = pkvm_init_el2_context(kvm);
-	if (ret)
+	if (ret) {
+		kvm->arch.pkvm.enabled = false;
 		pkvm_teardown_firmware_slot(kvm);
+	}
 
 	return ret;
 }
@@ -190,7 +355,6 @@ static int pkvm_vm_ioctl_enable(struct kvm *kvm, u64 slotid)
 	if (ret)
 		goto out_slots_unlock;
 
-	kvm->arch.pkvm.enabled = true;
 out_slots_unlock:
 	mutex_unlock(&kvm->slots_lock);
 out_kvm_unlock:
