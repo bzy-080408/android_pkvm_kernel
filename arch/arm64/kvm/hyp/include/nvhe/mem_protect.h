@@ -27,6 +27,9 @@ int __pkvm_mark_host(phys_addr_t start, phys_addr_t end);
 int kvm_host_prepare_stage2(void *mem_pgt_pool, void *dev_pgt_pool);
 void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt);
 
+int check_memory_addr(u64 va, u64 size);
+int check_host_memory_addr(u64 host_va, u64 size);
+
 static __always_inline void __load_host_stage2(void)
 {
 	if (static_branch_likely(&kvm_protected_mode_initialized))

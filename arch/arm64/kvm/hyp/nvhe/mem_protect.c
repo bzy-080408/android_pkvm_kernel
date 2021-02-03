@@ -287,3 +287,38 @@ void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 	ret = host_stage2_idmap(addr);
 	BUG_ON(ret && ret != -EAGAIN);
 }
+
+/*
+ * Checks that the memory rage specified by the hyp virtual address and size
+ * is legitimate memory.
+ *
+ * Returns 0 if it is legitimate, or -ERRNO if it isn't.
+ */
+int check_memory_addr(u64 va, u64 size)
+{
+	u64 ipa;
+
+	if (!va)
+		return -EFAULT;
+
+	ipa = __hyp_pa(va);
+
+	/*
+	 * TODO: Not enough. Need to do a page table walk to check.
+	 */
+	if (!range_is_memory(ipa, ipa + size))
+		return -EFAULT;
+
+	return 0;
+}
+
+/*
+ * Checks that the memory rage specified by the host virtual address and size
+ * is legitimate memory.
+ *
+ * Returns 0 if it is legitimate, or -ERRNO if it isn't.
+ */
+int check_host_memory_addr(u64 host_va, u64 size)
+{
+	return check_memory_addr(kern_hyp_va(host_va), size);
+}
