@@ -14,6 +14,7 @@
 #include <nvhe/memory.h>
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
+#include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
 
 struct hyp_pool hpool;
@@ -37,6 +38,11 @@ static int divide_memory_pool(void *virt, unsigned long size)
 	nr_pages = (vend - vstart) >> PAGE_SHIFT;
 	vmemmap_base = hyp_early_alloc_contig(nr_pages);
 	if (!vmemmap_base)
+		return -ENOMEM;
+
+	nr_pages = KVM_PVM_SHADOW_TABLE_SIZE >> PAGE_SHIFT;
+	shadow_table = hyp_early_alloc_contig(nr_pages);
+	if (!shadow_table)
 		return -ENOMEM;
 
 	nr_pages = hyp_s1_pgtable_pages();

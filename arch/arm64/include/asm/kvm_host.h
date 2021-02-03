@@ -104,6 +104,7 @@ struct kvm_arch_memory_slot {
 struct kvm_protected_vm {
 	bool enabled;
 	struct kvm_memory_slot *firmware_slot;
+	int shadow_handle;
 };
 
 struct kvm_arch {
@@ -141,9 +142,31 @@ struct kvm_arch {
 
 	/* Memory Tagging Extension enabled for the guest */
 	bool mte_enabled;
-	
+
 	struct kvm_protected_vm pkvm;
 };
+
+/**
+ * Holds the relevant parts for the running of a protected VM.
+ * This strucutre contains the data that the hypervisor cannot trust the host
+ * with.
+ */
+struct kvm_shadow_vm {
+	/* TODO: Make this into a hyp-owned mmu. */
+	struct kvm_s2_mmu *mmu;
+	int created_vcpus;
+	int shadow_handle;
+};
+
+struct kvm_protected_vcpu {
+	/* The handle id to the core struct in the hyp shadow area. */
+	int shadow_handle;
+
+	/* A pointer to the host's vcpu. */
+	struct kvm_vcpu *host_vcpu;
+};
+
+#define vcpu_shadow_host(vcpu) ((vcpu)->arch.pkvm.host_vcpu)
 
 struct kvm_vcpu_fault_info {
 	u32 esr_el2;		/* Hyp Syndrom Register */
@@ -393,6 +416,8 @@ struct kvm_vcpu_arch {
 		u64 last_steal;
 		gpa_t base;
 	} steal;
+
+	struct kvm_protected_vcpu pkvm;
 };
 
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */

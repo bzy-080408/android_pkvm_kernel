@@ -11,7 +11,132 @@
 #include <linux/of_fdt.h>
 #include <linux/of_reserved_mem.h>
 
+#include <asm/kvm_emulate.h>
+#include <asm/kvm_mmu.h>
+
+#include <hyp/include/nvhe/pkvm.h>
+
 static struct reserved_mem *pkvm_firmware_mem;
+
+/*
+ * Initializes the state of the donated shadow memory.
+ * Copy the host's vcpu states to the donated shadow memory.
+ * The vm struct comes first, followed by a copy of all its vcpu states.
+ */
+static void init_shadow_structs(void *shadow_addr, const struct kvm *kvm)
+{
+	int i;
+	struct shadow_vcpu_state *shadow_vcpu_states;
+
+	/* Place vcpus' shadow state immediately after the shadow vm. */
+	shadow_vcpu_states = (struct shadow_vcpu_state *)
+			     ((unsigned long)shadow_addr + SHADOW_VCPUS_OFFSET);
+
+	for (i = 0; i < kvm->created_vcpus; i++) {
+		const struct kvm_vcpu *vcpu = kvm->vcpus[i];
+		struct shadow_vcpu_state *shadow_vcpu_state =
+			&shadow_vcpu_states[i];
+
+		memcpy(&shadow_vcpu_state->vcpu, vcpu,
+		       sizeof(shadow_vcpu_state->vcpu));
+	}
+}
+
+/*
+ * Updates the state of the host's version of the vcpu state.
+ */
+static void update_vcpu_state(struct kvm_vcpu *vcpu, int shadow_handle)
+{
+	vcpu->arch.pkvm.shadow_handle = shadow_handle;
+
+	/* Set the PC to 0x0 so it doesn't confuse on traces and debugs. */
+	//*ctxt_pc(vcpu_ctxt) = 0x0;
+	/*
+	 * Treat the guest as if it were in EL1/H mode.
+	 * For WFI: What matters here is whether it's treated as privileged.
+	 * For exception injection: inject into the guest's kernel.
+	 * Ensure that everything else is cleared.
+	 */
+	//*ctxt_cpsr(vcpu_ctxt) = PSR_MODE_EL1h;
+}
+
+/*
+ * Allocate and donate memory for EL2 shadow structs.
+ *
+ * Allocates space for the shadow state, which includes the shadow vm as well as
+ * the shadow vcpu states.
+ *
+ * Unmaps the donated memory at stage 1.
+ *
+ * Stores an opaque handler in the kvm struct for future reference.
+ *
+ * Return 0 on success, negative error code on failure.
+ */
+static int create_el2_shadow(struct kvm *kvm)
+{
+	unsigned int shadow_order = 0;
+	struct page *shadow_pages;
+	void *shadow_addr = NULL;
+	size_t shadow_total_size;
+	int ret = 0;
+	int shadow_handle;
+	int i;
+
+	if (kvm->created_vcpus < 1) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	/* Allocate memory to donate to hyp for the kvm and vcpu state. */
+	/* TODO: alloc_pages allocates base-2 order pages, wastefull? */
+	shadow_order = get_order(hyp_get_shadow_size(kvm->created_vcpus));
+	shadow_pages = alloc_pages(GFP_KERNEL, shadow_order);
+
+	if (!shadow_pages) {
+		ret = -ENOMEM;
+		goto err_dealloc;
+	}
+
+	shadow_addr = page_address(shadow_pages);
+	shadow_total_size = (1u << shadow_order) * PAGE_SIZE;
+
+	/* Initialize the shadow structs in the donated memory.	*/
+	init_shadow_structs(shadow_addr, kvm);
+
+	/* Unmap the shadow memory at stage 1. Hyp will unmap it at stage 2. */
+	vunmap_range((u64)shadow_addr, (u64)(shadow_addr + shadow_total_size));
+
+	/* Donate the shadow memory to hyp and let hyp initialize it. */
+	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow,
+				kvm, shadow_addr, shadow_total_size);
+
+	if (ret < 0)
+		goto err_dealloc;
+
+	shadow_handle = ret;
+
+	/* Store the shadow handle given by hyp for future call reference. */
+	kvm->arch.pkvm.shadow_handle = shadow_handle;
+
+	/* Adjust host's vcpu state as it doesn't control it anymore. */
+	for (i = 0; i < kvm->created_vcpus; i++)
+		update_vcpu_state(kvm->vcpus[i], shadow_handle);
+
+	/* TODO: Only for debugging and sanity checking. Will remove. */
+	printk(KERN_ALERT
+	       "%s:%d: SUCCESS: created_vcpus %d, shadow_order %u, shadow_num_pages %u, shadow_size(kvm) %lu, shadow_addr 0x%lx, sizeof(struct kvm) %lu, sizeof(struct kvm_vcpu) %lu, sizeof(struct kvm_shadow_vm) %lu, sizeof(struct shadow_vcpu_state) %lu, ret %d, handle %d\n",
+	       __func__, __LINE__, kvm->created_vcpus, shadow_order,
+	       (1u << shadow_order), hyp_get_shadow_size(kvm->created_vcpus),
+	       (unsigned long)shadow_addr,
+	       sizeof(struct kvm), sizeof(struct kvm_vcpu), sizeof(struct kvm_shadow_vm), sizeof(struct shadow_vcpu_state), ret,
+	       kvm->arch.pkvm.shadow_handle);
+
+	return 0;
+err_dealloc:
+	free_pages((unsigned long)shadow_addr, shadow_order);
+err:
+	return ret;
+}
 
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,
 					 const char *reason)
@@ -53,6 +178,15 @@ RESERVEDMEM_OF_DECLARE(pkvm_firmware, "linux,pkvm-guest-firmware-memory",
 
 static int pkvm_init_el2_context(struct kvm *kvm)
 {
+	int ret = 0;
+
+	ret = create_el2_shadow(kvm);
+	if (ret < 0) {
+		/* TODO: panic is for testing only. To be removed. */
+		panic("create_el2_shadow failed.");
+		return ret;
+	}
+
 	kvm_pr_unimpl("Stage-2 protection is not yet implemented\n");
 	return 0;
 }

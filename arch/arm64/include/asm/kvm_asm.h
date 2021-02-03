@@ -65,6 +65,8 @@
 #define __KVM_HOST_SMCCC_FUNC___pkvm_prot_finalize		19
 #define __KVM_HOST_SMCCC_FUNC___kvm_adjust_pc			20
 #define __KVM_HOST_SMCCC_FUNC___pkvm_host_unshare_hyp		21
+#define __KVM_HOST_SMCCC_FUNC___pkvm_init_shadow		22
+#define __KVM_HOST_SMCCC_FUNC___pkvm_teardown_shadow		23
 
 #ifndef __ASSEMBLY__
 

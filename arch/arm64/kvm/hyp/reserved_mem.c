@@ -12,6 +12,7 @@
 
 #include <nvhe/memory.h>
 #include <nvhe/mm.h>
+#include <nvhe/pkvm.h>
 
 static struct memblock_region *hyp_memory = kvm_nvhe_sym(hyp_memory);
 static unsigned int *hyp_memblock_nr_ptr = &kvm_nvhe_sym(hyp_memblock_nr);
@@ -86,6 +87,7 @@ void __init kvm_hyp_reserve(void)
 		nr_pages += __hyp_pgtable_max_pages(nr_pages);
 	} while (nr_pages != prev);
 	hyp_mem_pages += nr_pages;
+	hyp_mem_pages += KVM_PVM_SHADOW_TABLE_PAGES;
 
 	/*
 	 * Try to allocate a PMD-aligned region to reduce TLB pressure once
