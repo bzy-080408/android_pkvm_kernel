@@ -168,6 +168,17 @@ vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
 	return VM_FAULT_SIGBUS;
 }
 
+static void kvm_shadow_destroy(struct kvm *kvm)
+{
+	struct arm_smccc_res res;
+
+	if (!kvm_vm_is_protected(kvm))
+		return;
+
+	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_teardown_shadow),
+			kvm, &res);
+	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+}
 
 /**
  * kvm_arch_destroy_vm - destroy the VM data structure
@@ -180,6 +191,7 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 	bitmap_free(kvm->arch.pmu_filter);
 
 	kvm_vgic_destroy(kvm);
+	kvm_shadow_destroy(kvm);
 
 	for (i = 0; i < KVM_MAX_VCPUS; ++i) {
 		if (kvm->vcpus[i]) {
