@@ -288,3 +288,27 @@ void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 	if (ret && ret != -EAGAIN)
 		hyp_panic();
 }
+
+/*
+ * Checks that the memory rage specified by the host virtual address and size
+ * is legitimate host memory.
+ *
+ * Returns 0 if it is legitimate, or -ERRNO if it isn't.
+ */
+int check_host_memory_addr(u64 host_va, u64 size)
+{
+	u64 ipa;
+
+	if (!host_va)
+		return -EFAULT;
+
+	ipa = __hyp_pa(kern_hyp_va(host_va));
+
+	/*
+	 * TODO: Not enough. Need to do a page table walk to check.
+	 */
+	if (!range_is_memory(ipa, ipa + size))
+		return -EFAULT;
+
+	return 0;
+}
