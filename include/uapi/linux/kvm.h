@@ -1079,6 +1079,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_X86_BUS_LOCK_EXIT 193
 #define KVM_CAP_PPC_DAWR1 194
 #define KVM_CAP_ARM_PROTECTED_VM 0xffbadab1 /* To be allocated */
+#define KVM_CAP_ARM_NR_PROTECTED_VMS (KVM_CAP_ARM_PROTECTED_VM + 1)
 
 #ifdef KVM_CAP_IRQ_ROUTING
 

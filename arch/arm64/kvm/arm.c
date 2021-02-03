@@ -42,6 +42,8 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
 
+#include <hyp/include/nvhe/pkvm.h>
+
 #ifdef REQUIRES_VIRT
 __asm__(".arch_extension	virt");
 #endif
@@ -261,6 +263,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		break;
 	case KVM_CAP_ARM_PROTECTED_VM:
 		r = is_protected_kvm_enabled();
+		break;
+	case KVM_CAP_ARM_NR_PROTECTED_VMS:
+		r = KVM_MAX_PVMS;
 		break;
 	default:
 		r = 0;

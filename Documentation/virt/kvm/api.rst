@@ -6292,6 +6292,9 @@ the KVM_ARM_VCPU_POWER_OFF feature.
 It is an error to enable this capability on a VM after issuing a KVM_RUN
 ioctl() on one of its vCPUs.
 
+The maximum number of protected VMs that can be created can be determined by
+querying the KVM_CAP_ARM_NR_PROTECTED_VMS capability.
+
 7.24.2 KVM_CAP_ARM_PROTECTED_VM_FLAGS_INFO
 ------------------------------------------
 
