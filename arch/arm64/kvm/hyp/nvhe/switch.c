@@ -28,6 +28,7 @@
 #include <asm/thread_info.h>
 
 #include <nvhe/mem_protect.h>
+#include <nvhe/pkvm.h>
 
 /* Non-VHE specific context */
 DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
@@ -280,12 +281,24 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 /* Switch to the protected guest */
 static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	struct kvm_shadow_vm *vm;
+	struct vcpu_hyp_state *vcpu_hyps;
+	struct kvm_cpu_context *vcpu_ctxt;
 	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	u64 exit_code;
+
+	if (!hyp_get_shadow_vcpu_state(vcpu, &vm, &vcpu_ctxt, &vcpu_hyps))
+		return ARM_EXCEPTION_IL;
+
+	/*
+	 * TODO: The rest of the code to only depend on the shadow state isn't
+	 * in place. Continue using the host's for now. This will be fixed later
+	 * in this patch series.
+	 */
+	vcpu_hyps = &hyp_state(vcpu);
+	vcpu_ctxt = &vcpu_ctxt(vcpu);
 
 	/*
 	 * Having IRQs masked via PMR when entering the guest means the GIC
@@ -308,7 +321,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
-	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
+	__load_guest_stage2(vm->mmu);
 	__activate_traps_pvm(vcpu_ctxt, vcpu_hyps);
 
 	__hyp_vgic_restore_state(vcpu);
@@ -347,10 +360,11 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	vcpu = kern_hyp_va(vcpu);
 
-	if (likely(!kvm_vm_is_protected(kern_hyp_va(vcpu->kvm))))
+	if (likely(!kvm_vm_is_protected(kern_hyp_va(vcpu->kvm)))) {
 		return __kvm_vcpu_run_nvhe(vcpu);
-	else
+	} else {
 		return __kvm_vcpu_run_pvm(vcpu);
+	}
 }
 
 void __noreturn hyp_panic(void)

@@ -12,6 +12,7 @@
 
 #include <nvhe/memory.h>
 #include <nvhe/mm.h>
+#include <nvhe/pkvm.h>
 
 static struct memblock_region *hyp_memory = kvm_nvhe_sym(hyp_memory);
 static unsigned int *hyp_memblock_nr_ptr = &kvm_nvhe_sym(hyp_memblock_nr);
@@ -73,6 +74,7 @@ void __init kvm_hyp_reserve(void)
 	hyp_mem_pages += hyp_s1_pgtable_pages();
 	hyp_mem_pages += host_s2_mem_pgtable_pages();
 	hyp_mem_pages += host_s2_dev_pgtable_pages();
+	hyp_mem_pages += KVM_PVM_SHADOW_TABLE_PAGES;
 
 	/*
 	 * The hyp_vmemmap needs to be backed by pages, but these pages

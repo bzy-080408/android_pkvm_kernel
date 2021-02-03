@@ -103,6 +103,7 @@ struct kvm_arch_memory_slot {
 struct kvm_protected_vm {
 	bool enabled;
 	struct kvm_memory_slot *firmware_slot;
+	int shadow_handle;
 };
 
 struct kvm_arch {
@@ -139,6 +140,23 @@ struct kvm_arch {
 	u8 pfr0_csv3;
 
 	struct kvm_protected_vm pkvm;
+};
+
+/**
+ * Holds the relevant parts for the running of a protected VM.
+ * This strucutre contains the data that the hypervisor cannot trust the host
+ * with.
+ */
+struct kvm_shadow_vm {
+	/* TODO: Make this into a hyp-owned mmu. */
+	struct kvm_s2_mmu *mmu;
+	int created_vcpus;
+	int shadow_handle;
+};
+
+struct kvm_protected_vcpu {
+	/* The handle id to the core struct in the hyp shadow area. */
+	int shadow_handle;
 };
 
 struct kvm_vcpu_fault_info {
@@ -307,6 +325,9 @@ struct vcpu_hyp_state {
 
 	/* Miscellaneous vcpu state flags */
 	u64 flags;
+
+	/* State required for protected VMs. */
+	struct kvm_protected_vcpu pkvm;
 };
 
 struct kvm_vcpu_arch {
@@ -410,6 +431,7 @@ struct kvm_vcpu_arch {
 #define hyp_state_vsesr_el2(hyps) (hyps)->vsesr_el2
 #define hyp_state_fault(hyps) (hyps)->fault
 #define hyp_state_flags(hyps) (hyps)->flags
+#define hyp_state_shadow_handle(hyps) (hyps)->pkvm.shadow_handle
 
 /* Accessors for vcpu parameters related to the hypervistor state. */
 #define vcpu_hcr_el2(vcpu) hyp_state_hcr_el2(&hyp_state(vcpu))
@@ -417,6 +439,7 @@ struct kvm_vcpu_arch {
 #define vcpu_vsesr_el2(vcpu) hyp_state_vsesr_el2(&hyp_state(vcpu))
 #define vcpu_fault(vcpu) hyp_state_fault(&hyp_state(vcpu))
 #define vcpu_flags(vcpu) hyp_state_flags(&hyp_state(vcpu))
+#define vcpu_shadow_handle(vcpu) hyp_state_shadow_handle(&hyp_state(vcpu))
 
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */
 #define vcpu_sve_pffr(vcpu) (kern_hyp_va((vcpu)->arch.sve_state) +	\

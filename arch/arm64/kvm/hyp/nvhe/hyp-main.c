@@ -15,6 +15,7 @@
 
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
+#include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
 
 DEFINE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
@@ -171,6 +172,23 @@ static void handle___pkvm_mark_hyp(struct kvm_cpu_context *host_ctxt)
 
 	cpu_reg(host_ctxt, 1) = __pkvm_mark_hyp(start, end);
 }
+static void handle___pkvm_init_shadow(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(const struct kvm *, host_kvm, host_ctxt, 1);
+	DECLARE_REG(void *, host_shadow_va, host_ctxt, 2);
+	DECLARE_REG(size_t, shadow_size, host_ctxt, 3);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_init_shadow(host_kvm, host_shadow_va,
+						       shadow_size);
+}
+
+static void handle___pkvm_teardown_shadow(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(const struct kvm *, host_kvm, host_ctxt, 1);
+
+	__pkvm_teardown_shadow(host_kvm);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -197,6 +215,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_create_private_mapping),
 	HANDLE_FUNC(__pkvm_prot_finalize),
 	HANDLE_FUNC(__pkvm_mark_hyp),
+	HANDLE_FUNC(__pkvm_init_shadow),
+	HANDLE_FUNC(__pkvm_teardown_shadow),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
