@@ -51,18 +51,37 @@ error:
  */
 void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
 {
+	unsigned long flags;
+
 	BUG_ON(!current->mm);
 
 	vcpu->arch.flags &= ~(KVM_ARM64_FP_ENABLED |
+			      KVM_ARM64_FP_HOST |
 			      KVM_ARM64_HOST_SVE_IN_USE |
 			      KVM_ARM64_HOST_SVE_ENABLED);
-	vcpu->arch.flags |= KVM_ARM64_FP_HOST;
+
+	if (!system_supports_fpsimd())
+		return;
+
+	local_irq_save(flags);
+
+	if (fpsimd_is_bound_to_cpu(&vcpu->arch.ctxt.fp_regs) &&
+	    vcpu->arch.fpsimd_cpu == smp_processor_id()) {
+		clear_thread_flag(TIF_FOREIGN_FPSTATE);
+		update_thread_flag(TIF_SVE, vcpu_has_sve(vcpu));
+
+		vcpu->arch.flags |= KVM_ARM64_FP_ENABLED;
+	} else {
+		vcpu->arch.flags |= KVM_ARM64_FP_HOST;
+	}
 
 	if (test_thread_flag(TIF_SVE))
 		vcpu->arch.flags |= KVM_ARM64_HOST_SVE_IN_USE;
 
 	if (read_sysreg(cpacr_el1) & CPACR_EL1_ZEN_EL0EN)
 		vcpu->arch.flags |= KVM_ARM64_HOST_SVE_ENABLED;
+
+	local_irq_restore(flags);
 }
 
 
@@ -120,7 +139,7 @@ void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 	local_irq_save(flags);
 
 	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED) {
-		fpsimd_save_and_flush_cpu_state();
+		fpsimd_thread_switch(current);
 
 		if (guest_has_sve)
 			__vcpu_sys_reg(vcpu, ZCR_EL1) = read_sysreg_s(SYS_ZCR_EL12);

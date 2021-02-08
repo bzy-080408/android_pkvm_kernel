@@ -1009,8 +1009,7 @@ void fpsimd_thread_switch(struct task_struct *next)
 	 * state.  For kernel threads, FPSIMD registers are never loaded
 	 * and wrong_task and wrong_cpu will always be true.
 	 */
-	wrong_task = __this_cpu_read(fpsimd_last_state.st) !=
-					&next->thread.uw.fpsimd_state;
+	wrong_task = !fpsimd_is_bound_to_cpu(&next->thread.uw.fpsimd_state);
 	wrong_cpu = next->thread.fpsimd_cpu != smp_processor_id();
 
 	update_tsk_thread_flag(next, TIF_FOREIGN_FPSTATE,
@@ -1135,6 +1134,14 @@ void fpsimd_bind_state_to_cpu(struct user_fpsimd_state *st, void *sve_state,
 	last->st = st;
 	last->sve_state = sve_state;
 	last->sve_vl = sve_vl;
+}
+
+bool fpsimd_is_bound_to_cpu(struct user_fpsimd_state *st)
+{
+	WARN_ON(!system_supports_fpsimd());
+	WARN_ON(!in_softirq() && !irqs_disabled());
+
+	return __this_cpu_read(fpsimd_last_state.st) == st;
 }
 
 /*
