@@ -10,9 +10,13 @@
 #include "kvm_util.h"
 #include "../kvm_util_internal.h"
 #include "processor.h"
+#include "sysreg.h"
 
 #define KVM_GUEST_PAGE_TABLE_MIN_PADDR		0x180000
 #define DEFAULT_ARM64_GUEST_STACK_VADDR_MIN	0xac0000
+
+extern uint8_t vector_table;
+static void (*exception_callback)(void);
 
 static uint64_t page_align(struct kvm_vm *vm, uint64_t v)
 {
@@ -336,4 +340,23 @@ void vcpu_args_set(struct kvm_vm *vm, uint32_t vcpuid, unsigned int num, ...)
 
 void assert_on_unhandled_exception(struct kvm_vm *vm, uint32_t vcpuid)
 {
+}
+
+void handle_exception(void)
+{
+	uint64_t next_pc;
+
+	if (exception_callback != NULL)
+		exception_callback();
+
+	/* Skip the faulting instruction. */
+	next_pc = read_sysreg(elr_el1);
+	next_pc += 4UL;
+	write_sysreg(next_pc, elr_el1);
+}
+
+void aarch64_guest_exception_setup(void (*exception)(void))
+{
+	exception_callback = exception;
+	write_sysreg_s(&vector_table, SYS_VBAR_EL1);
 }

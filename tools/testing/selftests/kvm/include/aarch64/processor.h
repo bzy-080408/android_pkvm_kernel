@@ -56,4 +56,14 @@ void aarch64_vcpu_setup(struct kvm_vm *vm, int vcpuid, struct kvm_vcpu_init *ini
 void aarch64_vcpu_add_default(struct kvm_vm *vm, uint32_t vcpuid,
 			      struct kvm_vcpu_init *init, void *guest_code);
 
+/*
+ * Called by the guest to setup its exception handler.
+ * On an exception, the handler is called and the faulting instruction is
+ * skipped.
+ *
+ * exception: the exception handler to call. If NULL, then the instruction
+ * that caused the exception is skipped and no other functions are called.
+ */
+void aarch64_guest_exception_setup(void (*exception)(void));
+
 #endif /* SELFTEST_KVM_PROCESSOR_H */
