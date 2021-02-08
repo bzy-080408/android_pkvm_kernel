@@ -995,7 +995,7 @@ memslot2region(struct kvm_vm *vm, uint32_t memslot)
  *
  * Input Args:
  *   vm - Virtual Machine
- *   flags - Starting guest physical address
+ *   flags - KVM memory region flags (e.g. KVM_MEM_LOG_DIRTY_PAGES)
  *
  * Output Args: None
  *
