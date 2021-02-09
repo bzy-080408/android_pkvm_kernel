@@ -41,7 +41,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 
 	val = CPTR_EL2_DEFAULT;
 	val |= CPTR_EL2_TTA | CPTR_EL2_TZ | CPTR_EL2_TAM;
-	if (!(vcpu->arch.flags & KVM_ARM64_FP_ENABLED)) {
+	if (!(vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED)) {
 		val |= CPTR_EL2_TFP;
 		__activate_traps_fpsimd32(vcpu);
 	}
@@ -230,7 +230,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 
 	__sysreg_restore_state_nvhe(host_ctxt);
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED)
+	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED)
 		__fpsimd_save_fpexc32(vcpu);
 
 	/*

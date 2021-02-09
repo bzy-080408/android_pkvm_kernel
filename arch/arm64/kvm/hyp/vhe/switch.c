@@ -54,7 +54,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 
 	val |= CPTR_EL2_TAM;
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED) {
+	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED) {
 		if (vcpu_has_sve(vcpu))
 			val |= CPACR_EL1_ZEN;
 	} else {
@@ -151,7 +151,7 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 
 	sysreg_restore_host_state_vhe(host_ctxt);
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED)
+	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED)
 		__fpsimd_save_fpexc32(vcpu);
 
 	__debug_switch_to_host(vcpu);

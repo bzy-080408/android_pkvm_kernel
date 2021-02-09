@@ -43,8 +43,9 @@ error:
  * Prepare vcpu for saving the host's FPSIMD state and loading the guest's.
  * The actual loading is done by the FPSIMD access trap taken to hyp.
  *
- * Here, we just set the correct metadata to indicate that the FPSIMD
- * state in the cpu regs (if any) belongs to current on the host.
+ * Here, we just set the correct metadata to indicate that the FPSIMD state in
+ * the cpu regs (if any) belongs to current on the host and will need to be
+ * saved before replacing it.
  *
  * TIF_SVE is backed up here, since it may get clobbered with guest state.
  * This flag is restored by kvm_arch_vcpu_put_fp(vcpu).
@@ -55,9 +56,10 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
 
 	BUG_ON(!current->mm);
 
-	vcpu->arch.flags &= ~(KVM_ARM64_FP_ENABLED |
-			      KVM_ARM64_FP_HOST |
-			      KVM_ARM64_HOST_SVE_IN_USE |
+	vcpu->arch.run.flags &= ~(KVM_ARM64_RUN_FP_ENABLED |
+				  KVM_ARM64_RUN_FP_HOST);
+
+	vcpu->arch.flags &= ~(KVM_ARM64_HOST_SVE_IN_USE |
 			      KVM_ARM64_HOST_SVE_ENABLED);
 
 	if (!system_supports_fpsimd())
@@ -70,9 +72,9 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
 		clear_thread_flag(TIF_FOREIGN_FPSTATE);
 		update_thread_flag(TIF_SVE, vcpu_has_sve(vcpu));
 
-		vcpu->arch.flags |= KVM_ARM64_FP_ENABLED;
+		vcpu->arch.run.flags |= KVM_ARM64_RUN_FP_ENABLED;
 	} else {
-		vcpu->arch.flags |= KVM_ARM64_FP_HOST;
+		vcpu->arch.run.flags |= KVM_ARM64_RUN_FP_HOST;
 	}
 
 	if (test_thread_flag(TIF_SVE))
@@ -99,8 +101,8 @@ void kvm_arch_vcpu_sync_fp_before_hyp(struct kvm_vcpu *vcpu)
 		return;
 
 	if (test_thread_flag(TIF_FOREIGN_FPSTATE))
-		vcpu->arch.flags &= ~(KVM_ARM64_FP_ENABLED |
-				      KVM_ARM64_FP_HOST);
+		vcpu->arch.run.flags &= ~(KVM_ARM64_RUN_FP_ENABLED |
+					  KVM_ARM64_RUN_FP_HOST);
 }
 
 /*
@@ -113,7 +115,7 @@ void kvm_arch_vcpu_sync_fp_after_hyp(struct kvm_vcpu *vcpu)
 {
 	WARN_ON_ONCE(!irqs_disabled());
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED) {
+	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED) {
 		vcpu->arch.fpsimd_cpu = smp_processor_id();
 		fpsimd_bind_state_to_cpu(&vcpu->arch.ctxt.fp_regs,
 					 vcpu->arch.sve_state,
@@ -138,7 +140,7 @@ void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 
 	local_irq_save(flags);
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED) {
+	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED) {
 		fpsimd_thread_switch(current);
 
 		if (guest_has_sve)

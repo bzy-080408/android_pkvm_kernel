@@ -269,6 +269,16 @@ struct vcpu_reset_state {
 	bool		reset;
 };
 
+/*
+ * State that affects the behaviour of hyp when running a vcpu. In protected
+ * mode, the hypervisor will have a private copy of this state so that the host
+ * cannot interfere with the hyp while it is running.
+ */
+struct kvm_vcpu_arch_run {
+	/* Miscellaneous vcpu run state flags */
+	u64 flags;
+};
+
 struct kvm_vcpu_arch {
 	struct kvm_cpu_context ctxt;
 	void *sve_state;
@@ -289,6 +299,9 @@ struct kvm_vcpu_arch {
 
 	/* Miscellaneous vcpu state flags */
 	u64 flags;
+
+	/* State to manage running of the vcpu by hyp */
+	struct kvm_vcpu_arch_run run;
 
 	/*
 	 * We maintain more than a single set of debug registers to support
@@ -391,15 +404,17 @@ struct kvm_vcpu_arch {
 
 /* vcpu_arch flags field values: */
 #define KVM_ARM64_DEBUG_DIRTY		(1 << 0) /* vcpu is using debug */
-#define KVM_ARM64_FP_ENABLED		(1 << 1) /* guest FP regs loaded */
-#define KVM_ARM64_FP_HOST		(1 << 2) /* host FP regs loaded */
-#define KVM_ARM64_HOST_SVE_IN_USE	(1 << 3) /* backup for host TIF_SVE */
-#define KVM_ARM64_HOST_SVE_ENABLED	(1 << 4) /* SVE enabled for EL0 */
-#define KVM_ARM64_GUEST_HAS_SVE		(1 << 5) /* SVE exposed to guest */
-#define KVM_ARM64_VCPU_SVE_FINALIZED	(1 << 6) /* SVE config completed */
-#define KVM_ARM64_GUEST_HAS_PTRAUTH	(1 << 7) /* PTRAUTH exposed to guest */
-#define KVM_ARM64_PENDING_EXCEPTION	(1 << 8) /* Exception pending */
-#define KVM_ARM64_EXCEPT_MASK		(7 << 9) /* Target EL/MODE */
+#define KVM_ARM64_HOST_SVE_IN_USE	(1 << 1) /* backup for host TIF_SVE */
+#define KVM_ARM64_HOST_SVE_ENABLED	(1 << 2) /* SVE enabled for EL0 */
+#define KVM_ARM64_GUEST_HAS_SVE		(1 << 3) /* SVE exposed to guest */
+#define KVM_ARM64_VCPU_SVE_FINALIZED	(1 << 4) /* SVE config completed */
+#define KVM_ARM64_GUEST_HAS_PTRAUTH	(1 << 5) /* PTRAUTH exposed to guest */
+#define KVM_ARM64_PENDING_EXCEPTION	(1 << 6) /* Exception pending */
+#define KVM_ARM64_EXCEPT_MASK		(7 << 7) /* Target EL/MODE */
+
+/* vcpu_arch_run flags field values: */
+#define KVM_ARM64_RUN_FP_ENABLED	(1 << 0) /* guest FP regs loaded */
+#define KVM_ARM64_RUN_FP_HOST		(1 << 1) /* host FP regs loaded */
 
 /*
  * When KVM_ARM64_PENDING_EXCEPTION is set, KVM_ARM64_EXCEPT_MASK can

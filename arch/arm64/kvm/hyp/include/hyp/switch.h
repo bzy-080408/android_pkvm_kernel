@@ -227,7 +227,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 
 	isb();
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_HOST) {
+	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_HOST) {
 		/*
 		 * In the SVE case, VHE is assumed: it is enforced by
 		 * Kconfig and kvm_arch_init().
@@ -243,7 +243,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 			__fpsimd_save_state(vcpu->arch.host_fpsimd_state);
 		}
 
-		vcpu->arch.flags &= ~KVM_ARM64_FP_HOST;
+		vcpu->arch.run.flags &= ~KVM_ARM64_RUN_FP_HOST;
 	}
 
 	if (sve_guest) {
@@ -259,7 +259,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 	if (!(read_sysreg(hcr_el2) & HCR_RW))
 		write_sysreg(__vcpu_sys_reg(vcpu, FPEXC32_EL2), fpexc32_el2);
 
-	vcpu->arch.flags |= KVM_ARM64_FP_ENABLED;
+	vcpu->arch.run.flags |= KVM_ARM64_RUN_FP_ENABLED;
 
 	return true;
 }
