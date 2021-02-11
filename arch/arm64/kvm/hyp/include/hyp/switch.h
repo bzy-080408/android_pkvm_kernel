@@ -178,7 +178,8 @@ static inline bool __populate_fault_info(struct kvm_vcpu *vcpu)
 }
 
 /* Check for an FPSIMD/SVE trap and handle as appropriate */
-static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
+static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu,
+				       struct kvm_vcpu_arch_run *run)
 {
 	bool vhe, sve_guest, sve_host;
 	u8 esr_ec;
@@ -227,7 +228,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 
 	isb();
 
-	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_HOST) {
+	if (run->flags & KVM_ARM64_RUN_FP_HOST) {
 		/*
 		 * In the SVE case, VHE is assumed: it is enforced by
 		 * Kconfig and kvm_arch_init().
@@ -243,7 +244,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 			__fpsimd_save_state(vcpu->arch.host_fpsimd_state);
 		}
 
-		vcpu->arch.run.flags &= ~KVM_ARM64_RUN_FP_HOST;
+		run->flags &= ~KVM_ARM64_RUN_FP_HOST;
 	}
 
 	if (sve_guest) {
@@ -259,7 +260,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 	if (!(read_sysreg(hcr_el2) & HCR_RW))
 		write_sysreg(__vcpu_sys_reg(vcpu, FPEXC32_EL2), fpexc32_el2);
 
-	vcpu->arch.run.flags |= KVM_ARM64_RUN_FP_ENABLED;
+	run->flags |= KVM_ARM64_RUN_FP_ENABLED;
 
 	return true;
 }
@@ -387,7 +388,9 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
  * the guest, false when we should restore the host state and return to the
  * main run loop.
  */
-static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu,
+				    struct kvm_vcpu_arch_run *run,
+				    u64 *exit_code)
 {
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
 		vcpu->arch.fault.esr_el2 = read_sysreg_el2(SYS_ESR);
@@ -428,7 +431,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	 * undefined instruction exception to the guest.
 	 * Similarly for trapped SVE accesses.
 	 */
-	if (__hyp_handle_fpsimd(vcpu))
+	if (__hyp_handle_fpsimd(vcpu, run))
 		goto guest;
 
 	if (__hyp_handle_ptrauth(vcpu))

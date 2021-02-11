@@ -143,7 +143,7 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 		exit_code = __guest_enter(vcpu);
 
 		/* And we're baaack! */
-	} while (fixup_guest_exit(vcpu, &exit_code));
+	} while (fixup_guest_exit(vcpu, &vcpu->arch.run, &exit_code));
 
 	sysreg_save_guest_state_vhe(guest_ctxt);
 
