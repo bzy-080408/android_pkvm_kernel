@@ -312,6 +312,8 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 
 	vcpu->arch.mmu_page_cache.gfp_zero = __GFP_ZERO;
 
+	vcpu->arch.fpsimd_cpu = NR_CPUS;
+
 	/* Set up the timer */
 	kvm_timer_vcpu_init(vcpu);
 
