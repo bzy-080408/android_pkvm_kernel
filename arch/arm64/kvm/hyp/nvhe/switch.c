@@ -165,9 +165,26 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 		write_sysreg(pmu->events_host, pmcntenset_el0);
 }
 
+/* Snapshot state from the host to private memory and sanitize them. */
+void __sync_vcpu_before_run(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *run)
+{
+	run->flags = vcpu->arch.run.flags;
+
+	/* Clear host state to make misuse apparent. */
+	vcpu->arch.run.flags = 0;
+}
+
+/* Sanitize the run state before writing it back to the host. */
+void __sync_vcpu_after_run(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_run *run)
+{
+	vcpu->arch.run.flags = run->flags;
+}
+
 /* Switch to the guest for legacy non-VHE systems */
 int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_run protected_run;
+	struct kvm_vcpu_arch_run *run;
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	bool pmu_switch_needed;
@@ -182,6 +199,13 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	if (system_uses_irq_prio_masking()) {
 		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
 		pmr_sync();
+	}
+
+	if (is_protected_kvm_enabled()) {
+		run = &protected_run;
+		__sync_vcpu_before_run(vcpu, run);
+	} else {
+		run = &vcpu->arch.run;
 	}
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
@@ -206,7 +230,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
 	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
-	__activate_traps(vcpu, &vcpu->arch.run);
+	__activate_traps(vcpu, run);
 
 	__hyp_vgic_restore_state(vcpu);
 	__timer_enable_traps(vcpu);
@@ -218,7 +242,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 		exit_code = __guest_enter(vcpu);
 
 		/* And we're baaack! */
-	} while (fixup_guest_exit(vcpu, &vcpu->arch.run, &exit_code));
+	} while (fixup_guest_exit(vcpu, run, &exit_code));
 
 	__sysreg_save_state_nvhe(guest_ctxt);
 	__sysreg32_save_state(vcpu);
@@ -230,7 +254,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 
 	__sysreg_restore_state_nvhe(host_ctxt);
 
-	if (vcpu->arch.run.flags & KVM_ARM64_RUN_FP_ENABLED)
+	if (run->flags & KVM_ARM64_RUN_FP_ENABLED)
 		__fpsimd_save_fpexc32(vcpu);
 
 	/*
@@ -247,6 +271,9 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 		gic_write_pmr(GIC_PRIO_IRQOFF);
 
 	host_ctxt->__hyp_running_vcpu = NULL;
+
+	if (is_protected_kvm_enabled())
+		__sync_vcpu_after_run(vcpu, run);
 
 	return exit_code;
 }
