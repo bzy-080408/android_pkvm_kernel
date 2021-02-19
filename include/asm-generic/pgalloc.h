@@ -91,6 +91,7 @@ static inline pgtable_t pte_alloc_one(struct mm_struct *mm)
  * done with a reference count in struct page.
  */
 
+#ifndef __HAVE_ARCH_PTE_FREE
 /**
  * pte_free - free PTE-level user page table page
  * @mm: the mm_struct of the current context
@@ -101,11 +102,11 @@ static inline void pte_free(struct mm_struct *mm, struct page *pte_page)
 	pgtable_pte_page_dtor(pte_page);
 	__free_page(pte_page);
 }
+#endif
 
 
 #if CONFIG_PGTABLE_LEVELS > 2
 
-#ifndef __HAVE_ARCH_PMD_ALLOC_ONE
 /**
  * pmd_alloc_one - allocate a page for PMD-level page table
  * @mm: the mm_struct of the current context
@@ -116,7 +117,7 @@ static inline void pte_free(struct mm_struct *mm, struct page *pte_page)
  *
  * Return: pointer to the allocated memory or %NULL on error
  */
-static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
+static inline pmd_t *__pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
 	struct page *page;
 	gfp_t gfp = GFP_PGTABLE_USER;
@@ -131,6 +132,12 @@ static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
 		return NULL;
 	}
 	return (pmd_t *)page_address(page);
+}
+
+#ifndef __HAVE_ARCH_PMD_ALLOC_ONE
+static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
+{
+	return __pmd_alloc_one(mm, addr);
 }
 #endif
 
@@ -147,7 +154,6 @@ static inline void pmd_free(struct mm_struct *mm, pmd_t *pmd)
 
 #if CONFIG_PGTABLE_LEVELS > 3
 
-#ifndef __HAVE_ARCH_PUD_ALLOC_ONE
 /**
  * pud_alloc_one - allocate a page for PUD-level page table
  * @mm: the mm_struct of the current context
@@ -157,7 +163,7 @@ static inline void pmd_free(struct mm_struct *mm, pmd_t *pmd)
  *
  * Return: pointer to the allocated memory or %NULL on error
  */
-static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
+static inline pud_t *__pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
 	gfp_t gfp = GFP_PGTABLE_USER;
 
@@ -165,13 +171,21 @@ static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 		gfp = GFP_PGTABLE_KERNEL;
 	return (pud_t *)get_zeroed_page(gfp);
 }
+
+#ifndef __HAVE_ARCH_PUD_ALLOC_ONE
+static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
+{
+	return __pud_alloc_one(mm, addr);
+}
 #endif
 
+#ifndef __HAVE_ARCH_PUD_FREE
 static inline void pud_free(struct mm_struct *mm, pud_t *pud)
 {
 	BUG_ON((unsigned long)pud & (PAGE_SIZE-1));
 	free_page((unsigned long)pud);
 }
+#endif
 
 #endif /* CONFIG_PGTABLE_LEVELS > 3 */
 
