@@ -1639,3 +1639,23 @@ static int __init prevent_bootmem_remove_init(void)
 }
 early_initcall(prevent_bootmem_remove_init);
 #endif
+
+#ifndef __PAGETABLE_PUD_FOLDED
+pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
+{
+	pud_t *pud = __pud_alloc_one(mm, addr);
+
+	if (!pud)
+		return NULL;
+	if (page_tables_are_ro())
+		set_pgtable_ro(pud);
+	return pud;
+}
+
+void pud_free(struct mm_struct *mm, pud_t *pud)
+{
+	if (page_tables_are_ro())
+		set_pgtable_rw(pud);
+	free_page((u64)pud);
+}
+#endif
