@@ -136,3 +136,24 @@ void pud_free(struct mm_struct *mm, pud_t *pud)
 	free_page((u64)pud);
 }
 #endif
+
+#ifndef __PAGETABLE_PMD_FOLDED
+pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
+{
+	pmd_t *pmd = __pmd_alloc_one(mm, addr);
+
+	if (!pmd)
+		return NULL;
+	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
+		set_pgtable_ro(pmd);
+	return pmd;
+}
+
+void pmd_free(struct mm_struct *mm, pmd_t *pmd)
+{
+	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
+		set_pgtable_rw(pmd);
+	pgtable_pmd_page_dtor(virt_to_page(pmd));
+	free_page((u64)pmd);
+}
+#endif

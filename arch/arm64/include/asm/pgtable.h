@@ -16,6 +16,8 @@
 
 #define __HAVE_ARCH_PUD_ALLOC_ONE
 #define __HAVE_ARCH_PUD_FREE
+#define __HAVE_ARCH_PMD_ALLOC_ONE
+#define __HAVE_ARCH_PMD_FREE
 
 /*
  * VMALLOC range.
@@ -50,6 +52,11 @@ pgd_t *__pgd_alloc(struct mm_struct *mm);
 #ifndef __PAGETABLE_PUD_FOLDED
 pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr);
 void pud_free(struct mm_struct *mm, pud_t *pud);
+#endif
+
+#ifndef __PAGETABLE_PMD_FOLDED
+pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr);
+void pmd_free(struct mm_struct *mm, pmd_t *pmd);
 #endif
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
