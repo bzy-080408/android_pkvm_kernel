@@ -72,6 +72,8 @@ static inline void __pte_free_tlb(struct mmu_gather *tlb, pgtable_t pte,
 				  unsigned long addr)
 {
 	pgtable_pte_page_dtor(pte);
+	if (static_branch_likely(&ro_page_tables))
+		set_pgtable_rw(page_address(pte));
 	tlb_remove_table(tlb, pte);
 }
 

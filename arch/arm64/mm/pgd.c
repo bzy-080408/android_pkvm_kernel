@@ -157,3 +157,26 @@ void pmd_free(struct mm_struct *mm, pmd_t *pmd)
 	free_page((u64)pmd);
 }
 #endif
+
+pgtable_t pte_alloc_one(struct mm_struct *mm)
+{
+	pgtable_t pgt = __pte_alloc_one(mm, GFP_PGTABLE_USER);
+
+	VM_BUG_ON(mm == &init_mm);
+
+	if (!pgt)
+		return NULL;
+	if (static_branch_likely(&ro_page_tables))
+		set_pgtable_ro(page_address(pgt));
+	return pgt;
+}
+
+void pte_free(struct mm_struct *mm, struct page *pte_page)
+{
+	VM_BUG_ON(mm == &init_mm);
+
+	pgtable_pte_page_dtor(pte_page);
+	if (static_branch_likely(&ro_page_tables))
+		set_pgtable_rw(page_address(pte_page));
+	__free_page(pte_page);
+}
