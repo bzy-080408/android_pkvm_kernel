@@ -27,7 +27,11 @@ static inline void __pud_populate(pud_t *pudp, phys_addr_t pmdp, pudval_t prot)
 
 static inline void pud_populate(struct mm_struct *mm, pud_t *pudp, pmd_t *pmdp)
 {
-	__pud_populate(pudp, __pa(pmdp), PMD_TYPE_TABLE);
+	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
+		xchg_ro_pte(mm, (pte_t *)pudp,
+			    __pte(__phys_to_pud_val(__pa(pmdp) | PMD_TYPE_TABLE)));
+	else
+		__pud_populate(pudp, __pa(pmdp), PMD_TYPE_TABLE);
 }
 #else
 static inline void __pud_populate(pud_t *pudp, phys_addr_t pmdp, pudval_t prot)
@@ -45,7 +49,11 @@ static inline void __p4d_populate(p4d_t *p4dp, phys_addr_t pudp, p4dval_t prot)
 
 static inline void p4d_populate(struct mm_struct *mm, p4d_t *p4dp, pud_t *pudp)
 {
-	__p4d_populate(p4dp, __pa(pudp), PUD_TYPE_TABLE);
+	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
+		xchg_ro_pte(mm, (pte_t *)p4dp,
+			    __pte(__phys_to_p4d_val(__pa(pudp) | PMD_TYPE_TABLE)));
+	else
+		__p4d_populate(p4dp, __pa(pudp), PUD_TYPE_TABLE);
 }
 #else
 static inline void __p4d_populate(p4d_t *p4dp, phys_addr_t pudp, p4dval_t prot)
@@ -79,7 +87,12 @@ pmd_populate_kernel(struct mm_struct *mm, pmd_t *pmdp, pte_t *ptep)
 static inline void
 pmd_populate(struct mm_struct *mm, pmd_t *pmdp, pgtable_t ptep)
 {
-	__pmd_populate(pmdp, page_to_phys(ptep), PMD_TYPE_TABLE);
+	if (static_branch_likely(&ro_page_tables))
+		xchg_ro_pte(mm, (pte_t *)pmdp,
+			    __pte(__phys_to_pud_val(page_to_phys(ptep) |
+						    PMD_TYPE_TABLE)));
+	else
+		__pmd_populate(pmdp, page_to_phys(ptep), PMD_TYPE_TABLE);
 }
 #define pmd_pgtable(pmd) pmd_page(pmd)
 
