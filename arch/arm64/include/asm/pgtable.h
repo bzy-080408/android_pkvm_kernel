@@ -14,6 +14,9 @@
 #include <asm/pgtable-prot.h>
 #include <asm/tlbflush.h>
 
+#define __HAVE_ARCH_PUD_ALLOC_ONE
+#define __HAVE_ARCH_PUD_FREE
+
 /*
  * VMALLOC range.
  *
@@ -43,6 +46,11 @@ int set_pgtable_rw(void *addr);
 DECLARE_STATIC_KEY_FALSE(ro_page_tables);
 
 pgd_t *__pgd_alloc(struct mm_struct *mm);
+
+#ifndef __PAGETABLE_PUD_FOLDED
+pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr);
+void pud_free(struct mm_struct *mm, pud_t *pud);
+#endif
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 #define __HAVE_ARCH_FLUSH_PMD_TLB_RANGE

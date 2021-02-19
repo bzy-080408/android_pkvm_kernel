@@ -90,6 +90,8 @@ static inline void __pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmdp,
 static inline void __pud_free_tlb(struct mmu_gather *tlb, pud_t *pudp,
 				  unsigned long addr)
 {
+	if (static_branch_likely(&ro_page_tables))
+		set_pgtable_rw(pudp);
 	tlb_remove_table(tlb, virt_to_page(pudp));
 }
 #endif

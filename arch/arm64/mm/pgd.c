@@ -116,3 +116,23 @@ pte_t cmpxchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t old, pte_t new)
 	raw_spin_unlock_irqrestore(&patch_pte_lock, flags);
 	return ret;
 }
+
+#ifndef __PAGETABLE_PUD_FOLDED
+pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
+{
+	pud_t *pud = __pud_alloc_one(mm, addr);
+
+	if (!pud)
+		return NULL;
+	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
+		set_pgtable_ro(pud);
+	return pud;
+}
+
+void pud_free(struct mm_struct *mm, pud_t *pud)
+{
+	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
+		set_pgtable_rw(pud);
+	free_page((u64)pud);
+}
+#endif
