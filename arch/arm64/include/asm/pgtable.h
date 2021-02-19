@@ -32,12 +32,24 @@
 
 #include <asm/cmpxchg.h>
 #include <asm/fixmap.h>
+#include <linux/jump_label.h>
 #include <linux/mmdebug.h>
 #include <linux/mm_types.h>
 #include <linux/sched.h>
 
 int set_pgtable_ro(void *addr);
 int set_pgtable_rw(void *addr);
+
+DECLARE_STATIC_KEY_FALSE(ro_page_tables);
+
+static inline bool page_tables_are_ro(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_RO_PAGE_TABLES) &&
+	       static_branch_unlikely(&ro_page_tables);
+}
+
+pte_t xchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t pte);
+pte_t cmpxchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t old, pte_t new);
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 #define __HAVE_ARCH_FLUSH_PMD_TLB_RANGE
@@ -85,7 +97,7 @@ extern unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)];
 	__pte(__phys_to_pte_val((phys_addr_t)(pfn) << PAGE_SHIFT) | pgprot_val(prot))
 
 #define pte_none(pte)		(!pte_val(pte))
-#define pte_clear(mm,addr,ptep)	set_pte(ptep, __pte(0))
+#define pte_clear(mm,addr,ptep)	set_pte_at(mm, addr, ptep, __pte(0))
 #define pte_page(pte)		(pfn_to_page(pte_pfn(pte)))
 
 /*
@@ -250,7 +262,10 @@ static inline pte_t pte_mkdevmap(pte_t pte)
 
 static inline void set_pte(pte_t *ptep, pte_t pte)
 {
-	WRITE_ONCE(*ptep, pte);
+	if (page_tables_are_ro())
+		xchg_ro_pte(&init_mm, ptep, pte);
+	else
+		WRITE_ONCE(*ptep, pte);
 
 	/*
 	 * Only if the new pte is valid and kernel, otherwise TLB maintenance
@@ -320,7 +335,10 @@ static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 
 	__check_racy_pte_update(mm, ptep, pte);
 
-	set_pte(ptep, pte);
+	if (page_tables_are_ro())
+		xchg_ro_pte(mm, ptep, pte);
+	else
+		set_pte(ptep, pte);
 }
 
 /*
@@ -554,7 +572,10 @@ static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
 	}
 #endif /* __PAGETABLE_PMD_FOLDED */
 
-	WRITE_ONCE(*pmdp, pmd);
+	if (page_tables_are_ro())
+		xchg_ro_pte(&init_mm, (pte_t *)pmdp, pmd_pte(pmd));
+	else
+		WRITE_ONCE(*pmdp, pmd);
 
 	if (pmd_valid(pmd)) {
 		dsb(ishst);
@@ -564,7 +585,10 @@ static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
 
 static inline void pmd_clear(pmd_t *pmdp)
 {
-	set_pmd(pmdp, __pmd(0));
+	if (page_tables_are_ro())
+		xchg_ro_pte(NULL, (pte_t *)pmdp, __pte(0));
+	else
+		set_pmd(pmdp, __pmd(0));
 }
 
 static inline phys_addr_t pmd_page_paddr(pmd_t pmd)
@@ -615,7 +639,10 @@ static inline void set_pud(pud_t *pudp, pud_t pud)
 	}
 #endif /* __PAGETABLE_PUD_FOLDED */
 
-	WRITE_ONCE(*pudp, pud);
+	if (page_tables_are_ro())
+		xchg_ro_pte(&init_mm, (pte_t *)pudp, pud_pte(pud));
+	else
+		WRITE_ONCE(*pudp, pud);
 
 	if (pud_valid(pud)) {
 		dsb(ishst);
@@ -625,7 +652,10 @@ static inline void set_pud(pud_t *pudp, pud_t pud)
 
 static inline void pud_clear(pud_t *pudp)
 {
-	set_pud(pudp, __pud(0));
+	if (page_tables_are_ro())
+		xchg_ro_pte(NULL, (pte_t *)pudp, __pte(0));
+	else
+		set_pud(pudp, __pud(0));
 }
 
 static inline phys_addr_t pud_page_paddr(pud_t pud)
@@ -679,14 +709,20 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 		return;
 	}
 
-	WRITE_ONCE(*p4dp, p4d);
+	if (page_tables_are_ro())
+		xchg_ro_pte(&init_mm, (pte_t *)p4dp, p4d_pte(p4d));
+	else
+		WRITE_ONCE(*p4dp, p4d);
 	dsb(ishst);
 	isb();
 }
 
 static inline void p4d_clear(p4d_t *p4dp)
 {
-	set_p4d(p4dp, __p4d(0));
+	if (page_tables_are_ro())
+		xchg_ro_pte(NULL, (pte_t *)p4dp, __pte(0));
+	else
+		set_p4d(p4dp, __p4d(0));
 }
 
 static inline phys_addr_t p4d_page_paddr(p4d_t p4d)
@@ -781,7 +817,7 @@ static inline int pgd_devmap(pgd_t pgd)
  * Atomic pte/pmd modifications.
  */
 #define __HAVE_ARCH_PTEP_TEST_AND_CLEAR_YOUNG
-static inline int __ptep_test_and_clear_young(pte_t *ptep)
+static inline int __ptep_test_and_clear_young(struct mm_struct *mm, pte_t *ptep)
 {
 	pte_t old_pte, pte;
 
@@ -789,8 +825,13 @@ static inline int __ptep_test_and_clear_young(pte_t *ptep)
 	do {
 		old_pte = pte;
 		pte = pte_mkold(pte);
-		pte_val(pte) = cmpxchg_relaxed(&pte_val(*ptep),
-					       pte_val(old_pte), pte_val(pte));
+
+		if (page_tables_are_ro())
+			pte = cmpxchg_ro_pte(mm, ptep, old_pte, pte);
+		else
+			pte_val(pte) = cmpxchg_relaxed(&pte_val(*ptep),
+						       pte_val(old_pte),
+						       pte_val(pte));
 	} while (pte_val(pte) != pte_val(old_pte));
 
 	return pte_young(pte);
@@ -800,7 +841,7 @@ static inline int ptep_test_and_clear_young(struct vm_area_struct *vma,
 					    unsigned long address,
 					    pte_t *ptep)
 {
-	return __ptep_test_and_clear_young(ptep);
+	return __ptep_test_and_clear_young(vma->vm_mm, ptep);
 }
 
 #define __HAVE_ARCH_PTEP_CLEAR_YOUNG_FLUSH
@@ -838,6 +879,8 @@ static inline int pmdp_test_and_clear_young(struct vm_area_struct *vma,
 static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 				       unsigned long address, pte_t *ptep)
 {
+	if (page_tables_are_ro())
+		return xchg_ro_pte(mm, ptep, __pte(0));
 	return __pte(xchg_relaxed(&pte_val(*ptep), 0));
 }
 
@@ -863,8 +906,12 @@ static inline void ptep_set_wrprotect(struct mm_struct *mm, unsigned long addres
 	do {
 		old_pte = pte;
 		pte = pte_wrprotect(pte);
-		pte_val(pte) = cmpxchg_relaxed(&pte_val(*ptep),
-					       pte_val(old_pte), pte_val(pte));
+		if (page_tables_are_ro())
+			pte = cmpxchg_ro_pte(mm, ptep, old_pte, pte);
+		else
+			pte_val(pte) = cmpxchg_relaxed(&pte_val(*ptep),
+						       pte_val(old_pte),
+						       pte_val(pte));
 	} while (pte_val(pte) != pte_val(old_pte));
 }
 
@@ -880,6 +927,8 @@ static inline void pmdp_set_wrprotect(struct mm_struct *mm,
 static inline pmd_t pmdp_establish(struct vm_area_struct *vma,
 		unsigned long address, pmd_t *pmdp, pmd_t pmd)
 {
+	if (page_tables_are_ro())
+		return pte_pmd(xchg_ro_pte(vma->vm_mm, (pte_t *)pmdp, pmd_pte(pmd)));
 	return __pmd(xchg_relaxed(&pmd_val(*pmdp), pmd_val(pmd)));
 }
 #endif

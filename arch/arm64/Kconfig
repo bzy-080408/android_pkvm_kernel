@@ -1204,6 +1204,17 @@ config RODATA_FULL_DEFAULT_ENABLED
 	  This requires the linear region to be mapped down to pages,
 	  which may adversely affect performance in some cases.
 
+config ARM64_RO_PAGE_TABLES
+	bool "Remap page tables read-only in the kernel VA space"
+	select RODATA_FULL_DEFAULT_ENABLED
+	help
+	  Remap linear mappings of page table pages read-only as long as they
+	  are being used as such, and use a fixmap API to manipulate all page
+	  table descriptors, instead of manipulating them directly via their
+	  writable mappings in the direct map. This is intended as a debug
+	  and/or hardening feature, as it removes the ability for stray writes
+	  to be exploited to bypass permission restrictions.
+
 config ARM64_SW_TTBR0_PAN
 	bool "Emulate Privileged Access Never using TTBR0_EL1 switching"
 	help
