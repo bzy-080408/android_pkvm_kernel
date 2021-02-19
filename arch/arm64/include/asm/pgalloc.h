@@ -18,9 +18,14 @@
 #define __HAVE_ARCH_PUD_FREE
 #define __HAVE_ARCH_PMD_ALLOC_ONE
 #define __HAVE_ARCH_PMD_FREE
+#define __HAVE_ARCH_PTE_ALLOC_ONE
+#define __HAVE_ARCH_PTE_FREE
 #include <asm-generic/pgalloc.h>
 
 #define PGD_SIZE	(PTRS_PER_PGD * sizeof(pgd_t))
+
+pgtable_t pte_alloc_one(struct mm_struct *mm);
+void pte_free(struct mm_struct *mm, struct page *pte_page);
 
 #if CONFIG_PGTABLE_LEVELS > 2
 
