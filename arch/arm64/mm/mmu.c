@@ -392,8 +392,11 @@ static phys_addr_t __pgd_pgtable_alloc(int shift)
 	void *ptr = (void *)__get_free_page(GFP_PGTABLE_KERNEL);
 	BUG_ON(!ptr);
 
-	/* Ensure the zeroed page is visible to the page table walker */
-	dsb(ishst);
+	if (page_tables_are_ro())
+		set_pgtable_ro(ptr);
+	else
+		/* Ensure the zeroed page is visible to the page table walker */
+		dsb(ishst);
 	return __pa(ptr);
 }
 
