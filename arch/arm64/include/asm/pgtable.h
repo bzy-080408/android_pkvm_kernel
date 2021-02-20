@@ -42,6 +42,8 @@ int set_pgtable_rw(void *addr);
 
 DECLARE_STATIC_KEY_FALSE(ro_page_tables);
 
+pgd_t *__pgd_alloc(struct mm_struct *mm);
+
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 #define __HAVE_ARCH_FLUSH_PMD_TLB_RANGE
 

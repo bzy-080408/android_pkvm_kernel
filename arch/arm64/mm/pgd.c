@@ -9,8 +9,10 @@
 #include <linux/mm.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
+#include <linux/set_memory.h>
 #include <linux/slab.h>
 
+#include <asm/mmu_context.h>
 #include <asm/pgalloc.h>
 #include <asm/page.h>
 #include <asm/tlbflush.h>
@@ -20,27 +22,48 @@ static DEFINE_RAW_SPINLOCK(patch_pte_lock);
 
 DEFINE_STATIC_KEY_FALSE(ro_page_tables);
 
-pgd_t *pgd_alloc(struct mm_struct *mm)
+pgd_t *__pgd_alloc(struct mm_struct *mm)
 {
 	gfp_t gfp = GFP_PGTABLE_USER;
 
-	if (PGD_SIZE == PAGE_SIZE)
-		return (pgd_t *)__get_free_page(gfp);
-	else
+	if (PGD_SIZE < PAGE_SIZE && !static_branch_likely(&ro_page_tables))
 		return kmem_cache_alloc(pgd_cache, gfp);
+
+	return (pgd_t *)__get_free_page(gfp);
+}
+
+pgd_t *pgd_alloc(struct mm_struct *mm)
+{
+	pgd_t *pgd = __pgd_alloc(mm);
+
+	if (!pgd)
+		return NULL;
+	if (static_branch_likely(&ro_page_tables))
+		set_pgtable_ro(pgd);
+	return pgd;
 }
 
 void pgd_free(struct mm_struct *mm, pgd_t *pgd)
 {
-	if (PGD_SIZE == PAGE_SIZE)
-		free_page((unsigned long)pgd);
-	else
+	if (PGD_SIZE < PAGE_SIZE && !static_branch_likely(&ro_page_tables)) {
 		kmem_cache_free(pgd_cache, pgd);
+	} else {
+		if (static_branch_likely(&ro_page_tables))
+			set_pgtable_rw(pgd);
+		free_page((unsigned long)pgd);
+	}
 }
 
 void __init pgtable_cache_init(void)
 {
-	if (PGD_SIZE == PAGE_SIZE)
+	bool enable_ro = rodata_full; // && IS_ENABLED(.....)
+
+	if (enable_ro)
+		static_branch_enable(&ro_page_tables);
+
+	pr_info("User page table protection %sabled\n", enable_ro ? "en" : "dis");
+
+	if (PGD_SIZE == PAGE_SIZE || enable_ro)
 		return;
 
 #ifdef CONFIG_ARM64_PA_BITS_52
