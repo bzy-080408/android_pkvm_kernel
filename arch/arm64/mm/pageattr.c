@@ -148,6 +148,20 @@ int set_memory_valid(unsigned long addr, int numpages, int enable)
 					__pgprot(PTE_VALID));
 }
 
+int set_pgtable_ro(void *addr)
+{
+	return __change_memory_common((u64)addr, PAGE_SIZE,
+				      __pgprot(PTE_RDONLY),
+				      __pgprot(PTE_WRITE));
+}
+
+int set_pgtable_rw(void *addr)
+{
+	return __change_memory_common((u64)addr, PAGE_SIZE,
+				      __pgprot(PTE_WRITE),
+				      __pgprot(PTE_RDONLY));
+}
+
 int set_direct_map_invalid_noflush(struct page *page)
 {
 	struct page_change_data data = {

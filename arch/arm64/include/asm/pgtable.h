@@ -36,6 +36,9 @@
 #include <linux/mm_types.h>
 #include <linux/sched.h>
 
+int set_pgtable_ro(void *addr);
+int set_pgtable_rw(void *addr);
+
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 #define __HAVE_ARCH_FLUSH_PMD_TLB_RANGE
 
