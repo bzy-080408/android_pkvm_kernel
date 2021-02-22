@@ -774,6 +774,7 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type);
 int kvm_arm_vcpu_pkvm_init(struct kvm_vcpu *vcpu);
 int kvm_arm_vm_ioctl_pkvm(struct kvm *kvm, struct kvm_enable_cap *cap);
 #define kvm_vm_is_protected(kvm) (kvm->arch.pkvm.enabled)
+#define kvm_vcpu_is_protected(vcpu) (kvm_vm_is_protected((vcpu)->kvm))
 
 int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature);
 bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);

@@ -1175,6 +1175,11 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 			break;
 
 		r = -EFAULT;
+
+		/* Cannot set/get registers for protected VMs. */
+		if (kvm_vcpu_is_protected(vcpu))
+			break;
+
 		if (copy_from_user(&reg, argp, sizeof(reg)))
 			break;
 
