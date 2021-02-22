@@ -164,6 +164,54 @@ static void handle___pkvm_mark_hyp(struct kvm_cpu_context *host_ctxt)
 
 	cpu_reg(host_ctxt, 1) = __pkvm_mark_hyp(start, end);
 }
+
+static void inject_external_abort(struct kvm_cpu_context *host_ctxt)
+{
+	struct kvm_vcpu *vcpu = host_ctxt->__hyp_running_vcpu;
+
+	if (vcpu)
+		; // TODO
+
+	write_sysreg_el2(read_sysreg_el2(SYS_ELR) - 1, SYS_ELR);
+}
+
+static void handle___pkvm_xchg_ro_pte(struct kvm_cpu_context *host_ctxt)
+{
+	//DECLARE_REG(pgd_t *, pgdp, host_ctxt, 1);
+	DECLARE_REG(pte_t *, ptep, host_ctxt, 2);
+	DECLARE_REG(u64, pteval, host_ctxt, 3);
+	u64 ptaddr = (u64)kern_hyp_va(ptep) & PAGE_MASK;
+
+	// create stage1@el2 mapping if needed
+	__pkvm_create_mappings(ptaddr, PAGE_SIZE, (u64)ptep & PAGE_MASK, PAGE_HYP);
+
+	cpu_reg(host_ctxt, 1) = xchg_relaxed(&pte_val(*kern_hyp_va(ptep)),
+					     pteval);
+}
+
+static void handle___pkvm_cmpxchg_ro_pte(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(pte_t *, ptep, host_ctxt, 1);
+	DECLARE_REG(u64, oldval, host_ctxt, 2);
+	DECLARE_REG(u64, newval, host_ctxt, 3);
+
+	/*
+	 * cmpxchg_ro_pte() must only be used when updates to mapping attributes
+	 * performed by the CPU may race with updates of the access/dirty flags
+	 * by the page table walker. If we can enforce this at HYP level, there
+	 * is no need to go through the policy check at all.
+	 */
+	if ((oldval ^ newval) & ~(PTE_DIRTY|PTE_WRITE|PTE_AF|PTE_RDONLY)) {
+		inject_external_abort(host_ctxt);
+		return;
+	}
+
+	// TODO check that ptep points into an active page table
+
+	cpu_reg(host_ctxt, 1) = cmpxchg_relaxed(&pte_val(*kern_hyp_va(ptep)),
+						oldval, newval);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -189,6 +237,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_create_private_mapping),
 	HANDLE_FUNC(__pkvm_prot_finalize),
 	HANDLE_FUNC(__pkvm_mark_hyp),
+	HANDLE_FUNC(__pkvm_xchg_ro_pte),
+	HANDLE_FUNC(__pkvm_cmpxchg_ro_pte),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)

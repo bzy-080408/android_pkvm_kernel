@@ -12,6 +12,7 @@
 #include <linux/set_memory.h>
 #include <linux/slab.h>
 
+#include <asm/kvm_host.h>
 #include <asm/mmu_context.h>
 #include <asm/pgalloc.h>
 #include <asm/page.h>
@@ -93,6 +94,14 @@ pte_t xchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t pte)
 		return pte;
 	}
 
+	if (is_protected_kvm_enabled()) {
+		/* invoke the hypervisor to perform the update on our behalf */
+		pte_val(ret) = kvm_call_hyp_nvhe(__pkvm_xchg_ro_pte,
+						 mm ? __pa(mm->pgd) : 0x0,
+						 __pa(ptep), pte_val(pte));
+		return ret;
+	}
+
 	raw_spin_lock_irqsave(&patch_pte_lock, flags);
 	p = (pte_t *)set_fixmap_offset(FIX_TEXT_POKE_PTE, __pa(ptep));
 	pte_val(ret) = xchg_relaxed(&pte_val(*p), pte_val(pte));
@@ -108,6 +117,14 @@ pte_t cmpxchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t old, pte_t new)
 	pte_t *p;
 
 	VM_BUG_ON(!virt_addr_valid(ptep));
+	VM_BUG_ON((pte_val(old) ^ pte_val(new)) & ~(PTE_DIRTY|PTE_WRITE|PTE_AF|PTE_RDONLY));
+
+	if (is_protected_kvm_enabled()) {
+		/* invoke the hypervisor to perform the update on our behalf */
+		pte_val(ret) = kvm_call_hyp_nvhe(__pkvm_cmpxchg_ro_pte, __pa(ptep),
+						 pte_val(old), pte_val(new));
+		return ret;
+	}
 
 	raw_spin_lock_irqsave(&patch_pte_lock, flags);
 	p = (pte_t *)set_fixmap_offset(FIX_TEXT_POKE_PTE, __pa(ptep));
