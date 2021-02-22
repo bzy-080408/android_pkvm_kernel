@@ -12,6 +12,8 @@
 #include <asm/ptrace.h>
 #include <asm/tlbflush.h>
 
+#define efi_pgd_alloc	pgd_alloc
+
 #ifdef CONFIG_EFI
 extern void efi_init(void);
 #else

@@ -15,6 +15,8 @@
 #include <asm/mmu_context.h>
 #include <asm/ptrace.h>
 
+#define efi_pgd_alloc	pgd_alloc
+
 #ifdef CONFIG_EFI
 void efi_init(void);
 

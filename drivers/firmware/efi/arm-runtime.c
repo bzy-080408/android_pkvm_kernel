@@ -53,7 +53,7 @@ static bool __init efi_virtmap_init(void)
 {
 	efi_memory_desc_t *md;
 
-	efi_mm.pgd = pgd_alloc(&efi_mm);
+	efi_mm.pgd = efi_pgd_alloc(&efi_mm);
 	mm_init_cpumask(&efi_mm);
 	init_new_context(NULL, &efi_mm);
 
