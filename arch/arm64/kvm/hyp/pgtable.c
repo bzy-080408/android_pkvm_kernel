@@ -43,6 +43,8 @@
 #define KVM_PTE_LEAF_ATTR_HI_S1_XN	BIT(54)
 
 #define KVM_PTE_LEAF_ATTR_HI_S2_XN	BIT(54)
+#define KVM_PTE_LEAF_ATTR_HI_S2_RT	BIT(55)
+#define KVM_PTE_LEAF_ATTR_HI_S2_TT	BIT(56)
 
 #define KVM_PTE_LEAF_ATTR_S2_PERMS	(KVM_PTE_LEAF_ATTR_LO_S2_S2AP_R | \
 					 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W | \
@@ -957,6 +959,72 @@ bool kvm_pgtable_stage2_is_young(struct kvm_pgtable *pgt, u64 addr)
 	kvm_pte_t pte = 0;
 	stage2_update_leaf_attrs(pgt, addr, 1, 0, 0, &pte, NULL);
 	return pte & KVM_PTE_LEAF_ATTR_LO_S2_AF;
+}
+
+static const kvm_pte_t pgtable_attr_mask = KVM_PTE_LEAF_ATTR_HI_S2_TT |
+					   KVM_PTE_LEAF_ATTR_HI_S2_RT |
+					   KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
+
+bool kvm_pgtable_stage2_is_pg(struct kvm_pgtable *pgt, u64 addr)
+{
+	kvm_pte_t pte = 0;
+	stage2_update_leaf_attrs(pgt, addr, 1, 0, 0, &pte, NULL);
+	pte &= pgtable_attr_mask;
+	return pte == KVM_PTE_LEAF_ATTR_HI_S2_TT ||
+	       pte == KVM_PTE_LEAF_ATTR_HI_S2_RT;
+}
+
+bool kvm_pgtable_stage2_is_pgroot(struct kvm_pgtable *pgt, u64 addr)
+{
+	kvm_pte_t pte = 0;
+	stage2_update_leaf_attrs(pgt, addr, 1, 0, 0, &pte, NULL);
+	return (pte & pgtable_attr_mask) == KVM_PTE_LEAF_ATTR_HI_S2_RT;
+}
+
+bool kvm_pgtable_stage2_make_pgtable(struct kvm_pgtable *pgt, u64 addr)
+{
+	kvm_pte_t pte = 0;
+	stage2_update_leaf_attrs(pgt, addr, 1,
+				 KVM_PTE_LEAF_ATTR_HI_S2_TT,
+				 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W,
+				 &pte, NULL);
+	dsb(ishst);
+	return (pte & pgtable_attr_mask) == KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
+}
+
+bool kvm_pgtable_stage2_make_pgroot(struct kvm_pgtable *pgt, u64 addr)
+{
+	kvm_pte_t pte = 0;
+	stage2_update_leaf_attrs(pgt, addr, 1,
+				 KVM_PTE_LEAF_ATTR_HI_S2_RT,
+				 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W,
+				 &pte, NULL);
+	dsb(ishst);
+	return (pte & pgtable_attr_mask) == KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W;
+}
+
+bool kvm_pgtable_stage2_clear_pgtable(struct kvm_pgtable *pgt, u64 addr)
+{
+	kvm_pte_t pte = 0;
+	stage2_update_leaf_attrs(pgt, addr, 1,
+				 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W,
+				 KVM_PTE_LEAF_ATTR_HI_S2_RT |
+				 KVM_PTE_LEAF_ATTR_HI_S2_TT,
+				 &pte, NULL);
+	dsb(ishst);
+	return (pte & pgtable_attr_mask) == KVM_PTE_LEAF_ATTR_HI_S2_TT;
+}
+
+bool kvm_pgtable_stage2_clear_pgroot(struct kvm_pgtable *pgt, u64 addr)
+{
+	kvm_pte_t pte = 0;
+	stage2_update_leaf_attrs(pgt, addr, 1,
+				 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W,
+				 KVM_PTE_LEAF_ATTR_HI_S2_RT |
+				 KVM_PTE_LEAF_ATTR_HI_S2_TT,
+				 &pte, NULL);
+	dsb(ishst);
+	return (pte & pgtable_attr_mask) == KVM_PTE_LEAF_ATTR_HI_S2_RT;
 }
 
 int kvm_pgtable_stage2_relax_perms(struct kvm_pgtable *pgt, u64 addr,

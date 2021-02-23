@@ -443,4 +443,14 @@ int kvm_pgtable_walk(struct kvm_pgtable *pgt, u64 addr, u64 size,
 int kvm_pgtable_stage2_find_range(struct kvm_pgtable *pgt, u64 addr,
 				  enum kvm_pgtable_prot prot,
 				  struct kvm_mem_range *range);
+
+bool kvm_pgtable_stage2_is_pg(struct kvm_pgtable *pgt, u64 addr);
+bool kvm_pgtable_stage2_is_pgroot(struct kvm_pgtable *pgt, u64 addr);
+
+bool kvm_pgtable_stage2_make_pgtable(struct kvm_pgtable *pgt, u64 addr);
+bool kvm_pgtable_stage2_make_pgroot(struct kvm_pgtable *pgt, u64 addr);
+
+bool kvm_pgtable_stage2_clear_pgtable(struct kvm_pgtable *pgt, u64 addr);
+bool kvm_pgtable_stage2_clear_pgroot(struct kvm_pgtable *pgt, u64 addr);
+
 #endif	/* __ARM64_KVM_PGTABLE_H__ */
