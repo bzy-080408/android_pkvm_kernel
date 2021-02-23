@@ -214,6 +214,14 @@ static void handle___pkvm_cmpxchg_ro_pte(struct kvm_cpu_context *host_ctxt)
 
 static void handle___pkvm_assign_pgroot(struct kvm_cpu_context *host_ctxt)
 {
+	/*
+	 * We don't permit the root table's address to be used in TTBRn_EL1 by
+	 * the host unless the page is mapped read-only at stage2, and carries
+	 * the correct annotation (rt@s2). If the page is not in the correct
+	 * state yet, set the correct state and wipe the contents. This ensures
+	 * that a root page table only contains entries that were vetted by the
+	 * HYP api.
+	 */
 	DECLARE_REG(pgd_t *, pgdp, host_ctxt, 1);
 	u64 ptaddr = (u64)kern_hyp_va(pgdp) & PAGE_MASK;
 
@@ -230,9 +238,24 @@ static void handle___pkvm_assign_pgroot(struct kvm_cpu_context *host_ctxt)
 	memset((void *)ptaddr, 0, PAGE_SIZE);
 }
 
+extern unsigned long hyp_nr_cpus;
+
 static void handle___pkvm_release_pgroot(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(pgd_t *, pgdp, host_ctxt, 1);
+	u64 ptaddr = (u64)kern_hyp_va(pgdp) & PAGE_MASK;
+	int i;
+
+	/* check that the root pgtable is not live on any CPU */
+	for (i = 0; i < hyp_nr_cpus; i++) {
+		const struct kvm_cpu_context *ctx;
+
+		ctx = &per_cpu_ptr(&kvm_host_data, i)->host_ctxt;
+		if ((ctx->sys_regs[TTBR0_EL1] & ~TTBR_ASID_MASK) == ptaddr) {
+			inject_external_abort(host_ctxt);
+			return;
+		}
+	}
 
 	if (!kvm_pgtable_stage2_clear_pgroot(&host_kvm.pgt, (u64)pgdp))
 		inject_external_abort(host_ctxt);
@@ -313,6 +336,7 @@ static void handle_host_sysreg(struct kvm_cpu_context *host_ctxt, u64 esr)
 	u64 regval = cpu_reg(host_ctxt, (esr >> 5) & 0x1f);
 	u32 reg = sys_reg((esr >> 20) & 3, (esr >> 14) & 0x7, (esr >> 10) & 0xf,
 			  (esr >> 1) & 0xf, (esr >> 17) & 0x7);
+	u64 addr;
 
 	switch (reg) {
 	default:
@@ -322,6 +346,15 @@ static void handle_host_sysreg(struct kvm_cpu_context *host_ctxt, u64 esr)
 		write_sysreg(regval, SCTLR_EL1);
 		break;
 	case SYS_TTBR0_EL1:
+		// TODO stage 2 protection of reserved_pg_dir
+		// TODO elide double trap for pgd switch
+		addr = regval & ~TTBR_ASID_MASK;
+		if (addr != hyp_virt_to_phys(reserved_pg_dir) &&
+		    !kvm_pgtable_stage2_is_pgroot(&host_kvm.pgt, addr)) {
+			inject_external_abort(host_ctxt);
+			break;
+		}
+		host_ctxt->sys_regs[TTBR0_EL1] = regval;
 		write_sysreg(regval, TTBR0_EL1);
 		break;
 	case SYS_TTBR1_EL1:
