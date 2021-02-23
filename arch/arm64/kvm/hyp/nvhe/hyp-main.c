@@ -212,6 +212,32 @@ static void handle___pkvm_cmpxchg_ro_pte(struct kvm_cpu_context *host_ctxt)
 						oldval, newval);
 }
 
+static void handle___pkvm_assign_pgroot(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(pgd_t *, pgdp, host_ctxt, 1);
+	u64 ptaddr = (u64)kern_hyp_va(pgdp) & PAGE_MASK;
+
+	// remap the page as r/o at stage, and tag as a pgd[]
+	if (!kvm_pgtable_stage2_make_pgroot(&host_kvm.pgt, (u64)pgdp)) {
+		inject_external_abort(host_ctxt);
+		return;
+	}
+
+	// create stage1@el2 mapping if needed
+	__pkvm_create_mappings(ptaddr, PAGE_SIZE, (u64)pgdp & PAGE_MASK, PAGE_HYP);
+
+	// wipe the page before first use
+	memset((void *)ptaddr, 0, PAGE_SIZE);
+}
+
+static void handle___pkvm_release_pgroot(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(pgd_t *, pgdp, host_ctxt, 1);
+
+	if (!kvm_pgtable_stage2_clear_pgroot(&host_kvm.pgt, (u64)pgdp))
+		inject_external_abort(host_ctxt);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -239,6 +265,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_mark_hyp),
 	HANDLE_FUNC(__pkvm_xchg_ro_pte),
 	HANDLE_FUNC(__pkvm_cmpxchg_ro_pte),
+	HANDLE_FUNC(__pkvm_assign_pgroot),
+	HANDLE_FUNC(__pkvm_release_pgroot),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)

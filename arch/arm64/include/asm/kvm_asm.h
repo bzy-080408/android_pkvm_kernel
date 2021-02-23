@@ -65,6 +65,8 @@
 #define __KVM_HOST_SMCCC_FUNC___pkvm_mark_hyp			20
 #define __KVM_HOST_SMCCC_FUNC___pkvm_xchg_ro_pte		21
 #define __KVM_HOST_SMCCC_FUNC___pkvm_cmpxchg_ro_pte		22
+#define __KVM_HOST_SMCCC_FUNC___pkvm_assign_pgroot		23
+#define __KVM_HOST_SMCCC_FUNC___pkvm_release_pgroot		24
 
 #ifndef __ASSEMBLY__
 
