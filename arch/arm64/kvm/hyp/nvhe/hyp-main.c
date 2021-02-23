@@ -280,6 +280,53 @@ static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 	kvm_skip_host_instr();
 }
 
+static void handle_host_sysreg(struct kvm_cpu_context *host_ctxt, u64 esr)
+{
+	u64 regval = cpu_reg(host_ctxt, (esr >> 5) & 0x1f);
+	u32 reg = sys_reg((esr >> 20) & 3, (esr >> 14) & 0x7, (esr >> 10) & 0xf,
+			  (esr >> 1) & 0xf, (esr >> 17) & 0x7);
+
+	switch (reg) {
+	default:
+		hyp_panic();
+		break;
+	case SYS_SCTLR_EL1:
+		write_sysreg(regval, SCTLR_EL1);
+		break;
+	case SYS_TTBR0_EL1:
+		write_sysreg(regval, TTBR0_EL1);
+		break;
+	case SYS_TTBR1_EL1:
+		write_sysreg(regval, TTBR1_EL1);
+		break;
+	case SYS_TCR_EL1:
+		write_sysreg(regval, TCR_EL1);
+		break;
+	case SYS_ESR_EL1:
+		write_sysreg(regval, ESR_EL1);
+		break;
+	case SYS_FAR_EL1:
+		write_sysreg(regval, FAR_EL1);
+		break;
+	case SYS_AFSR0_EL1:
+		write_sysreg(regval, AFSR0_EL1);
+		break;
+	case SYS_AFSR1_EL1:
+		write_sysreg(regval, AFSR1_EL1);
+		break;
+	case SYS_MAIR_EL1:
+		write_sysreg(regval, MAIR_EL1);
+		break;
+	case SYS_AMAIR_EL1:
+		write_sysreg(regval, AMAIR_EL1);
+		break;
+	case SYS_CONTEXTIDR_EL1:
+		write_sysreg(regval, CONTEXTIDR_EL1);
+		break;
+	}
+	kvm_skip_host_instr();
+}
+
 void handle_trap(struct kvm_cpu_context *host_ctxt)
 {
 	u64 esr = read_sysreg_el2(SYS_ESR);
@@ -299,6 +346,9 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 	case ESR_ELx_EC_IABT_LOW:
 	case ESR_ELx_EC_DABT_LOW:
 		handle_host_mem_abort(host_ctxt);
+		break;
+	case ESR_ELx_EC_SYS64:
+		handle_host_sysreg(host_ctxt, esr);
 		break;
 	default:
 		hyp_panic();
