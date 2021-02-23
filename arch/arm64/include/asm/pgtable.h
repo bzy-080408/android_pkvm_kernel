@@ -333,7 +333,7 @@ static inline void __check_racy_pte_update(struct mm_struct *mm, pte_t *ptep,
 		     __func__, pte_val(old_pte), pte_val(pte));
 }
 
-pte_t xchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t pte);
+pte_t xchg_ro_pte(struct mm_struct *mm, u64 addr, pte_t *ptep, pte_t pte);
 pte_t cmpxchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t old, pte_t new);
 
 static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
@@ -349,7 +349,7 @@ static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 	__check_racy_pte_update(mm, ptep, pte);
 
 	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
-		xchg_ro_pte(mm, ptep, pte);
+		xchg_ro_pte(mm, addr, ptep, pte);
 	else
 		set_pte(ptep, pte);
 }
@@ -611,7 +611,7 @@ static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
 static inline void pmd_clear(pmd_t *pmdp)
 {
 	if (static_branch_likely(&ro_page_tables))
-		xchg_ro_pte(NULL, (pte_t *)pmdp, __pte(0));
+		xchg_ro_pte(NULL, ULONG_MAX, (pte_t *)pmdp, __pte(0));
 	else
 		set_pmd(pmdp, __pmd(0));
 }
@@ -675,7 +675,7 @@ static inline void set_pud(pud_t *pudp, pud_t pud)
 static inline void pud_clear(pud_t *pudp)
 {
 	if (static_branch_likely(&ro_page_tables))
-		xchg_ro_pte(NULL, (pte_t *)pudp, __pte(0));
+		xchg_ro_pte(NULL, ULONG_MAX, (pte_t *)pudp, __pte(0));
 	else
 		set_pud(pudp, __pud(0));
 }
@@ -739,7 +739,7 @@ static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
 static inline void p4d_clear(p4d_t *p4dp)
 {
 	if (static_branch_likely(&ro_page_tables))
-		xchg_ro_pte(NULL, (pte_t *)p4dp, __pte(0));
+		xchg_ro_pte(NULL, ULONG_MAX, (pte_t *)p4dp, __pte(0));
 	else
 		set_p4d(p4dp, __p4d(0));
 }
@@ -899,7 +899,7 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 				       unsigned long address, pte_t *ptep)
 {
 	if (static_branch_likely(&ro_page_tables) && mm != &init_mm)
-		return xchg_ro_pte(mm, ptep, __pte(0));
+		return xchg_ro_pte(mm, address, ptep, __pte(0));
 	return __pte(xchg_relaxed(&pte_val(*ptep), 0));
 }
 
@@ -947,7 +947,8 @@ static inline pmd_t pmdp_establish(struct vm_area_struct *vma,
 		unsigned long address, pmd_t *pmdp, pmd_t pmd)
 {
 	if (static_branch_likely(&ro_page_tables) && vma->vm_mm != &init_mm)
-		return pte_pmd(xchg_ro_pte(vma->vm_mm, (pte_t *)pmdp, pmd_pte(pmd)));
+		return pte_pmd(xchg_ro_pte(vma->vm_mm, address, (pte_t *)pmdp,
+			       pmd_pte(pmd)));
 	return __pmd(xchg_relaxed(&pmd_val(*pmdp), pmd_val(pmd)));
 }
 #endif

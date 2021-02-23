@@ -88,7 +88,7 @@ void __init pgtable_cache_init(void)
 				      SLAB_PANIC, NULL);
 }
 
-pte_t xchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t pte)
+pte_t xchg_ro_pte(struct mm_struct *mm, u64 address, pte_t *ptep, pte_t pte)
 {
 	unsigned long flags;
 	pte_t ret;
@@ -104,7 +104,7 @@ pte_t xchg_ro_pte(struct mm_struct *mm, pte_t *ptep, pte_t pte)
 		/* invoke the hypervisor to perform the update on our behalf */
 		pte_val(ret) = kvm_call_hyp_nvhe(__pkvm_xchg_ro_pte,
 						 mm ? __pa(mm->pgd) : 0x0,
-						 __pa(ptep), pte_val(pte));
+						 address, __pa(ptep), pte_val(pte));
 		return ret;
 	}
 

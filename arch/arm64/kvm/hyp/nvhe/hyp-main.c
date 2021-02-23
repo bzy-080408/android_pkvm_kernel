@@ -178,8 +178,9 @@ static void inject_external_abort(struct kvm_cpu_context *host_ctxt)
 static void handle___pkvm_xchg_ro_pte(struct kvm_cpu_context *host_ctxt)
 {
 	//DECLARE_REG(pgd_t *, pgdp, host_ctxt, 1);
-	DECLARE_REG(pte_t *, ptep, host_ctxt, 2);
-	DECLARE_REG(u64, pteval, host_ctxt, 3);
+	DECLARE_REG(u64, address, host_ctxt, 2);
+	DECLARE_REG(pte_t *, ptep, host_ctxt, 3);
+	DECLARE_REG(u64, pteval, host_ctxt, 4);
 	u64 ptaddr = (u64)kern_hyp_va(ptep) & PAGE_MASK;
 
 	// create stage1@el2 mapping if needed
