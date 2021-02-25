@@ -218,9 +218,14 @@ static int host_stage2_idmap(u64 addr)
 		prot |= KVM_PGTABLE_PROT_X;
 
 	hyp_spin_lock(&host_kvm.lock);
-	ret = kvm_pgtable_stage2_find_range(&host_kvm.pgt, addr, prot, &range);
-	if (ret)
-		goto unlock;
+	if (is_memory) {
+		range.start = ALIGN_DOWN(addr, PAGE_SIZE);
+		range.end = range.start + PAGE_SIZE;
+	} else {
+		ret = kvm_pgtable_stage2_find_range(&host_kvm.pgt, addr, prot, &range);
+		if (ret)
+			goto unlock;
+	}
 
 	ret = __host_stage2_idmap(range.start, range.end, prot, pool);
 	if (is_memory || ret != -ENOMEM)
@@ -273,6 +278,13 @@ void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 	esr = read_sysreg_el2(SYS_ESR);
 	if (!__get_fault_info(esr, &fault))
 		hyp_panic();
+
+	/* valid r/o mappings must remain r/o */
+	if ((esr & ESR_ELx_FSC_TYPE) == ESR_ELx_FSC_PERM) {
+		// crash in the host
+		write_sysreg_el2(read_sysreg_el2(SYS_ELR) + 1, SYS_ELR);
+		return;
+	}
 
 	addr = (fault.hpfar_el2 & HPFAR_MASK) << 8;
 	ret = host_stage2_idmap(addr);
