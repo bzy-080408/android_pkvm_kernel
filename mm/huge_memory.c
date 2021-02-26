@@ -2008,7 +2008,8 @@ static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
 		pte_unmap(pte);
 	}
 	smp_wmb(); /* make pte visible before pmd */
-	pmd_populate(mm, pmd, pgtable);
+	//pmd_populate(mm, pmd, pgtable);
+	set_pmd_at(mm, haddr, pmd, __pmd(page_to_phys(pgtable) | PMD_TYPE_TABLE));
 }
 
 static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
@@ -2173,7 +2174,8 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 	}
 
 	smp_wmb(); /* make pte visible before pmd */
-	pmd_populate(mm, pmd, pgtable);
+	//pmd_populate(mm, pmd, pgtable);
+	set_pmd_at(mm, haddr, pmd, __pmd(page_to_phys(pgtable) | PMD_TYPE_TABLE));
 
 	if (freeze) {
 		for (i = 0; i < HPAGE_PMD_NR; i++) {
