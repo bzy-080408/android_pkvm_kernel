@@ -87,6 +87,11 @@ int crypto_aead_encrypt(struct aead_request *req)
 	unsigned int cryptlen = req->cryptlen;
 	int ret;
 
+	if (!(alg->cra_flags & CRYPTO_ALG_ASYNC) &&
+	    WARN_ONCE(!in_task() && !in_serving_softirq(),
+		      "synchronous call from invalid context\n"))
+		return -EBUSY;
+
 	crypto_stats_get(alg);
 	if (crypto_aead_get_flags(aead) & CRYPTO_TFM_NEED_KEY)
 		ret = -ENOKEY;
@@ -103,6 +108,11 @@ int crypto_aead_decrypt(struct aead_request *req)
 	struct crypto_alg *alg = aead->base.__crt_alg;
 	unsigned int cryptlen = req->cryptlen;
 	int ret;
+
+	if (!(alg->cra_flags & CRYPTO_ALG_ASYNC) &&
+	    WARN_ONCE(!in_task() && !in_serving_softirq(),
+		      "synchronous call from invalid context\n"))
+		return -EBUSY;
 
 	crypto_stats_get(alg);
 	if (crypto_aead_get_flags(aead) & CRYPTO_TFM_NEED_KEY)
