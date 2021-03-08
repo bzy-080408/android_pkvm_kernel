@@ -16,11 +16,16 @@
 #define __HAVE_ARCH_PGD_FREE
 #define __HAVE_ARCH_PUD_ALLOC_ONE
 #define __HAVE_ARCH_PUD_FREE
+#define __HAVE_ARCH_PMD_ALLOC_ONE
+#define __HAVE_ARCH_PMD_FREE
 #include <asm-generic/pgalloc.h>
 
 #define PGD_SIZE	(PTRS_PER_PGD * sizeof(pgd_t))
 
 #if CONFIG_PGTABLE_LEVELS > 2
+
+pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr);
+void pmd_free(struct mm_struct *mm, pmd_t *pmd);
 
 static inline void __pud_populate(pud_t *pudp, phys_addr_t pmdp, pudval_t prot)
 {

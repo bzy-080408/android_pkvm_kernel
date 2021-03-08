@@ -81,6 +81,8 @@ static inline void __pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmdp,
 {
 	struct page *page = virt_to_page(pmdp);
 
+	if (page_tables_are_ro())
+		set_pgtable_rw(pmdp);
 	pgtable_pmd_page_dtor(page);
 	tlb_remove_table(tlb, page);
 }
