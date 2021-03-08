@@ -546,8 +546,23 @@ static void __init map_mem(pgd_t *pgdp)
 	memblock_clear_nomap(kernel_start, kernel_end - kernel_start);
 }
 
+static void mark_pgtables_ro(const pmd_t *pmdp, int level, int num_entries)
+{
+	while (num_entries--) {
+		if (pmd_valid(*pmdp) && pmd_table(*pmdp)) {
+			pmd_t *next = __va(__pmd_to_phys(*pmdp));
+
+			if (level < 2)
+				mark_pgtables_ro(next, level + 1, PTRS_PER_PMD);
+			set_pgtable_ro(next);
+		}
+		pmdp++;
+	}
+}
+
 void mark_rodata_ro(void)
 {
+	int pgd_level = 4 - CONFIG_PGTABLE_LEVELS;
 	unsigned long section_size;
 
 	/*
@@ -557,6 +572,11 @@ void mark_rodata_ro(void)
 	section_size = (unsigned long)__init_begin - (unsigned long)__start_rodata;
 	update_mapping_prot(__pa_symbol(__start_rodata), (unsigned long)__start_rodata,
 			    section_size, PAGE_KERNEL_RO);
+
+#ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+	mark_pgtables_ro((pmd_t *)&tramp_pg_dir, pgd_level, PTRS_PER_PGD);
+#endif
+	mark_pgtables_ro((pmd_t *)&swapper_pg_dir, pgd_level, PTRS_PER_PGD);
 
 	debug_checkwx();
 }
