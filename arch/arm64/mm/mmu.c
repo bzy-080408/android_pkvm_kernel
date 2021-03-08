@@ -1411,7 +1411,7 @@ int pmd_free_pte_page(pmd_t *pmdp, unsigned long addr)
 	table = pte_offset_kernel(pmdp, addr);
 	pmd_clear(pmdp);
 	__flush_tlb_kernel_pgtable(addr);
-	pte_free_kernel(NULL, table);
+	pte_free_kernel(&init_mm, table);
 	return 1;
 }
 
@@ -1702,4 +1702,26 @@ void pte_free(struct mm_struct *mm, struct page *pte_page)
 		set_pgtable_rw(page_address(pte_page));
 	pgtable_pte_page_dtor(pte_page);
 	__free_page(pte_page);
+}
+
+pte_t *pte_alloc_one_kernel(struct mm_struct *mm)
+{
+	pte_t *pte = __pte_alloc_one_kernel(mm);
+
+	VM_BUG_ON(mm != &init_mm);
+
+	if (!pte)
+		return NULL;
+	if (page_tables_are_ro())
+		set_pgtable_ro(pte);
+	return pte;
+}
+
+void pte_free_kernel(struct mm_struct *mm, pte_t *pte)
+{
+	VM_BUG_ON(mm != &init_mm);
+
+	if (page_tables_are_ro())
+		set_pgtable_rw(pte);
+	free_page((u64)pte);
 }
