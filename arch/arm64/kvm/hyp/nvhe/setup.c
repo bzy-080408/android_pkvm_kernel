@@ -74,7 +74,7 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 				 unsigned long *per_cpu_base,
 				 u32 hyp_va_bits)
 {
-	void *start, *end, *virt = hyp_phys_to_virt(phys), *stack_va;
+	void *start, *end, *virt = hyp_phys_to_virt(phys), *stack_va, *guard;
 	unsigned long pgt_size = hyp_s1_pgtable_pages() << PAGE_SHIFT;
 	phys_addr_t stack_pa;
 	enum kvm_pgtable_prot prot;
@@ -125,6 +125,17 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 		ret = pkvm_create_mappings(start, end, PAGE_HYP);
 		if (ret)
 			return ret;
+		/*
+		 * The private range grows upward and stacks downwards, so
+		 * allocate the guard page first. But make sure to align the
+		 * stack itself with PAGE_SIZE * 2 granularity to ease overflow
+		 * detection in the entry assembly code.
+		 */
+		do {
+			guard = (void *)hyp_alloc_private_va_range(PAGE_SIZE);
+			if (IS_ERR_OR_NULL(guard))
+				return PTR_ERR(guard);
+		} while (IS_ALIGNED((u64) guard, PAGE_SIZE * 2));
 
 		stack_pa = __hyp_pa(per_cpu_ptr(&kvm_init_params, i)->stack_hyp_va);
 		stack_pa -= PAGE_SIZE;
