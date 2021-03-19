@@ -74,8 +74,9 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 				 unsigned long *per_cpu_base,
 				 u32 hyp_va_bits)
 {
-	void *start, *end, *virt = hyp_phys_to_virt(phys);
+	void *start, *end, *virt = hyp_phys_to_virt(phys), *stack_va;
 	unsigned long pgt_size = hyp_s1_pgtable_pages() << PAGE_SHIFT;
+	phys_addr_t stack_pa;
 	enum kvm_pgtable_prot prot;
 	int ret, i;
 
@@ -125,11 +126,13 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 		if (ret)
 			return ret;
 
-		end = (void *)per_cpu_ptr(&kvm_init_params, i)->stack_hyp_va;
-		start = end - PAGE_SIZE;
-		ret = pkvm_create_mappings(start, end, PAGE_HYP);
-		if (ret)
-			return ret;
+		stack_pa = __hyp_pa(per_cpu_ptr(&kvm_init_params, i)->stack_hyp_va);
+		stack_pa -= PAGE_SIZE;
+		stack_va = (void *)__pkvm_create_private_mapping(stack_pa, PAGE_SIZE, PAGE_HYP);
+		if (IS_ERR_OR_NULL(stack_va))
+			return PTR_ERR(stack_va);
+		stack_va += PAGE_SIZE;
+		per_cpu_ptr(&kvm_init_params, i)->stack_hyp_va = (u64) stack_va;
 	}
 
 	/*
