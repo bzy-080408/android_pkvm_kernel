@@ -36,11 +36,17 @@ SECTIONS {
 	}
 
 	.rodata : {
+		*(.rodata.._start)
 		*(.rodata .rodata.[0-9a-zA-Z_]*)
 		*(.rodata..L*)
+		*(.rodata.._end)
 	}
 
-	.text : { *(.text .text.[0-9a-zA-Z_]*) }
+	.text : {
+		*(.text.._start)
+		*(.text .text.[0-9a-zA-Z_]*)
+		*(.text.._end)
+	}
 }
 
 /* bring in arch-specific sections */
