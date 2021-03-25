@@ -32,6 +32,7 @@ struct hyp_pool host_s2_dev;
 u64 id_aa64mmfr0_el1_sys_val;
 u64 id_aa64mmfr1_el1_sys_val;
 
+static const u8 pkvm_host_id = 0;
 static const u8 pkvm_hyp_id = 1;
 
 static void *host_s2_zalloc_pages_exact(size_t size)
@@ -243,8 +244,7 @@ unlock:
 
 	return ret;
 }
-
-int __pkvm_mark_hyp(phys_addr_t start, phys_addr_t end)
+static int __pkvm_mark_owner(phys_addr_t start, phys_addr_t end, u8 owner_id)
 {
 	int ret;
 
@@ -257,10 +257,20 @@ int __pkvm_mark_hyp(phys_addr_t start, phys_addr_t end)
 
 	hyp_spin_lock(&host_kvm.lock);
 	ret = kvm_pgtable_stage2_set_owner(&host_kvm.pgt, start, end - start,
-					   &host_s2_mem, pkvm_hyp_id);
+					   &host_s2_mem, owner_id);
 	hyp_spin_unlock(&host_kvm.lock);
 
 	return ret != -EAGAIN ? ret : 0;
+}
+
+int __pkvm_mark_hyp(phys_addr_t start, phys_addr_t end)
+{
+	return __pkvm_mark_owner(start, end, pkvm_hyp_id);
+}
+
+int __pkvm_mark_host(phys_addr_t start, phys_addr_t end)
+{
+	return __pkvm_mark_owner(start, end, pkvm_host_id);
 }
 
 void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
