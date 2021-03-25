@@ -157,11 +157,10 @@ static inline void hyp_putc(char c)
  * Caller needs to ensure string is mapped. If it lives in .rodata, you should
  * be good as long as we're using PC-relative addressing (probably true).
  */
-static inline void hyp_puts(char *s)
+static inline void hyp_puts(const char *s)
 {
 	while (*s)
 		hyp_putc(*s++);
-	hyp_putc('\n');
 }
 
 static inline void __hyp_putx4(unsigned int x)
@@ -183,8 +182,6 @@ static inline void __hyp_putx4n(unsigned long x, int n)
 
 	while (i--)
 		__hyp_putx4(x >> (4 * i));
-
-	hyp_putc('\n');
 }
 
 static inline void hyp_putx32(unsigned int x)
@@ -217,11 +214,20 @@ static inline void hyp_putx64(unsigned long x)
 #else
 
 static inline void hyp_putc(char c) { }
-static inline void hyp_puts(char *s) { }
+static inline void hyp_puts(const char *s) { }
 static inline void hyp_putx32(unsigned int x) { }
 static inline void hyp_putx64(unsigned long x) { }
 
 #endif
 
 #endif	/* CONFIG_KVM_ARM_HYP_DEBUG_UART */
+
+
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
+#define HYP_HERE do {hyp_puts("HYP " __FILE__ ":" STR(__LINE__) " "); hyp_puts(__func__); hyp_puts("()\n");} while (0)
+#define HYP_PANIC do { HYP_HERE; hyp_panic(); } while (0)
+#define HYP_ASSERT(X) do { if (!(X)) HYP_PANIC; } while (0)
+
 #endif	/* __ARM64_KVM_HYP_DEBUG_PL011_H__ */
