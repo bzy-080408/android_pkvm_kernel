@@ -47,10 +47,10 @@ static inline bool update_fp_enabled(struct kvm_vcpu *vcpu)
 	 */
 	if (!system_supports_fpsimd() ||
 	    vcpu->arch.host_thread_info->flags & _TIF_FOREIGN_FPSTATE)
-		vcpu->arch.flags &= ~(KVM_ARM64_FP_ENABLED |
+		vcpu->arch.core_state.flags &= ~(KVM_ARM64_FP_ENABLED |
 				      KVM_ARM64_FP_HOST);
 
-	return !!(vcpu->arch.flags & KVM_ARM64_FP_ENABLED);
+	return !!(vcpu->arch.core_state.flags & KVM_ARM64_FP_ENABLED);
 }
 
 /* Save the 32-bit only FPSIMD system register state */
@@ -94,7 +94,7 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
 		write_sysreg(0, pmselr_el0);
 		write_sysreg(ARMV8_PMU_USERENR_MASK, pmuserenr_el0);
 	}
-	write_sysreg(vcpu->arch.mdcr_el2, mdcr_el2);
+	write_sysreg(vcpu->arch.core_state.mdcr_el2, mdcr_el2);
 }
 
 static inline void __deactivate_traps_common(void)
@@ -106,7 +106,7 @@ static inline void __deactivate_traps_common(void)
 
 static inline void ___activate_traps(struct kvm_vcpu *vcpu)
 {
-	u64 hcr = vcpu->arch.hcr_el2;
+	u64 hcr = vcpu->arch.core_state.hcr_el2;
 
 	if (cpus_have_final_cap(ARM64_WORKAROUND_CAVIUM_TX2_219_TVM))
 		hcr |= HCR_TVM;
@@ -114,7 +114,7 @@ static inline void ___activate_traps(struct kvm_vcpu *vcpu)
 	write_sysreg(hcr, hcr_el2);
 
 	if (cpus_have_final_cap(ARM64_HAS_RAS_EXTN) && (hcr & HCR_VSE))
-		write_sysreg_s(vcpu->arch.vsesr_el2, SYS_VSESR_EL2);
+		write_sysreg_s(vcpu->arch.core_state.vsesr_el2, SYS_VSESR_EL2);
 }
 
 static inline void ___deactivate_traps(struct kvm_vcpu *vcpu)
@@ -125,9 +125,9 @@ static inline void ___deactivate_traps(struct kvm_vcpu *vcpu)
 	 * the crucial bit is "On taking a vSError interrupt,
 	 * HCR_EL2.VSE is cleared to 0."
 	 */
-	if (vcpu->arch.hcr_el2 & HCR_VSE) {
-		vcpu->arch.hcr_el2 &= ~HCR_VSE;
-		vcpu->arch.hcr_el2 |= read_sysreg(hcr_el2) & HCR_VSE;
+	if (vcpu->arch.core_state.hcr_el2 & HCR_VSE) {
+		vcpu->arch.core_state.hcr_el2 &= ~HCR_VSE;
+		vcpu->arch.core_state.hcr_el2 |= read_sysreg(hcr_el2) & HCR_VSE;
 	}
 }
 
@@ -196,13 +196,13 @@ static inline bool __populate_fault_info(struct kvm_vcpu *vcpu)
 	u8 ec;
 	u64 esr;
 
-	esr = vcpu->arch.fault.esr_el2;
+	esr = vcpu->arch.core_state.fault.esr_el2;
 	ec = ESR_ELx_EC(esr);
 
 	if (ec != ESR_ELx_EC_DABT_LOW && ec != ESR_ELx_EC_IABT_LOW)
 		return true;
 
-	return __get_fault_info(esr, &vcpu->arch.fault);
+	return __get_fault_info(esr, &vcpu->arch.core_state.fault);
 }
 
 static inline void __hyp_sve_save_host(struct kvm_vcpu *vcpu)
@@ -219,7 +219,7 @@ static inline void __hyp_sve_restore_guest(struct kvm_vcpu *vcpu)
 {
 	sve_cond_update_zcr_vq(vcpu_sve_max_vq(vcpu) - 1, SYS_ZCR_EL2);
 	__sve_restore_state(vcpu_sve_pffr(vcpu),
-			    &vcpu->arch.ctxt.fp_regs.fpsr);
+			    &vcpu->arch.core_state.ctxt.fp_regs.fpsr);
 	write_sysreg_el1(__vcpu_sys_reg(vcpu, ZCR_EL1), SYS_ZCR);
 }
 
@@ -235,7 +235,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 
 	if (system_supports_sve()) {
 		sve_guest = vcpu_has_sve(vcpu);
-		sve_host = vcpu->arch.flags & KVM_ARM64_HOST_SVE_IN_USE;
+		sve_host = vcpu->arch.core_state.flags & KVM_ARM64_HOST_SVE_IN_USE;
 	} else {
 		sve_guest = false;
 		sve_host = false;
@@ -266,25 +266,25 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 	}
 	isb();
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_HOST) {
+	if (vcpu->arch.core_state.flags & KVM_ARM64_FP_HOST) {
 		if (sve_host)
 			__hyp_sve_save_host(vcpu);
 		else
 			__fpsimd_save_state(vcpu->arch.host_fpsimd_state);
 
-		vcpu->arch.flags &= ~KVM_ARM64_FP_HOST;
+		vcpu->arch.core_state.flags &= ~KVM_ARM64_FP_HOST;
 	}
 
 	if (sve_guest)
 		__hyp_sve_restore_guest(vcpu);
 	else
-		__fpsimd_restore_state(&vcpu->arch.ctxt.fp_regs);
+		__fpsimd_restore_state(&vcpu->arch.core_state.ctxt.fp_regs);
 
 	/* Skip restoring fpexc32 for AArch64 guests */
 	if (!(read_sysreg(hcr_el2) & HCR_RW))
 		write_sysreg(__vcpu_sys_reg(vcpu, FPEXC32_EL2), fpexc32_el2);
 
-	vcpu->arch.flags |= KVM_ARM64_FP_ENABLED;
+	vcpu->arch.core_state.flags |= KVM_ARM64_FP_ENABLED;
 
 	return true;
 }
@@ -299,7 +299,7 @@ static inline bool handle_tx2_tvm(struct kvm_vcpu *vcpu)
 	 * The normal sysreg handling code expects to see the traps,
 	 * let's not do anything here.
 	 */
-	if (vcpu->arch.hcr_el2 & HCR_TVM)
+	if (vcpu->arch.core_state.hcr_el2 & HCR_TVM)
 		return false;
 
 	switch (sysreg) {
@@ -415,7 +415,7 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
 static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
-		vcpu->arch.fault.esr_el2 = read_sysreg_el2(SYS_ESR);
+		vcpu->arch.core_state.fault.esr_el2 = read_sysreg_el2(SYS_ESR);
 
 	if (ARM_SERROR_PENDING(*exit_code)) {
 		u8 esr_ec = kvm_vcpu_trap_get_class(vcpu);

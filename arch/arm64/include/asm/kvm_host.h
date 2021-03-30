@@ -277,26 +277,38 @@ struct vcpu_reset_state {
 	bool		reset;
 };
 
-struct kvm_vcpu_arch {
+struct kvm_vcpu_arch_core {
 	struct kvm_cpu_context ctxt;
+
+	/* HYP configuration */
+	u64 hcr_el2;
+	u32 mdcr_el2;
+
+	/* Virtual SError ESR to restore when HCR_EL2.VSE is set */
+	u64 vsesr_el2;
+
+	/* Exception Information */
+	struct kvm_vcpu_fault_info fault;
+
+	/* Miscellaneous vcpu state flags */
+	u64 flags;
+
+	/* True when deferrable sysregs are loaded on the physical CPU,
+	 * see kvm_vcpu_load_sysregs_vhe and kvm_vcpu_put_sysregs_vhe. */
+	bool sysregs_loaded_on_cpu;
+};
+
+struct kvm_vcpu_arch {
+	struct kvm_vcpu_arch_core core_state;
+
 	void *sve_state;
 	unsigned int sve_max_vl;
 
 	/* Stage 2 paging state used by the hardware on next switch */
 	struct kvm_s2_mmu *hw_mmu;
 
-	/* HYP configuration */
-	u64 hcr_el2;
-	u32 mdcr_el2;
-
-	/* Exception Information */
-	struct kvm_vcpu_fault_info fault;
-
 	/* State of various workarounds, see kvm_asm.h for bit assignment */
 	u64 workaround_flags;
-
-	/* Miscellaneous vcpu state flags */
-	u64 flags;
 
 	/*
 	 * We maintain more than a single set of debug registers to support
@@ -362,15 +374,8 @@ struct kvm_vcpu_arch {
 	/* Detect first run of a vcpu */
 	bool has_run_once;
 
-	/* Virtual SError ESR to restore when HCR_EL2.VSE is set */
-	u64 vsesr_el2;
-
 	/* Additional reset state */
 	struct vcpu_reset_state	reset_state;
-
-	/* True when deferrable sysregs are loaded on the physical CPU,
-	 * see kvm_vcpu_load_sysregs_vhe and kvm_vcpu_put_sysregs_vhe. */
-	bool sysregs_loaded_on_cpu;
 
 	/* Guest PV state */
 	struct {
@@ -435,18 +440,18 @@ struct kvm_vcpu_arch {
 #define KVM_ARM64_INCREMENT_PC		(1 << 9) /* Increment PC */
 
 #define vcpu_has_sve(vcpu) (system_supports_sve() &&			\
-			    ((vcpu)->arch.flags & KVM_ARM64_GUEST_HAS_SVE))
+			    ((vcpu)->arch.core_state.flags & KVM_ARM64_GUEST_HAS_SVE))
 
 #ifdef CONFIG_ARM64_PTR_AUTH
 #define vcpu_has_ptrauth(vcpu)						\
 	((cpus_have_final_cap(ARM64_HAS_ADDRESS_AUTH) ||		\
 	  cpus_have_final_cap(ARM64_HAS_GENERIC_AUTH)) &&		\
-	 (vcpu)->arch.flags & KVM_ARM64_GUEST_HAS_PTRAUTH)
+	 (vcpu)->arch.core_state.flags & KVM_ARM64_GUEST_HAS_PTRAUTH)
 #else
 #define vcpu_has_ptrauth(vcpu)		false
 #endif
 
-#define vcpu_gp_regs(v)		(&(v)->arch.ctxt.regs)
+#define vcpu_gp_regs(v)		(&(v)->arch.core_state.ctxt.regs)
 
 /*
  * Only use __vcpu_sys_reg/ctxt_sys_reg if you know you want the
@@ -459,7 +464,7 @@ struct kvm_vcpu_arch {
 
 #define ctxt_sys_reg(c,r)	(*__ctxt_sys_reg(c,r))
 
-#define __vcpu_sys_reg(v,r)	(ctxt_sys_reg(&(v)->arch.ctxt, (r)))
+#define __vcpu_sys_reg(v,r)	(ctxt_sys_reg(&(v)->arch.core_state.ctxt, (r)))
 
 u64 vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg);
 void vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg);
@@ -772,7 +777,7 @@ int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature);
 bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 
 #define kvm_arm_vcpu_sve_finalized(vcpu) \
-	((vcpu)->arch.flags & KVM_ARM64_VCPU_SVE_FINALIZED)
+	((vcpu)->arch.core_state.flags & KVM_ARM64_VCPU_SVE_FINALIZED)
 
 #define kvm_vcpu_has_pmu(vcpu)					\
 	(test_bit(KVM_ARM_VCPU_PMU_V3, (vcpu)->arch.features))

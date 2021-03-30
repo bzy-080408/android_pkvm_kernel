@@ -49,13 +49,13 @@ static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
  */
 static inline void __adjust_pc(struct kvm_vcpu *vcpu)
 {
-	if (vcpu->arch.flags & KVM_ARM64_PENDING_EXCEPTION) {
+	if (vcpu->arch.core_state.flags & KVM_ARM64_PENDING_EXCEPTION) {
 		kvm_inject_exception(vcpu);
-		vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
+		vcpu->arch.core_state.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
 				      KVM_ARM64_EXCEPT_MASK);
-	} else 	if (vcpu->arch.flags & KVM_ARM64_INCREMENT_PC) {
+	} else if (vcpu->arch.core_state.flags & KVM_ARM64_INCREMENT_PC) {
 		kvm_skip_instr(vcpu);
-		vcpu->arch.flags &= ~KVM_ARM64_INCREMENT_PC;
+		vcpu->arch.core_state.flags &= ~KVM_ARM64_INCREMENT_PC;
 	}
 }
 

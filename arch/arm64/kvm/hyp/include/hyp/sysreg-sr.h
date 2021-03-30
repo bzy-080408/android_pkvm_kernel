@@ -161,15 +161,15 @@ static inline void __sysreg32_save_state(struct kvm_vcpu *vcpu)
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
-	vcpu->arch.ctxt.spsr_abt = read_sysreg(spsr_abt);
-	vcpu->arch.ctxt.spsr_und = read_sysreg(spsr_und);
-	vcpu->arch.ctxt.spsr_irq = read_sysreg(spsr_irq);
-	vcpu->arch.ctxt.spsr_fiq = read_sysreg(spsr_fiq);
+	vcpu->arch.core_state.ctxt.spsr_abt = read_sysreg(spsr_abt);
+	vcpu->arch.core_state.ctxt.spsr_und = read_sysreg(spsr_und);
+	vcpu->arch.core_state.ctxt.spsr_irq = read_sysreg(spsr_irq);
+	vcpu->arch.core_state.ctxt.spsr_fiq = read_sysreg(spsr_fiq);
 
 	__vcpu_sys_reg(vcpu, DACR32_EL2) = read_sysreg(dacr32_el2);
 	__vcpu_sys_reg(vcpu, IFSR32_EL2) = read_sysreg(ifsr32_el2);
 
-	if (has_vhe() || vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY)
+	if (has_vhe() || vcpu->arch.core_state.flags & KVM_ARM64_DEBUG_DIRTY)
 		__vcpu_sys_reg(vcpu, DBGVCR32_EL2) = read_sysreg(dbgvcr32_el2);
 }
 
@@ -178,15 +178,15 @@ static inline void __sysreg32_restore_state(struct kvm_vcpu *vcpu)
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
-	write_sysreg(vcpu->arch.ctxt.spsr_abt, spsr_abt);
-	write_sysreg(vcpu->arch.ctxt.spsr_und, spsr_und);
-	write_sysreg(vcpu->arch.ctxt.spsr_irq, spsr_irq);
-	write_sysreg(vcpu->arch.ctxt.spsr_fiq, spsr_fiq);
+	write_sysreg(vcpu->arch.core_state.ctxt.spsr_abt, spsr_abt);
+	write_sysreg(vcpu->arch.core_state.ctxt.spsr_und, spsr_und);
+	write_sysreg(vcpu->arch.core_state.ctxt.spsr_irq, spsr_irq);
+	write_sysreg(vcpu->arch.core_state.ctxt.spsr_fiq, spsr_fiq);
 
 	write_sysreg(__vcpu_sys_reg(vcpu, DACR32_EL2), dacr32_el2);
 	write_sysreg(__vcpu_sys_reg(vcpu, IFSR32_EL2), ifsr32_el2);
 
-	if (has_vhe() || vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY)
+	if (has_vhe() || vcpu->arch.core_state.flags & KVM_ARM64_DEBUG_DIRTY)
 		write_sysreg(__vcpu_sys_reg(vcpu, DBGVCR32_EL2), dbgvcr32_el2);
 }
 

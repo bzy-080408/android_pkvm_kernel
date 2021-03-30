@@ -46,7 +46,7 @@ static void __vcpu_write_spsr_abt(struct kvm_vcpu *vcpu, u64 val)
 	if (has_vhe())
 		write_sysreg(val, spsr_abt);
 	else
-		vcpu->arch.ctxt.spsr_abt = val;
+		vcpu->arch.core_state.ctxt.spsr_abt = val;
 }
 
 static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
@@ -54,7 +54,7 @@ static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
 	if (has_vhe())
 		write_sysreg(val, spsr_und);
 	else
-		vcpu->arch.ctxt.spsr_und = val;
+		vcpu->arch.core_state.ctxt.spsr_und = val;
 }
 
 /*
@@ -299,7 +299,7 @@ static void enter_exception32(struct kvm_vcpu *vcpu, u32 mode, u32 vect_offset)
 void kvm_inject_exception(struct kvm_vcpu *vcpu)
 {
 	if (vcpu_el1_is_32bit(vcpu)) {
-		switch (vcpu->arch.flags & KVM_ARM64_EXCEPT_MASK) {
+		switch (vcpu->arch.core_state.flags & KVM_ARM64_EXCEPT_MASK) {
 		case KVM_ARM64_EXCEPT_AA32_UND:
 			enter_exception32(vcpu, PSR_AA32_MODE_UND, 4);
 			break;
@@ -314,7 +314,7 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu)
 			break;
 		}
 	} else {
-		switch (vcpu->arch.flags & KVM_ARM64_EXCEPT_MASK) {
+		switch (vcpu->arch.core_state.flags & KVM_ARM64_EXCEPT_MASK) {
 		case (KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
 		      KVM_ARM64_EXCEPT_AA64_EL1):
 			enter_exception64(vcpu, PSR_MODE_EL1h, except_type_sync);

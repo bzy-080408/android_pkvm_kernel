@@ -63,7 +63,7 @@ NOKPROBE_SYMBOL(sysreg_restore_guest_state_vhe);
  */
 void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 {
-	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.ctxt;
+	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.core_state.ctxt;
 	struct kvm_cpu_context *host_ctxt;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
@@ -79,7 +79,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 	__sysreg_restore_user_state(guest_ctxt);
 	__sysreg_restore_el1_state(guest_ctxt);
 
-	vcpu->arch.sysregs_loaded_on_cpu = true;
+	vcpu->arch.core_state.sysregs_loaded_on_cpu = true;
 
 	activate_traps_vhe_load(vcpu);
 }
@@ -97,7 +97,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
  */
 void kvm_vcpu_put_sysregs_vhe(struct kvm_vcpu *vcpu)
 {
-	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.ctxt;
+	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.core_state.ctxt;
 	struct kvm_cpu_context *host_ctxt;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
@@ -110,5 +110,5 @@ void kvm_vcpu_put_sysregs_vhe(struct kvm_vcpu *vcpu)
 	/* Restore host user state */
 	__sysreg_restore_user_state(host_ctxt);
 
-	vcpu->arch.sysregs_loaded_on_cpu = false;
+	vcpu->arch.core_state.sysregs_loaded_on_cpu = false;
 }
