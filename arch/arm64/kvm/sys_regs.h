@@ -103,16 +103,18 @@ static inline bool read_zero(struct kvm_vcpu *vcpu,
 static inline void reset_unknown(struct kvm_vcpu *vcpu,
 				 const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	BUG_ON(!r->reg);
 	BUG_ON(r->reg >= NR_SYS_REGS);
-	__vcpu_sys_reg(vcpu, r->reg) = 0x1de7ec7edbadc0deULL;
+	__vcpu_sys_reg(core_state, r->reg) = 0x1de7ec7edbadc0deULL;
 }
 
 static inline void reset_val(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	BUG_ON(!r->reg);
 	BUG_ON(r->reg >= NR_SYS_REGS);
-	__vcpu_sys_reg(vcpu, r->reg) = r->val;
+	__vcpu_sys_reg(core_state, r->reg) = r->val;
 }
 
 static inline bool sysreg_hidden(const struct kvm_vcpu *vcpu,

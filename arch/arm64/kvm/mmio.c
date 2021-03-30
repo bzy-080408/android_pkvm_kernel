@@ -80,6 +80,7 @@ unsigned long kvm_mmio_read_buf(const void *buf, unsigned int len)
  */
 int kvm_handle_mmio_return(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	unsigned long data;
 	unsigned int len;
 	int mask;
@@ -90,38 +91,39 @@ int kvm_handle_mmio_return(struct kvm_vcpu *vcpu)
 
 	vcpu->mmio_needed = 0;
 
-	if (!kvm_vcpu_dabt_iswrite(vcpu)) {
+	if (!kvm_vcpu_dabt_iswrite(core_state)) {
 		struct kvm_run *run = vcpu->run;
 
-		len = kvm_vcpu_dabt_get_as(vcpu);
+		len = kvm_vcpu_dabt_get_as(core_state);
 		data = kvm_mmio_read_buf(run->mmio.data, len);
 
-		if (kvm_vcpu_dabt_issext(vcpu) &&
+		if (kvm_vcpu_dabt_issext(core_state) &&
 		    len < sizeof(unsigned long)) {
 			mask = 1U << ((len * 8) - 1);
 			data = (data ^ mask) - mask;
 		}
 
-		if (!kvm_vcpu_dabt_issf(vcpu))
+		if (!kvm_vcpu_dabt_issf(core_state))
 			data = data & 0xffffffff;
 
 		trace_kvm_mmio(KVM_TRACE_MMIO_READ, len, run->mmio.phys_addr,
 			       &data);
-		data = vcpu_data_host_to_guest(vcpu, data, len);
-		vcpu_set_reg(vcpu, kvm_vcpu_dabt_get_rd(vcpu), data);
+		data = vcpu_data_host_to_guest(core_state, data, len);
+		vcpu_set_reg(core_state, kvm_vcpu_dabt_get_rd(core_state), data);
 	}
 
 	/*
 	 * The MMIO instruction is emulated and should not be re-executed
 	 * in the guest.
 	 */
-	kvm_incr_pc(vcpu);
+	kvm_incr_pc(core_state);
 
 	return 0;
 }
 
 int io_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_run *run = vcpu->run;
 	unsigned long data;
 	unsigned long rt;
@@ -134,10 +136,10 @@ int io_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 	 * No valid syndrome? Ask userspace for help if it has
 	 * volunteered to do so, and bail out otherwise.
 	 */
-	if (!kvm_vcpu_dabt_isvalid(vcpu)) {
+	if (!kvm_vcpu_dabt_isvalid(core_state)) {
 		if (vcpu->kvm->arch.return_nisv_io_abort_to_user) {
 			run->exit_reason = KVM_EXIT_ARM_NISV;
-			run->arm_nisv.esr_iss = kvm_vcpu_dabt_iss_nisv_sanitized(vcpu);
+			run->arm_nisv.esr_iss = kvm_vcpu_dabt_iss_nisv_sanitized(core_state);
 			run->arm_nisv.fault_ipa = fault_ipa;
 			return 0;
 		}
@@ -151,12 +153,12 @@ int io_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 	 * from the CPU. Then try if some in-kernel emulation feels
 	 * responsible, otherwise let user space do its magic.
 	 */
-	is_write = kvm_vcpu_dabt_iswrite(vcpu);
-	len = kvm_vcpu_dabt_get_as(vcpu);
-	rt = kvm_vcpu_dabt_get_rd(vcpu);
+	is_write = kvm_vcpu_dabt_iswrite(core_state);
+	len = kvm_vcpu_dabt_get_as(core_state);
+	rt = kvm_vcpu_dabt_get_rd(core_state);
 
 	if (is_write) {
-		data = vcpu_data_guest_to_host(vcpu, vcpu_get_reg(vcpu, rt),
+		data = vcpu_data_guest_to_host(core_state, vcpu_get_reg(core_state, rt),
 					       len);
 
 		trace_kvm_mmio(KVM_TRACE_MMIO_WRITE, len, fault_ipa, &data);

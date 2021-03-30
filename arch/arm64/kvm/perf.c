@@ -25,7 +25,7 @@ static int kvm_is_user_mode(void)
 	vcpu = kvm_get_running_vcpu();
 
 	if (vcpu)
-		return !vcpu_mode_priv(vcpu);
+		return !vcpu_mode_priv(&vcpu->arch.core_state);
 
 	return 0;
 }
@@ -37,7 +37,7 @@ static unsigned long kvm_get_guest_ip(void)
 	vcpu = kvm_get_running_vcpu();
 
 	if (vcpu)
-		return *vcpu_pc(vcpu);
+		return *vcpu_pc(&vcpu->arch.core_state);
 
 	return 0;
 }

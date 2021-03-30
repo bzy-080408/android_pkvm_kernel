@@ -187,6 +187,7 @@ static int kvm_vcpu_enable_ptrauth(struct kvm_vcpu *vcpu)
  */
 int kvm_reset_vcpu(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int ret;
 	bool loaded;
 	u32 pstate;
@@ -237,8 +238,8 @@ int kvm_reset_vcpu(struct kvm_vcpu *vcpu)
 	}
 
 	/* Reset core registers */
-	memset(vcpu_gp_regs(vcpu), 0, sizeof(*vcpu_gp_regs(vcpu)));
-	vcpu_gp_regs(vcpu)->pstate = pstate;
+	memset(vcpu_gp_regs(core_state), 0, sizeof(*vcpu_gp_regs(core_state)));
+	vcpu_gp_regs(core_state)->pstate = pstate;
 
 	/* Reset system registers */
 	kvm_reset_sys_regs(vcpu);
@@ -251,17 +252,17 @@ int kvm_reset_vcpu(struct kvm_vcpu *vcpu)
 		unsigned long target_pc = vcpu->arch.reset_state.pc;
 
 		/* Gracefully handle Thumb2 entry point */
-		if (vcpu_mode_is_32bit(vcpu) && (target_pc & 1)) {
+		if (vcpu_mode_is_32bit(core_state) && (target_pc & 1)) {
 			target_pc &= ~1UL;
-			vcpu_set_thumb(vcpu);
+			vcpu_set_thumb(core_state);
 		}
 
 		/* Propagate caller endianness */
 		if (vcpu->arch.reset_state.be)
-			kvm_vcpu_set_be(vcpu);
+			kvm_vcpu_set_be(core_state);
 
-		*vcpu_pc(vcpu) = target_pc;
-		vcpu_set_reg(vcpu, 0, vcpu->arch.reset_state.r0);
+		*vcpu_pc(core_state) = target_pc;
+		vcpu_set_reg(core_state, 0, vcpu->arch.reset_state.r0);
 
 		vcpu->arch.reset_state.reset = false;
 	}

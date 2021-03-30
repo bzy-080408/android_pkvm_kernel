@@ -75,7 +75,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 	 * We must restore the 32-bit state before the sysregs, thanks
 	 * to erratum #852523 (Cortex-A57) or #853709 (Cortex-A72).
 	 */
-	__sysreg32_restore_state(vcpu);
+	__sysreg32_restore_state(&vcpu->arch.core_state);
 	__sysreg_restore_user_state(guest_ctxt);
 	__sysreg_restore_el1_state(guest_ctxt);
 
@@ -105,7 +105,7 @@ void kvm_vcpu_put_sysregs_vhe(struct kvm_vcpu *vcpu)
 
 	__sysreg_save_el1_state(guest_ctxt);
 	__sysreg_save_user_state(guest_ctxt);
-	__sysreg32_save_state(vcpu);
+	__sysreg32_save_state(&vcpu->arch.core_state);
 
 	/* Restore host user state */
 	__sysreg_restore_user_state(host_ctxt);

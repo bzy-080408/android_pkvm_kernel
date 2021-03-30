@@ -61,13 +61,14 @@ static void kvm_psci_vcpu_off(struct kvm_vcpu *vcpu)
 
 static unsigned long kvm_psci_vcpu_on(struct kvm_vcpu *source_vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &source_vcpu->arch.core_state;
 	struct vcpu_reset_state *reset_state;
 	struct kvm *kvm = source_vcpu->kvm;
 	struct kvm_vcpu *vcpu = NULL;
 	unsigned long cpu_id;
 
 	cpu_id = smccc_get_arg1(source_vcpu) & MPIDR_HWID_BITMASK;
-	if (vcpu_mode_is_32bit(source_vcpu))
+	if (vcpu_mode_is_32bit(core_state))
 		cpu_id &= ~((u32) 0);
 
 	vcpu = kvm_mpidr_to_vcpu(kvm, cpu_id);
@@ -90,7 +91,7 @@ static unsigned long kvm_psci_vcpu_on(struct kvm_vcpu *source_vcpu)
 	reset_state->pc = smccc_get_arg2(source_vcpu);
 
 	/* Propagate caller endianness */
-	reset_state->be = kvm_vcpu_is_be(source_vcpu);
+	reset_state->be = kvm_vcpu_is_be(core_state);
 
 	/*
 	 * NOTE: We always update r0 (or x0) because for PSCI v0.1
@@ -139,7 +140,7 @@ static unsigned long kvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu)
 	 * then ON else OFF
 	 */
 	kvm_for_each_vcpu(i, tmp, kvm) {
-		mpidr = kvm_vcpu_get_mpidr_aff(tmp);
+		mpidr = kvm_vcpu_get_mpidr_aff(&tmp->arch.core_state);
 		if ((mpidr & target_affinity_mask) == target_affinity) {
 			matching_cpus++;
 			if (!tmp->arch.power_off)
@@ -188,6 +189,7 @@ static void kvm_psci_system_reset(struct kvm_vcpu *vcpu)
 
 static void kvm_psci_narrow_to_32bit(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int i;
 
 	/*
@@ -195,7 +197,7 @@ static void kvm_psci_narrow_to_32bit(struct kvm_vcpu *vcpu)
 	 * zeroed on exit, so we're fine changing them in place.
 	 */
 	for (i = 1; i < 4; i++)
-		vcpu_set_reg(vcpu, i, lower_32_bits(vcpu_get_reg(vcpu, i)));
+		vcpu_set_reg(core_state, i, lower_32_bits(vcpu_get_reg(core_state, i)));
 }
 
 static unsigned long kvm_psci_check_allowed_function(struct kvm_vcpu *vcpu, u32 fn)
@@ -205,7 +207,7 @@ static unsigned long kvm_psci_check_allowed_function(struct kvm_vcpu *vcpu, u32 
 	case PSCI_0_2_FN64_CPU_ON:
 	case PSCI_0_2_FN64_AFFINITY_INFO:
 		/* Disallow these functions for 32bit guests */
-		if (vcpu_mode_is_32bit(vcpu))
+		if (vcpu_mode_is_32bit(&vcpu->arch.core_state))
 			return PSCI_RET_NOT_SUPPORTED;
 		break;
 	}

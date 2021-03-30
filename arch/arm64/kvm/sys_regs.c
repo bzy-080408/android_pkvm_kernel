@@ -54,7 +54,7 @@ static bool read_from_write_only(struct kvm_vcpu *vcpu,
 {
 	WARN_ONCE(1, "Unexpected sys_reg read to write-only register\n");
 	print_sys_reg_instr(params);
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(&vcpu->arch.core_state);
 	return false;
 }
 
@@ -64,28 +64,28 @@ static bool write_to_read_only(struct kvm_vcpu *vcpu,
 {
 	WARN_ONCE(1, "Unexpected sys_reg write to read-only register\n");
 	print_sys_reg_instr(params);
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(&vcpu->arch.core_state);
 	return false;
 }
 
-u64 vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg)
+u64 vcpu_read_sys_reg(const struct kvm_vcpu_arch_core *core_state, int reg)
 {
 	u64 val = 0x8badf00d8badf00d;
 
-	if (vcpu->arch.core_state.sysregs_loaded_on_cpu &&
+	if (core_state->sysregs_loaded_on_cpu &&
 	    __vcpu_read_sys_reg_from_cpu(reg, &val))
 		return val;
 
-	return __vcpu_sys_reg(vcpu, reg);
+	return __vcpu_sys_reg(core_state, reg);
 }
 
-void vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
+void vcpu_write_sys_reg(struct kvm_vcpu_arch_core *core_state, u64 val, int reg)
 {
-	if (vcpu->arch.core_state.sysregs_loaded_on_cpu &&
+	if (core_state->sysregs_loaded_on_cpu &&
 	    __vcpu_write_sys_reg_to_cpu(val, reg))
 		return;
 
-	 __vcpu_sys_reg(vcpu, reg) = val;
+	 __vcpu_sys_reg(core_state, reg) = val;
 }
 
 /* 3 bits per cache level, as per CLIDR, but non-existent caches always 0 */
@@ -159,7 +159,8 @@ static bool access_vm_reg(struct kvm_vcpu *vcpu,
 			  struct sys_reg_params *p,
 			  const struct sys_reg_desc *r)
 {
-	bool was_enabled = vcpu_has_cache_enabled(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	bool was_enabled = vcpu_has_cache_enabled(core_state);
 	u64 val, mask, shift;
 
 	BUG_ON(!p->is_write);
@@ -167,14 +168,14 @@ static bool access_vm_reg(struct kvm_vcpu *vcpu,
 	get_access_mask(r, &mask, &shift);
 
 	if (~mask) {
-		val = vcpu_read_sys_reg(vcpu, r->reg);
+		val = vcpu_read_sys_reg(core_state, r->reg);
 		val &= ~mask;
 	} else {
 		val = 0;
 	}
 
 	val |= (p->regval & (mask >> shift)) << shift;
-	vcpu_write_sys_reg(vcpu, val, r->reg);
+	vcpu_write_sys_reg(core_state, val, r->reg);
 
 	kvm_toggle_cache(vcpu, was_enabled);
 	return true;
@@ -184,13 +185,14 @@ static bool access_actlr(struct kvm_vcpu *vcpu,
 			 struct sys_reg_params *p,
 			 const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 mask, shift;
 
 	if (p->is_write)
 		return ignore_write(vcpu, p);
 
 	get_access_mask(r, &mask, &shift);
-	p->regval = (vcpu_read_sys_reg(vcpu, r->reg) & mask) >> shift;
+	p->regval = (vcpu_read_sys_reg(core_state, r->reg) & mask) >> shift;
 
 	return true;
 }
@@ -281,7 +283,7 @@ static bool trap_loregion(struct kvm_vcpu *vcpu,
 	u32 sr = reg_to_encoding(r);
 
 	if (!(val & (0xfUL << ID_AA64MMFR1_LOR_SHIFT))) {
-		kvm_inject_undefined(vcpu);
+		kvm_inject_undefined(&vcpu->arch.core_state);
 		return false;
 	}
 
@@ -346,11 +348,13 @@ static bool trap_debug_regs(struct kvm_vcpu *vcpu,
 			    struct sys_reg_params *p,
 			    const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
 	if (p->is_write) {
-		vcpu_write_sys_reg(vcpu, p->regval, r->reg);
-		vcpu->arch.core_state.flags |= KVM_ARM64_DEBUG_DIRTY;
+		vcpu_write_sys_reg(core_state, p->regval, r->reg);
+		core_state->flags |= KVM_ARM64_DEBUG_DIRTY;
 	} else {
-		p->regval = vcpu_read_sys_reg(vcpu, r->reg);
+		p->regval = vcpu_read_sys_reg(core_state, r->reg);
 	}
 
 	trace_trap_reg(__func__, r->reg, p->is_write, p->regval);
@@ -568,13 +572,13 @@ static void reset_wcr(struct kvm_vcpu *vcpu,
 static void reset_amair_el1(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 {
 	u64 amair = read_sysreg(amair_el1);
-	vcpu_write_sys_reg(vcpu, amair, AMAIR_EL1);
+	vcpu_write_sys_reg(&vcpu->arch.core_state, amair, AMAIR_EL1);
 }
 
 static void reset_actlr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 {
 	u64 actlr = read_sysreg(actlr_el1);
-	vcpu_write_sys_reg(vcpu, actlr, ACTLR_EL1);
+	vcpu_write_sys_reg(&vcpu->arch.core_state, actlr, ACTLR_EL1);
 }
 
 static void reset_mpidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
@@ -591,7 +595,7 @@ static void reset_mpidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 	mpidr = (vcpu->vcpu_id & 0x0f) << MPIDR_LEVEL_SHIFT(0);
 	mpidr |= ((vcpu->vcpu_id >> 4) & 0xff) << MPIDR_LEVEL_SHIFT(1);
 	mpidr |= ((vcpu->vcpu_id >> 12) & 0xff) << MPIDR_LEVEL_SHIFT(2);
-	vcpu_write_sys_reg(vcpu, (1ULL << 31) | mpidr, MPIDR_EL1);
+	vcpu_write_sys_reg(&vcpu->arch.core_state, (1ULL << 31) | mpidr, MPIDR_EL1);
 }
 
 static unsigned int pmu_visibility(const struct kvm_vcpu *vcpu,
@@ -605,6 +609,7 @@ static unsigned int pmu_visibility(const struct kvm_vcpu *vcpu,
 
 static void reset_pmcr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 pmcr, val;
 
 	/* No PMU available, PMCR_EL0 may UNDEF... */
@@ -620,16 +625,17 @@ static void reset_pmcr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 	       | (ARMV8_PMU_PMCR_MASK & 0xdecafbad)) & (~ARMV8_PMU_PMCR_E);
 	if (!system_supports_32bit_el0())
 		val |= ARMV8_PMU_PMCR_LC;
-	__vcpu_sys_reg(vcpu, r->reg) = val;
+	__vcpu_sys_reg(core_state, r->reg) = val;
 }
 
 static bool check_pmu_access_disabled(struct kvm_vcpu *vcpu, u64 flags)
 {
-	u64 reg = __vcpu_sys_reg(vcpu, PMUSERENR_EL0);
-	bool enabled = (reg & flags) || vcpu_mode_priv(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	u64 reg = __vcpu_sys_reg(core_state, PMUSERENR_EL0);
+	bool enabled = (reg & flags) || vcpu_mode_priv(core_state);
 
 	if (!enabled)
-		kvm_inject_undefined(vcpu);
+		kvm_inject_undefined(core_state);
 
 	return !enabled;
 }
@@ -657,6 +663,7 @@ static bool pmu_access_event_counter_el0_disabled(struct kvm_vcpu *vcpu)
 static bool access_pmcr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 val;
 
 	if (pmu_access_el0_disabled(vcpu))
@@ -664,17 +671,17 @@ static bool access_pmcr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 
 	if (p->is_write) {
 		/* Only update writeable bits of PMCR */
-		val = __vcpu_sys_reg(vcpu, PMCR_EL0);
+		val = __vcpu_sys_reg(core_state, PMCR_EL0);
 		val &= ~ARMV8_PMU_PMCR_MASK;
 		val |= p->regval & ARMV8_PMU_PMCR_MASK;
 		if (!system_supports_32bit_el0())
 			val |= ARMV8_PMU_PMCR_LC;
-		__vcpu_sys_reg(vcpu, PMCR_EL0) = val;
+		__vcpu_sys_reg(core_state, PMCR_EL0) = val;
 		kvm_pmu_handle_pmcr(vcpu, val);
 		kvm_vcpu_pmu_restore_guest(vcpu);
 	} else {
 		/* PMCR.P & PMCR.C are RAZ */
-		val = __vcpu_sys_reg(vcpu, PMCR_EL0)
+		val = __vcpu_sys_reg(core_state, PMCR_EL0)
 		      & ~(ARMV8_PMU_PMCR_P | ARMV8_PMU_PMCR_C);
 		p->regval = val;
 	}
@@ -685,14 +692,15 @@ static bool access_pmcr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool access_pmselr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			  const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	if (pmu_access_event_counter_el0_disabled(vcpu))
 		return false;
 
 	if (p->is_write)
-		__vcpu_sys_reg(vcpu, PMSELR_EL0) = p->regval;
+		__vcpu_sys_reg(core_state, PMSELR_EL0) = p->regval;
 	else
 		/* return PMSELR.SEL field */
-		p->regval = __vcpu_sys_reg(vcpu, PMSELR_EL0)
+		p->regval = __vcpu_sys_reg(core_state, PMSELR_EL0)
 			    & ARMV8_PMU_COUNTER_MASK;
 
 	return true;
@@ -721,12 +729,13 @@ static bool access_pmceid(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 
 static bool pmu_counter_idx_valid(struct kvm_vcpu *vcpu, u64 idx)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 pmcr, val;
 
-	pmcr = __vcpu_sys_reg(vcpu, PMCR_EL0);
+	pmcr = __vcpu_sys_reg(core_state, PMCR_EL0);
 	val = (pmcr >> ARMV8_PMU_PMCR_N_SHIFT) & ARMV8_PMU_PMCR_N_MASK;
 	if (idx >= val && idx != ARMV8_PMU_CYCLE_IDX) {
-		kvm_inject_undefined(vcpu);
+		kvm_inject_undefined(core_state);
 		return false;
 	}
 
@@ -737,6 +746,7 @@ static bool access_pmu_evcntr(struct kvm_vcpu *vcpu,
 			      struct sys_reg_params *p,
 			      const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 idx = ~0UL;
 
 	if (r->CRn == 9 && r->CRm == 13) {
@@ -745,7 +755,7 @@ static bool access_pmu_evcntr(struct kvm_vcpu *vcpu,
 			if (pmu_access_event_counter_el0_disabled(vcpu))
 				return false;
 
-			idx = __vcpu_sys_reg(vcpu, PMSELR_EL0)
+			idx = __vcpu_sys_reg(core_state, PMSELR_EL0)
 			      & ARMV8_PMU_COUNTER_MASK;
 		} else if (r->Op2 == 0) {
 			/* PMCCNTR_EL0 */
@@ -789,6 +799,7 @@ static bool access_pmu_evcntr(struct kvm_vcpu *vcpu,
 static bool access_pmu_evtyper(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			       const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 idx, reg;
 
 	if (pmu_access_el0_disabled(vcpu))
@@ -796,7 +807,7 @@ static bool access_pmu_evtyper(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 
 	if (r->CRn == 9 && r->CRm == 13 && r->Op2 == 1) {
 		/* PMXEVTYPER_EL0 */
-		idx = __vcpu_sys_reg(vcpu, PMSELR_EL0) & ARMV8_PMU_COUNTER_MASK;
+		idx = __vcpu_sys_reg(core_state, PMSELR_EL0) & ARMV8_PMU_COUNTER_MASK;
 		reg = PMEVTYPER0_EL0 + idx;
 	} else if (r->CRn == 14 && (r->CRm & 12) == 12) {
 		idx = ((r->CRm & 3) << 3) | (r->Op2 & 7);
@@ -814,10 +825,10 @@ static bool access_pmu_evtyper(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 
 	if (p->is_write) {
 		kvm_pmu_set_counter_event_type(vcpu, p->regval, idx);
-		__vcpu_sys_reg(vcpu, reg) = p->regval & ARMV8_PMU_EVTYPE_MASK;
+		__vcpu_sys_reg(core_state, reg) = p->regval & ARMV8_PMU_EVTYPE_MASK;
 		kvm_vcpu_pmu_restore_guest(vcpu);
 	} else {
-		p->regval = __vcpu_sys_reg(vcpu, reg) & ARMV8_PMU_EVTYPE_MASK;
+		p->regval = __vcpu_sys_reg(core_state, reg) & ARMV8_PMU_EVTYPE_MASK;
 	}
 
 	return true;
@@ -826,6 +837,7 @@ static bool access_pmu_evtyper(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool access_pmcnten(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			   const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 val, mask;
 
 	if (pmu_access_el0_disabled(vcpu))
@@ -836,16 +848,16 @@ static bool access_pmcnten(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 		val = p->regval & mask;
 		if (r->Op2 & 0x1) {
 			/* accessing PMCNTENSET_EL0 */
-			__vcpu_sys_reg(vcpu, PMCNTENSET_EL0) |= val;
+			__vcpu_sys_reg(core_state, PMCNTENSET_EL0) |= val;
 			kvm_pmu_enable_counter_mask(vcpu, val);
 			kvm_vcpu_pmu_restore_guest(vcpu);
 		} else {
 			/* accessing PMCNTENCLR_EL0 */
-			__vcpu_sys_reg(vcpu, PMCNTENSET_EL0) &= ~val;
+			__vcpu_sys_reg(core_state, PMCNTENSET_EL0) &= ~val;
 			kvm_pmu_disable_counter_mask(vcpu, val);
 		}
 	} else {
-		p->regval = __vcpu_sys_reg(vcpu, PMCNTENSET_EL0) & mask;
+		p->regval = __vcpu_sys_reg(core_state, PMCNTENSET_EL0) & mask;
 	}
 
 	return true;
@@ -854,6 +866,7 @@ static bool access_pmcnten(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool access_pminten(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			   const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 mask = kvm_pmu_valid_counter_mask(vcpu);
 
 	if (check_pmu_access_disabled(vcpu, 0))
@@ -864,12 +877,12 @@ static bool access_pminten(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 
 		if (r->Op2 & 0x1)
 			/* accessing PMINTENSET_EL1 */
-			__vcpu_sys_reg(vcpu, PMINTENSET_EL1) |= val;
+			__vcpu_sys_reg(core_state, PMINTENSET_EL1) |= val;
 		else
 			/* accessing PMINTENCLR_EL1 */
-			__vcpu_sys_reg(vcpu, PMINTENSET_EL1) &= ~val;
+			__vcpu_sys_reg(core_state, PMINTENSET_EL1) &= ~val;
 	} else {
-		p->regval = __vcpu_sys_reg(vcpu, PMINTENSET_EL1) & mask;
+		p->regval = __vcpu_sys_reg(core_state, PMINTENSET_EL1) & mask;
 	}
 
 	return true;
@@ -878,6 +891,7 @@ static bool access_pminten(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool access_pmovs(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			 const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 mask = kvm_pmu_valid_counter_mask(vcpu);
 
 	if (pmu_access_el0_disabled(vcpu))
@@ -886,12 +900,12 @@ static bool access_pmovs(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 	if (p->is_write) {
 		if (r->CRm & 0x2)
 			/* accessing PMOVSSET_EL0 */
-			__vcpu_sys_reg(vcpu, PMOVSSET_EL0) |= (p->regval & mask);
+			__vcpu_sys_reg(core_state, PMOVSSET_EL0) |= (p->regval & mask);
 		else
 			/* accessing PMOVSCLR_EL0 */
-			__vcpu_sys_reg(vcpu, PMOVSSET_EL0) &= ~(p->regval & mask);
+			__vcpu_sys_reg(core_state, PMOVSSET_EL0) &= ~(p->regval & mask);
 	} else {
-		p->regval = __vcpu_sys_reg(vcpu, PMOVSSET_EL0) & mask;
+		p->regval = __vcpu_sys_reg(core_state, PMOVSSET_EL0) & mask;
 	}
 
 	return true;
@@ -916,16 +930,17 @@ static bool access_pmswinc(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool access_pmuserenr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			     const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	if (p->is_write) {
-		if (!vcpu_mode_priv(vcpu)) {
-			kvm_inject_undefined(vcpu);
+		if (!vcpu_mode_priv(core_state)) {
+			kvm_inject_undefined(core_state);
 			return false;
 		}
 
-		__vcpu_sys_reg(vcpu, PMUSERENR_EL0) =
+		__vcpu_sys_reg(core_state, PMUSERENR_EL0) =
 			       p->regval & ARMV8_PMU_USERENR_MASK;
 	} else {
-		p->regval = __vcpu_sys_reg(vcpu, PMUSERENR_EL0)
+		p->regval = __vcpu_sys_reg(core_state, PMUSERENR_EL0)
 			    & ARMV8_PMU_USERENR_MASK;
 	}
 
@@ -959,7 +974,7 @@ static bool access_pmuserenr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool undef_access(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			 const struct sys_reg_desc *r)
 {
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(&vcpu->arch.core_state);
 
 	return false;
 }
@@ -1263,12 +1278,13 @@ static bool access_clidr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static bool access_csselr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 			  const struct sys_reg_desc *r)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int reg = r->reg;
 
 	if (p->is_write)
-		vcpu_write_sys_reg(vcpu, p->regval, reg);
+		vcpu_write_sys_reg(core_state, p->regval, reg);
 	else
-		p->regval = vcpu_read_sys_reg(vcpu, reg);
+		p->regval = vcpu_read_sys_reg(core_state, reg);
 	return true;
 }
 
@@ -1280,7 +1296,7 @@ static bool access_ccsidr(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 	if (p->is_write)
 		return write_to_read_only(vcpu, p, r);
 
-	csselr = vcpu_read_sys_reg(vcpu, CSSELR_EL1);
+	csselr = vcpu_read_sys_reg(&vcpu->arch.core_state, CSSELR_EL1);
 	p->regval = get_ccsidr(csselr);
 
 	/*
@@ -2085,7 +2101,7 @@ static const struct sys_reg_desc *find_reg(const struct sys_reg_params *params,
 
 int kvm_handle_cp14_load_store(struct kvm_vcpu *vcpu)
 {
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(&vcpu->arch.core_state);
 	return 1;
 }
 
@@ -2093,11 +2109,13 @@ static void perform_access(struct kvm_vcpu *vcpu,
 			   struct sys_reg_params *params,
 			   const struct sys_reg_desc *r)
 {
-	trace_kvm_sys_access(*vcpu_pc(vcpu), params, r);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
+	trace_kvm_sys_access(*vcpu_pc(core_state), params, r);
 
 	/* Check for regs disabled by runtime config */
 	if (sysreg_hidden(vcpu, r)) {
-		kvm_inject_undefined(vcpu);
+		kvm_inject_undefined(core_state);
 		return;
 	}
 
@@ -2110,7 +2128,7 @@ static void perform_access(struct kvm_vcpu *vcpu,
 
 	/* Skip instruction if instructed so */
 	if (likely(r->access(vcpu, params, r)))
-		kvm_incr_pc(vcpu);
+		kvm_incr_pc(core_state);
 }
 
 /*
@@ -2147,7 +2165,8 @@ static int emulate_cp(struct kvm_vcpu *vcpu,
 static void unhandled_cp_access(struct kvm_vcpu *vcpu,
 				struct sys_reg_params *params)
 {
-	u8 esr_ec = kvm_vcpu_trap_get_class(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	u8 esr_ec = kvm_vcpu_trap_get_class(core_state);
 	int cp = -1;
 
 	switch (esr_ec) {
@@ -2165,8 +2184,8 @@ static void unhandled_cp_access(struct kvm_vcpu *vcpu,
 
 	print_sys_reg_msg(params,
 			  "Unsupported guest CP%d access at: %08lx [%08lx]\n",
-			  cp, *vcpu_pc(vcpu), *vcpu_cpsr(vcpu));
-	kvm_inject_undefined(vcpu);
+			  cp, *vcpu_pc(core_state), *vcpu_cpsr(core_state));
+	kvm_inject_undefined(core_state);
 }
 
 /**
@@ -2178,9 +2197,10 @@ static int kvm_handle_cp_64(struct kvm_vcpu *vcpu,
 			    const struct sys_reg_desc *global,
 			    size_t nr_global)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct sys_reg_params params;
-	u32 esr = kvm_vcpu_get_esr(vcpu);
-	int Rt = kvm_vcpu_sys_get_rt(vcpu);
+	u32 esr = kvm_vcpu_get_esr(core_state);
+	int Rt = kvm_vcpu_sys_get_rt(core_state);
 	int Rt2 = (esr >> 10) & 0x1f;
 
 	params.CRm = (esr >> 1) & 0xf;
@@ -2196,8 +2216,8 @@ static int kvm_handle_cp_64(struct kvm_vcpu *vcpu,
 	 * backends between AArch32 and AArch64, we get away with it.
 	 */
 	if (params.is_write) {
-		params.regval = vcpu_get_reg(vcpu, Rt) & 0xffffffff;
-		params.regval |= vcpu_get_reg(vcpu, Rt2) << 32;
+		params.regval = vcpu_get_reg(core_state, Rt) & 0xffffffff;
+		params.regval |= vcpu_get_reg(core_state, Rt2) << 32;
 	}
 
 	/*
@@ -2208,8 +2228,8 @@ static int kvm_handle_cp_64(struct kvm_vcpu *vcpu,
 	if (!emulate_cp(vcpu, &params, global, nr_global)) {
 		/* Split up the value between registers for the read side */
 		if (!params.is_write) {
-			vcpu_set_reg(vcpu, Rt, lower_32_bits(params.regval));
-			vcpu_set_reg(vcpu, Rt2, upper_32_bits(params.regval));
+			vcpu_set_reg(core_state, Rt, lower_32_bits(params.regval));
+			vcpu_set_reg(core_state, Rt2, upper_32_bits(params.regval));
 		}
 
 		return 1;
@@ -2228,12 +2248,13 @@ static int kvm_handle_cp_32(struct kvm_vcpu *vcpu,
 			    const struct sys_reg_desc *global,
 			    size_t nr_global)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct sys_reg_params params;
-	u32 esr = kvm_vcpu_get_esr(vcpu);
-	int Rt  = kvm_vcpu_sys_get_rt(vcpu);
+	u32 esr = kvm_vcpu_get_esr(core_state);
+	int Rt  = kvm_vcpu_sys_get_rt(core_state);
 
 	params.CRm = (esr >> 1) & 0xf;
-	params.regval = vcpu_get_reg(vcpu, Rt);
+	params.regval = vcpu_get_reg(core_state, Rt);
 	params.is_write = ((esr & 1) == 0);
 	params.CRn = (esr >> 10) & 0xf;
 	params.Op0 = 0;
@@ -2242,7 +2263,7 @@ static int kvm_handle_cp_32(struct kvm_vcpu *vcpu,
 
 	if (!emulate_cp(vcpu, &params, global, nr_global)) {
 		if (!params.is_write)
-			vcpu_set_reg(vcpu, Rt, params.regval);
+			vcpu_set_reg(core_state, Rt, params.regval);
 		return 1;
 	}
 
@@ -2279,6 +2300,7 @@ static bool is_imp_def_sys_reg(struct sys_reg_params *params)
 static int emulate_sys_reg(struct kvm_vcpu *vcpu,
 			   struct sys_reg_params *params)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	const struct sys_reg_desc *r;
 
 	r = find_reg(params, sys_reg_descs, ARRAY_SIZE(sys_reg_descs));
@@ -2286,12 +2308,12 @@ static int emulate_sys_reg(struct kvm_vcpu *vcpu,
 	if (likely(r)) {
 		perform_access(vcpu, params, r);
 	} else if (is_imp_def_sys_reg(params)) {
-		kvm_inject_undefined(vcpu);
+		kvm_inject_undefined(core_state);
 	} else {
 		print_sys_reg_msg(params,
 				  "Unsupported guest sys_reg access at: %lx [%08lx]\n",
-				  *vcpu_pc(vcpu), *vcpu_cpsr(vcpu));
-		kvm_inject_undefined(vcpu);
+				  *vcpu_pc(core_state), *vcpu_cpsr(core_state));
+		kvm_inject_undefined(core_state);
 	}
 	return 1;
 }
@@ -2318,9 +2340,10 @@ void kvm_reset_sys_regs(struct kvm_vcpu *vcpu)
  */
 int kvm_handle_sys_reg(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct sys_reg_params params;
-	unsigned long esr = kvm_vcpu_get_esr(vcpu);
-	int Rt = kvm_vcpu_sys_get_rt(vcpu);
+	unsigned long esr = kvm_vcpu_get_esr(core_state);
+	int Rt = kvm_vcpu_sys_get_rt(core_state);
 	int ret;
 
 	trace_kvm_handle_sys_reg(esr);
@@ -2330,13 +2353,13 @@ int kvm_handle_sys_reg(struct kvm_vcpu *vcpu)
 	params.CRn = (esr >> 10) & 0xf;
 	params.CRm = (esr >> 1) & 0xf;
 	params.Op2 = (esr >> 17) & 0x7;
-	params.regval = vcpu_get_reg(vcpu, Rt);
+	params.regval = vcpu_get_reg(core_state, Rt);
 	params.is_write = !(esr & 1);
 
 	ret = emulate_sys_reg(vcpu, &params);
 
 	if (!params.is_write)
-		vcpu_set_reg(vcpu, Rt, params.regval);
+		vcpu_set_reg(core_state, Rt, params.regval);
 	return ret;
 }
 
@@ -2575,6 +2598,7 @@ static int demux_c15_set(u64 id, void __user *uaddr)
 
 int kvm_arm_sys_reg_get_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	const struct sys_reg_desc *r;
 	void __user *uaddr = (void __user *)(unsigned long)reg->addr;
 
@@ -2595,11 +2619,12 @@ int kvm_arm_sys_reg_get_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg
 	if (r->get_user)
 		return (r->get_user)(vcpu, r, reg, uaddr);
 
-	return reg_to_user(uaddr, &__vcpu_sys_reg(vcpu, r->reg), reg->id);
+	return reg_to_user(uaddr, &__vcpu_sys_reg(core_state, r->reg), reg->id);
 }
 
 int kvm_arm_sys_reg_set_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	const struct sys_reg_desc *r;
 	void __user *uaddr = (void __user *)(unsigned long)reg->addr;
 
@@ -2620,7 +2645,7 @@ int kvm_arm_sys_reg_set_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg
 	if (r->set_user)
 		return (r->set_user)(vcpu, r, reg, uaddr);
 
-	return reg_from_user(&__vcpu_sys_reg(vcpu, r->reg), uaddr, reg->id);
+	return reg_from_user(&__vcpu_sys_reg(core_state, r->reg), uaddr, reg->id);
 }
 
 static unsigned int num_demux_regs(void)

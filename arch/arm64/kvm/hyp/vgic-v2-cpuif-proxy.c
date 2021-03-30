@@ -15,9 +15,9 @@
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 
-static bool __is_be(struct kvm_vcpu *vcpu)
+static bool __is_be(struct kvm_vcpu_arch_core *core_state)
 {
-	if (vcpu_mode_is_32bit(vcpu))
+	if (vcpu_mode_is_32bit(core_state))
 		return !!(read_sysreg_el2(SYS_SPSR) & PSR_AA32_E_BIT);
 
 	return !!(read_sysreg(SCTLR_EL1) & SCTLR_ELx_EE);
@@ -36,6 +36,7 @@ static bool __is_be(struct kvm_vcpu *vcpu)
  */
 int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct vgic_dist *vgic = &kvm->arch.vgic;
 	phys_addr_t fault_ipa;
@@ -43,8 +44,8 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 	int rd;
 
 	/* Build the full address */
-	fault_ipa  = kvm_vcpu_get_fault_ipa(vcpu);
-	fault_ipa |= kvm_vcpu_get_hfar(vcpu) & GENMASK(11, 0);
+	fault_ipa  = kvm_vcpu_get_fault_ipa(core_state);
+	fault_ipa |= kvm_vcpu_get_hfar(core_state) & GENMASK(11, 0);
 
 	/* If not for GICV, move on */
 	if (fault_ipa <  vgic->vgic_cpu_base ||
@@ -52,38 +53,38 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 		return 0;
 
 	/* Reject anything but a 32bit access */
-	if (kvm_vcpu_dabt_get_as(vcpu) != sizeof(u32)) {
-		__kvm_skip_instr(vcpu);
+	if (kvm_vcpu_dabt_get_as(core_state) != sizeof(u32)) {
+		__kvm_skip_instr(core_state);
 		return -1;
 	}
 
 	/* Not aligned? Don't bother */
 	if (fault_ipa & 3) {
-		__kvm_skip_instr(vcpu);
+		__kvm_skip_instr(core_state);
 		return -1;
 	}
 
-	rd = kvm_vcpu_dabt_get_rd(vcpu);
+	rd = kvm_vcpu_dabt_get_rd(core_state);
 	addr  = kvm_vgic_global_state.vcpu_hyp_va;
 	addr += fault_ipa - vgic->vgic_cpu_base;
 
-	if (kvm_vcpu_dabt_iswrite(vcpu)) {
-		u32 data = vcpu_get_reg(vcpu, rd);
-		if (__is_be(vcpu)) {
+	if (kvm_vcpu_dabt_iswrite(core_state)) {
+		u32 data = vcpu_get_reg(core_state, rd);
+		if (__is_be(core_state)) {
 			/* guest pre-swabbed data, undo this for writel() */
 			data = __kvm_swab32(data);
 		}
 		writel_relaxed(data, addr);
 	} else {
 		u32 data = readl_relaxed(addr);
-		if (__is_be(vcpu)) {
+		if (__is_be(core_state)) {
 			/* guest expects swabbed data */
 			data = __kvm_swab32(data);
 		}
-		vcpu_set_reg(vcpu, rd, data);
+		vcpu_set_reg(core_state, rd, data);
 	}
 
-	__kvm_skip_instr(vcpu);
+	__kvm_skip_instr(core_state);
 
 	return 1;
 }

@@ -53,6 +53,7 @@ RESERVEDMEM_OF_DECLARE(pkvm_firmware, "linux,pkvm-guest-firmware-memory",
 
 int kvm_arm_vcpu_pkvm_init(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm *kvm = vcpu->kvm;
 
 	if (!kvm_vm_is_protected(kvm))
@@ -61,7 +62,7 @@ int kvm_arm_vcpu_pkvm_init(struct kvm_vcpu *vcpu)
 	if (!vcpu->vcpu_id) {
 		int i;
 		struct kvm_memory_slot *slot = kvm->arch.pkvm.firmware_slot;
-		struct user_pt_regs *regs = vcpu_gp_regs(vcpu);
+		struct user_pt_regs *regs = vcpu_gp_regs(core_state);
 
 		if (!slot)
 			return 0;

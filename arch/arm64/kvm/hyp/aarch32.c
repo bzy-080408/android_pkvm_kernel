@@ -44,22 +44,22 @@ static const unsigned short cc_map[16] = {
 /*
  * Check if a trapped instruction should have been executed or not.
  */
-bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
+bool kvm_condition_valid32(const struct kvm_vcpu_arch_core *core_state)
 {
 	unsigned long cpsr;
 	u32 cpsr_cond;
 	int cond;
 
 	/* Top two bits non-zero?  Unconditional. */
-	if (kvm_vcpu_get_esr(vcpu) >> 30)
+	if (kvm_vcpu_get_esr(core_state) >> 30)
 		return true;
 
 	/* Is condition field valid? */
-	cond = kvm_vcpu_get_condition(vcpu);
+	cond = kvm_vcpu_get_condition(core_state);
 	if (cond == 0xE)
 		return true;
 
-	cpsr = *vcpu_cpsr(vcpu);
+	cpsr = *vcpu_cpsr(core_state);
 
 	if (cond < 0) {
 		/* This can happen in Thumb mode: examine IT state. */
@@ -93,10 +93,10 @@ bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
  *
  * IT[7:0] -> CPSR[26:25],CPSR[15:10]
  */
-static void kvm_adjust_itstate(struct kvm_vcpu *vcpu)
+static void kvm_adjust_itstate(struct kvm_vcpu_arch_core *core_state)
 {
 	unsigned long itbits, cond;
-	unsigned long cpsr = *vcpu_cpsr(vcpu);
+	unsigned long cpsr = *vcpu_cpsr(core_state);
 	bool is_arm = !(cpsr & PSR_AA32_T_BIT);
 
 	if (is_arm || !(cpsr & PSR_AA32_IT_MASK))
@@ -116,25 +116,25 @@ static void kvm_adjust_itstate(struct kvm_vcpu *vcpu)
 	cpsr |= cond << 13;
 	cpsr |= (itbits & 0x1c) << (10 - 2);
 	cpsr |= (itbits & 0x3) << 25;
-	*vcpu_cpsr(vcpu) = cpsr;
+	*vcpu_cpsr(core_state) = cpsr;
 }
 
 /**
  * kvm_skip_instr - skip a trapped instruction and proceed to the next
  * @vcpu: The vcpu pointer
  */
-void kvm_skip_instr32(struct kvm_vcpu *vcpu)
+void kvm_skip_instr32(struct kvm_vcpu_arch_core *core_state)
 {
-	u32 pc = *vcpu_pc(vcpu);
+	u32 pc = *vcpu_pc(core_state);
 	bool is_thumb;
 
-	is_thumb = !!(*vcpu_cpsr(vcpu) & PSR_AA32_T_BIT);
-	if (is_thumb && !kvm_vcpu_trap_il_is32bit(vcpu))
+	is_thumb = !!(*vcpu_cpsr(core_state) & PSR_AA32_T_BIT);
+	if (is_thumb && !kvm_vcpu_trap_il_is32bit(core_state))
 		pc += 2;
 	else
 		pc += 4;
 
-	*vcpu_pc(vcpu) = pc;
+	*vcpu_pc(core_state) = pc;
 
-	kvm_adjust_itstate(vcpu);
+	kvm_adjust_itstate(core_state);
 }

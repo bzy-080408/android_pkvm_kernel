@@ -14,23 +14,23 @@
 #include <asm/kvm_emulate.h>
 #include <asm/esr.h>
 
-static void inject_abt64(struct kvm_vcpu *vcpu, bool is_iabt, unsigned long addr)
+static void inject_abt64(struct kvm_vcpu_arch_core *core_state, bool is_iabt, unsigned long addr)
 {
-	unsigned long cpsr = *vcpu_cpsr(vcpu);
-	bool is_aarch32 = vcpu_mode_is_32bit(vcpu);
+	unsigned long cpsr = *vcpu_cpsr(core_state);
+	bool is_aarch32 = vcpu_mode_is_32bit(core_state);
 	u32 esr = 0;
 
-	vcpu->arch.core_state.flags |= (KVM_ARM64_EXCEPT_AA64_EL1		|
+	core_state->flags |= (KVM_ARM64_EXCEPT_AA64_EL1		|
 			     KVM_ARM64_EXCEPT_AA64_ELx_SYNC	|
 			     KVM_ARM64_PENDING_EXCEPTION);
 
-	vcpu_write_sys_reg(vcpu, addr, FAR_EL1);
+	vcpu_write_sys_reg(core_state, addr, FAR_EL1);
 
 	/*
 	 * Build an {i,d}abort, depending on the level and the
 	 * instruction set. Report an external synchronous abort.
 	 */
-	if (kvm_vcpu_trap_il_is32bit(vcpu))
+	if (kvm_vcpu_trap_il_is32bit(core_state))
 		esr |= ESR_ELx_IL;
 
 	/*
@@ -45,14 +45,14 @@ static void inject_abt64(struct kvm_vcpu *vcpu, bool is_iabt, unsigned long addr
 	if (!is_iabt)
 		esr |= ESR_ELx_EC_DABT_LOW << ESR_ELx_EC_SHIFT;
 
-	vcpu_write_sys_reg(vcpu, esr | ESR_ELx_FSC_EXTABT, ESR_EL1);
+	vcpu_write_sys_reg(core_state, esr | ESR_ELx_FSC_EXTABT, ESR_EL1);
 }
 
-static void inject_undef64(struct kvm_vcpu *vcpu)
+static void inject_undef64(struct kvm_vcpu_arch_core *core_state)
 {
 	u32 esr = (ESR_ELx_EC_UNKNOWN << ESR_ELx_EC_SHIFT);
 
-	vcpu->arch.core_state.flags |= (KVM_ARM64_EXCEPT_AA64_EL1		|
+	core_state->flags |= (KVM_ARM64_EXCEPT_AA64_EL1		|
 			     KVM_ARM64_EXCEPT_AA64_ELx_SYNC	|
 			     KVM_ARM64_PENDING_EXCEPTION);
 
@@ -60,10 +60,10 @@ static void inject_undef64(struct kvm_vcpu *vcpu)
 	 * Build an unknown exception, depending on the instruction
 	 * set.
 	 */
-	if (kvm_vcpu_trap_il_is32bit(vcpu))
+	if (kvm_vcpu_trap_il_is32bit(core_state))
 		esr |= ESR_ELx_IL;
 
-	vcpu_write_sys_reg(vcpu, esr, ESR_EL1);
+	vcpu_write_sys_reg(core_state, esr, ESR_EL1);
 }
 
 #define DFSR_FSC_EXTABT_LPAE	0x10
@@ -71,9 +71,9 @@ static void inject_undef64(struct kvm_vcpu *vcpu)
 #define DFSR_LPAE		BIT(9)
 #define TTBCR_EAE		BIT(31)
 
-static void inject_undef32(struct kvm_vcpu *vcpu)
+static void inject_undef32(struct kvm_vcpu_arch_core *core_state)
 {
-	vcpu->arch.core_state.flags |= (KVM_ARM64_EXCEPT_AA32_UND |
+	core_state->flags |= (KVM_ARM64_EXCEPT_AA32_UND |
 			     KVM_ARM64_PENDING_EXCEPTION);
 }
 
@@ -81,36 +81,36 @@ static void inject_undef32(struct kvm_vcpu *vcpu)
  * Modelled after TakeDataAbortException() and TakePrefetchAbortException
  * pseudocode.
  */
-static void inject_abt32(struct kvm_vcpu *vcpu, bool is_pabt, u32 addr)
+static void inject_abt32(struct kvm_vcpu_arch_core *core_state, bool is_pabt, u32 addr)
 {
 	u64 far;
 	u32 fsr;
 
 	/* Give the guest an IMPLEMENTATION DEFINED exception */
-	if (vcpu_read_sys_reg(vcpu, TCR_EL1) & TTBCR_EAE) {
+	if (vcpu_read_sys_reg(core_state, TCR_EL1) & TTBCR_EAE) {
 		fsr = DFSR_LPAE | DFSR_FSC_EXTABT_LPAE;
 	} else {
 		/* no need to shuffle FS[4] into DFSR[10] as its 0 */
 		fsr = DFSR_FSC_EXTABT_nLPAE;
 	}
 
-	far = vcpu_read_sys_reg(vcpu, FAR_EL1);
+	far = vcpu_read_sys_reg(core_state, FAR_EL1);
 
 	if (is_pabt) {
-		vcpu->arch.core_state.flags |= (KVM_ARM64_EXCEPT_AA32_IABT |
+		core_state->flags |= (KVM_ARM64_EXCEPT_AA32_IABT |
 				     KVM_ARM64_PENDING_EXCEPTION);
 		far &= GENMASK(31, 0);
 		far |= (u64)addr << 32;
-		vcpu_write_sys_reg(vcpu, fsr, IFSR32_EL2);
+		vcpu_write_sys_reg(core_state, fsr, IFSR32_EL2);
 	} else { /* !iabt */
-		vcpu->arch.core_state.flags |= (KVM_ARM64_EXCEPT_AA32_DABT |
+		core_state->flags |= (KVM_ARM64_EXCEPT_AA32_DABT |
 				     KVM_ARM64_PENDING_EXCEPTION);
 		far &= GENMASK(63, 32);
 		far |= addr;
-		vcpu_write_sys_reg(vcpu, fsr, ESR_EL1);
+		vcpu_write_sys_reg(core_state, fsr, ESR_EL1);
 	}
 
-	vcpu_write_sys_reg(vcpu, far, FAR_EL1);
+	vcpu_write_sys_reg(core_state, far, FAR_EL1);
 }
 
 /**
@@ -121,12 +121,12 @@ static void inject_abt32(struct kvm_vcpu *vcpu, bool is_pabt, u32 addr)
  * It is assumed that this code is called from the VCPU thread and that the
  * VCPU therefore is not currently executing guest code.
  */
-void kvm_inject_dabt(struct kvm_vcpu *vcpu, unsigned long addr)
+void kvm_inject_dabt(struct kvm_vcpu_arch_core *core_state, unsigned long addr)
 {
-	if (vcpu_el1_is_32bit(vcpu))
-		inject_abt32(vcpu, false, addr);
+	if (vcpu_el1_is_32bit(core_state))
+		inject_abt32(core_state, false, addr);
 	else
-		inject_abt64(vcpu, false, addr);
+		inject_abt64(core_state, false, addr);
 }
 
 /**
@@ -137,12 +137,12 @@ void kvm_inject_dabt(struct kvm_vcpu *vcpu, unsigned long addr)
  * It is assumed that this code is called from the VCPU thread and that the
  * VCPU therefore is not currently executing guest code.
  */
-void kvm_inject_pabt(struct kvm_vcpu *vcpu, unsigned long addr)
+void kvm_inject_pabt(struct kvm_vcpu_arch_core *core_state, unsigned long addr)
 {
-	if (vcpu_el1_is_32bit(vcpu))
-		inject_abt32(vcpu, true, addr);
+	if (vcpu_el1_is_32bit(core_state))
+		inject_abt32(core_state, true, addr);
 	else
-		inject_abt64(vcpu, true, addr);
+		inject_abt64(core_state, true, addr);
 }
 
 /**
@@ -152,18 +152,18 @@ void kvm_inject_pabt(struct kvm_vcpu *vcpu, unsigned long addr)
  * It is assumed that this code is called from the VCPU thread and that the
  * VCPU therefore is not currently executing guest code.
  */
-void kvm_inject_undefined(struct kvm_vcpu *vcpu)
+void kvm_inject_undefined(struct kvm_vcpu_arch_core *core_state)
 {
-	if (vcpu_el1_is_32bit(vcpu))
-		inject_undef32(vcpu);
+	if (vcpu_el1_is_32bit(core_state))
+		inject_undef32(core_state);
 	else
-		inject_undef64(vcpu);
+		inject_undef64(core_state);
 }
 
-void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 esr)
+void kvm_set_sei_esr(struct kvm_vcpu_arch_core *core_state, u64 esr)
 {
-	vcpu_set_vsesr(vcpu, esr & ESR_ELx_ISS_MASK);
-	*vcpu_hcr(vcpu) |= HCR_VSE;
+	vcpu_set_vsesr(core_state, esr & ESR_ELx_ISS_MASK);
+	*vcpu_hcr(core_state) |= HCR_VSE;
 }
 
 /**
@@ -178,7 +178,7 @@ void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 esr)
  * uncategorized RAS error. Without the RAS Extensions we can't specify an ESR
  * value, so the CPU generates an imp-def value.
  */
-void kvm_inject_vabt(struct kvm_vcpu *vcpu)
+void kvm_inject_vabt(struct kvm_vcpu_arch_core *core_state)
 {
-	kvm_set_sei_esr(vcpu, ESR_ELx_ISV);
+	kvm_set_sei_esr(core_state, ESR_ELx_ISV);
 }

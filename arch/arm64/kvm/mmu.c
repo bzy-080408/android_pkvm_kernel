@@ -860,6 +860,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  struct kvm_memory_slot *memslot, unsigned long hva,
 			  unsigned long fault_status)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int ret = 0;
 	bool write_fault, writable, force_pte = false;
 	bool exec_fault;
@@ -872,14 +873,14 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	gfn_t gfn;
 	kvm_pfn_t pfn;
 	bool logging_active = memslot_is_logging(memslot);
-	unsigned long fault_level = kvm_vcpu_trap_get_fault_level(vcpu);
+	unsigned long fault_level = kvm_vcpu_trap_get_fault_level(core_state);
 	unsigned long vma_pagesize, fault_granule;
 	enum kvm_pgtable_prot prot = KVM_PGTABLE_PROT_R;
 	struct kvm_pgtable *pgt;
 
 	fault_granule = 1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
-	write_fault = kvm_is_write_fault(vcpu);
-	exec_fault = kvm_vcpu_trap_is_exec_fault(vcpu);
+	write_fault = kvm_is_write_fault(core_state);
+	exec_fault = kvm_vcpu_trap_is_exec_fault(core_state);
 	VM_BUG_ON(write_fault && exec_fault);
 
 	if (fault_status == FSC_PERM && !write_fault && !exec_fault) {
@@ -1071,6 +1072,7 @@ static void handle_access_fault(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
  */
 int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	unsigned long fault_status;
 	phys_addr_t fault_ipa;
 	struct kvm_memory_slot *memslot;
@@ -1079,33 +1081,33 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 	gfn_t gfn;
 	int ret, idx;
 
-	fault_status = kvm_vcpu_trap_get_fault_type(vcpu);
+	fault_status = kvm_vcpu_trap_get_fault_type(core_state);
 
-	fault_ipa = kvm_vcpu_get_fault_ipa(vcpu);
-	is_iabt = kvm_vcpu_trap_is_iabt(vcpu);
+	fault_ipa = kvm_vcpu_get_fault_ipa(core_state);
+	is_iabt = kvm_vcpu_trap_is_iabt(core_state);
 
 	/* Synchronous External Abort? */
-	if (kvm_vcpu_abt_issea(vcpu)) {
+	if (kvm_vcpu_abt_issea(core_state)) {
 		/*
 		 * For RAS the host kernel may handle this abort.
 		 * There is no need to pass the error into the guest.
 		 */
-		if (kvm_handle_guest_sea(fault_ipa, kvm_vcpu_get_esr(vcpu)))
-			kvm_inject_vabt(vcpu);
+		if (kvm_handle_guest_sea(fault_ipa, kvm_vcpu_get_esr(core_state)))
+			kvm_inject_vabt(core_state);
 
 		return 1;
 	}
 
-	trace_kvm_guest_fault(*vcpu_pc(vcpu), kvm_vcpu_get_esr(vcpu),
-			      kvm_vcpu_get_hfar(vcpu), fault_ipa);
+	trace_kvm_guest_fault(*vcpu_pc(core_state), kvm_vcpu_get_esr(core_state),
+			      kvm_vcpu_get_hfar(core_state), fault_ipa);
 
 	/* Check the stage-2 fault is trans. fault or write fault */
 	if (fault_status != FSC_FAULT && fault_status != FSC_PERM &&
 	    fault_status != FSC_ACCESS) {
 		kvm_err("Unsupported FSC: EC=%#x xFSC=%#lx ESR_EL2=%#lx\n",
-			kvm_vcpu_trap_get_class(vcpu),
-			(unsigned long)kvm_vcpu_trap_get_fault(vcpu),
-			(unsigned long)kvm_vcpu_get_esr(vcpu));
+			kvm_vcpu_trap_get_class(core_state),
+			(unsigned long)kvm_vcpu_trap_get_fault(core_state),
+			(unsigned long)kvm_vcpu_get_esr(core_state));
 		return -EFAULT;
 	}
 
@@ -1114,7 +1116,7 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 	gfn = fault_ipa >> PAGE_SHIFT;
 	memslot = gfn_to_memslot(vcpu->kvm, gfn);
 	hva = gfn_to_hva_memslot_prot(memslot, gfn, &writable);
-	write_fault = kvm_is_write_fault(vcpu);
+	write_fault = kvm_is_write_fault(core_state);
 	if (kvm_is_error_hva(hva) || (write_fault && !writable)) {
 		/*
 		 * The guest has put either its instructions or its page-tables
@@ -1127,8 +1129,8 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 			goto out;
 		}
 
-		if (kvm_vcpu_abt_iss1tw(vcpu)) {
-			kvm_inject_dabt(vcpu, kvm_vcpu_get_hfar(vcpu));
+		if (kvm_vcpu_abt_iss1tw(core_state)) {
+			kvm_inject_dabt(core_state, kvm_vcpu_get_hfar(core_state));
 			ret = 1;
 			goto out_unlock;
 		}
@@ -1143,8 +1145,8 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		 * So let's assume that the guest is just being
 		 * cautious, and skip the instruction.
 		 */
-		if (kvm_is_error_hva(hva) && kvm_vcpu_dabt_is_cm(vcpu)) {
-			kvm_incr_pc(vcpu);
+		if (kvm_is_error_hva(hva) && kvm_vcpu_dabt_is_cm(core_state)) {
+			kvm_incr_pc(core_state);
 			ret = 1;
 			goto out_unlock;
 		}
@@ -1155,7 +1157,7 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		 * faulting VA. This is always 12 bits, irrespective
 		 * of the page size.
 		 */
-		fault_ipa |= kvm_vcpu_get_hfar(vcpu) & ((1 << 12) - 1);
+		fault_ipa |= kvm_vcpu_get_hfar(core_state) & ((1 << 12) - 1);
 		ret = io_mem_abort(vcpu, fault_ipa);
 		goto out_unlock;
 	}
@@ -1174,7 +1176,7 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		ret = 1;
 out:
 	if (ret == -ENOEXEC) {
-		kvm_inject_pabt(vcpu, kvm_vcpu_get_hfar(vcpu));
+		kvm_inject_pabt(core_state, kvm_vcpu_get_hfar(core_state));
 		ret = 1;
 	}
 out_unlock:
@@ -1566,7 +1568,8 @@ void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
  */
 void kvm_set_way_flush(struct kvm_vcpu *vcpu)
 {
-	unsigned long hcr = *vcpu_hcr(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	unsigned long hcr = *vcpu_hcr(core_state);
 
 	/*
 	 * If this is the first time we do a S/W operation
@@ -1578,16 +1581,17 @@ void kvm_set_way_flush(struct kvm_vcpu *vcpu)
 	 * clean the caches again.
 	 */
 	if (!(hcr & HCR_TVM)) {
-		trace_kvm_set_way_flush(*vcpu_pc(vcpu),
-					vcpu_has_cache_enabled(vcpu));
+		trace_kvm_set_way_flush(*vcpu_pc(core_state),
+					vcpu_has_cache_enabled(core_state));
 		stage2_flush_vm(vcpu->kvm);
-		*vcpu_hcr(vcpu) = hcr | HCR_TVM;
+		*vcpu_hcr(core_state) = hcr | HCR_TVM;
 	}
 }
 
 void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 {
-	bool now_enabled = vcpu_has_cache_enabled(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	bool now_enabled = vcpu_has_cache_enabled(core_state);
 
 	/*
 	 * If switching the MMU+caches on, need to invalidate the caches.
@@ -1599,7 +1603,7 @@ void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 
 	/* Caches are now on, stop trapping VM ops (until a S/W op) */
 	if (now_enabled)
-		*vcpu_hcr(vcpu) &= ~HCR_TVM;
+		*vcpu_hcr(core_state) &= ~HCR_TVM;
 
-	trace_kvm_toggle_cache(*vcpu_pc(vcpu), was_enabled, now_enabled);
+	trace_kvm_toggle_cache(*vcpu_pc(core_state), was_enabled, now_enabled);
 }

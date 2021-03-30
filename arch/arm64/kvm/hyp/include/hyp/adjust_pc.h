@@ -13,49 +13,49 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_host.h>
 
-void kvm_inject_exception(struct kvm_vcpu *vcpu);
+void kvm_inject_exception(struct kvm_vcpu_arch_core *core_state);
 
-static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
+static inline void kvm_skip_instr(struct kvm_vcpu_arch_core *core_state)
 {
-	if (vcpu_mode_is_32bit(vcpu)) {
-		kvm_skip_instr32(vcpu);
+	if (vcpu_mode_is_32bit(core_state)) {
+		kvm_skip_instr32(core_state);
 	} else {
-		*vcpu_pc(vcpu) += 4;
-		*vcpu_cpsr(vcpu) &= ~PSR_BTYPE_MASK;
+		*vcpu_pc(core_state) += 4;
+		*vcpu_cpsr(core_state) &= ~PSR_BTYPE_MASK;
 	}
 
 	/* advance the singlestep state machine */
-	*vcpu_cpsr(vcpu) &= ~DBG_SPSR_SS;
+	*vcpu_cpsr(core_state) &= ~DBG_SPSR_SS;
 }
 
 /*
  * Skip an instruction which has been emulated at hyp while most guest sysregs
  * are live.
  */
-static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
+static inline void __kvm_skip_instr(struct kvm_vcpu_arch_core *core_state)
 {
-	*vcpu_pc(vcpu) = read_sysreg_el2(SYS_ELR);
-	vcpu_gp_regs(vcpu)->pstate = read_sysreg_el2(SYS_SPSR);
+	*vcpu_pc(core_state) = read_sysreg_el2(SYS_ELR);
+	vcpu_gp_regs(core_state)->pstate = read_sysreg_el2(SYS_SPSR);
 
-	kvm_skip_instr(vcpu);
+	kvm_skip_instr(core_state);
 
-	write_sysreg_el2(vcpu_gp_regs(vcpu)->pstate, SYS_SPSR);
-	write_sysreg_el2(*vcpu_pc(vcpu), SYS_ELR);
+	write_sysreg_el2(vcpu_gp_regs(core_state)->pstate, SYS_SPSR);
+	write_sysreg_el2(*vcpu_pc(core_state), SYS_ELR);
 }
 
 /*
  * Adjust the guest PC on entry, depending on flags provided by EL1
  * for the purpose of emulation (MMIO, sysreg) or exception injection.
  */
-static inline void __adjust_pc(struct kvm_vcpu *vcpu)
+static inline void __adjust_pc(struct kvm_vcpu_arch_core *core_state)
 {
-	if (vcpu->arch.core_state.flags & KVM_ARM64_PENDING_EXCEPTION) {
-		kvm_inject_exception(vcpu);
-		vcpu->arch.core_state.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
+	if (core_state->flags & KVM_ARM64_PENDING_EXCEPTION) {
+		kvm_inject_exception(core_state);
+		core_state->flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
 				      KVM_ARM64_EXCEPT_MASK);
-	} else if (vcpu->arch.core_state.flags & KVM_ARM64_INCREMENT_PC) {
-		kvm_skip_instr(vcpu);
-		vcpu->arch.core_state.flags &= ~KVM_ARM64_INCREMENT_PC;
+	} else if (core_state->flags & KVM_ARM64_INCREMENT_PC) {
+		kvm_skip_instr(core_state);
+		core_state->flags &= ~KVM_ARM64_INCREMENT_PC;
 	}
 }
 

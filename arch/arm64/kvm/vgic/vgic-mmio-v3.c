@@ -254,7 +254,7 @@ static void vgic_mmio_write_v3r_ctlr(struct kvm_vcpu *vcpu,
 static unsigned long vgic_mmio_read_v3r_typer(struct kvm_vcpu *vcpu,
 					      gpa_t addr, unsigned int len)
 {
-	unsigned long mpidr = kvm_vcpu_get_mpidr_aff(vcpu);
+	unsigned long mpidr = kvm_vcpu_get_mpidr_aff(&vcpu->arch.core_state);
 	struct vgic_cpu *vgic_cpu = &vcpu->arch.vgic_cpu;
 	struct vgic_redist_region *rdreg = vgic_cpu->rdreg;
 	int target_vcpu_id = vcpu->vcpu_id;
@@ -276,7 +276,7 @@ static unsigned long vgic_mmio_read_v3r_typer(struct kvm_vcpu *vcpu,
 static unsigned long vgic_uaccess_read_v3r_typer(struct kvm_vcpu *vcpu,
 						 gpa_t addr, unsigned int len)
 {
-	unsigned long mpidr = kvm_vcpu_get_mpidr_aff(vcpu);
+	unsigned long mpidr = kvm_vcpu_get_mpidr_aff(&vcpu->arch.core_state);
 	int target_vcpu_id = vcpu->vcpu_id;
 	u64 value;
 
@@ -930,7 +930,7 @@ static int match_mpidr(u64 sgi_aff, u16 sgi_cpu_mask, struct kvm_vcpu *vcpu)
 	 * Split the current VCPU's MPIDR into affinity level 0 and the
 	 * rest as this is what we have to compare against.
 	 */
-	affinity = kvm_vcpu_get_mpidr_aff(vcpu);
+	affinity = kvm_vcpu_get_mpidr_aff(&vcpu->arch.core_state);
 	level0 = MPIDR_AFFINITY_LEVEL(affinity, 0);
 	affinity &= ~MPIDR_LEVEL_MASK;
 

@@ -35,7 +35,8 @@ static DEFINE_PER_CPU(u32, mdcr_el2);
  */
 static void save_guest_debug_regs(struct kvm_vcpu *vcpu)
 {
-	u64 val = vcpu_read_sys_reg(vcpu, MDSCR_EL1);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	u64 val = vcpu_read_sys_reg(core_state, MDSCR_EL1);
 
 	vcpu->arch.guest_debug_preserved.mdscr_el1 = val;
 
@@ -45,12 +46,13 @@ static void save_guest_debug_regs(struct kvm_vcpu *vcpu)
 
 static void restore_guest_debug_regs(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	u64 val = vcpu->arch.guest_debug_preserved.mdscr_el1;
 
-	vcpu_write_sys_reg(vcpu, val, MDSCR_EL1);
+	vcpu_write_sys_reg(core_state, val, MDSCR_EL1);
 
 	trace_kvm_arm_set_dreg32("Restored MDSCR_EL1",
-				vcpu_read_sys_reg(vcpu, MDSCR_EL1));
+				vcpu_read_sys_reg(core_state, MDSCR_EL1));
 }
 
 /**
@@ -101,8 +103,9 @@ void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu)
 
 void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 {
-	bool trap_debug = !(vcpu->arch.core_state.flags & KVM_ARM64_DEBUG_DIRTY);
-	unsigned long mdscr, orig_mdcr_el2 = vcpu->arch.core_state.mdcr_el2;
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	bool trap_debug = !(core_state->flags & KVM_ARM64_DEBUG_DIRTY);
+	unsigned long mdscr, orig_mdcr_el2 = core_state->mdcr_el2;
 
 	trace_kvm_arm_setup_debug(vcpu, vcpu->guest_debug);
 
@@ -110,8 +113,8 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 	 * This also clears MDCR_EL2_E2PB_MASK to disable guest access
 	 * to the profiling buffer.
 	 */
-	vcpu->arch.core_state.mdcr_el2 = __this_cpu_read(mdcr_el2) & MDCR_EL2_HPMN_MASK;
-	vcpu->arch.core_state.mdcr_el2 |= (MDCR_EL2_TPM |
+	core_state->mdcr_el2 = __this_cpu_read(mdcr_el2) & MDCR_EL2_HPMN_MASK;
+	core_state->mdcr_el2 |= (MDCR_EL2_TPM |
 				MDCR_EL2_TPMS |
 				MDCR_EL2_TTRF |
 				MDCR_EL2_TPMCR |
@@ -121,7 +124,7 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 	/* Is Guest debugging in effect? */
 	if (vcpu->guest_debug) {
 		/* Route all software debug exceptions to EL2 */
-		vcpu->arch.core_state.mdcr_el2 |= MDCR_EL2_TDE;
+		core_state->mdcr_el2 |= MDCR_EL2_TDE;
 
 		/* Save guest debug state */
 		save_guest_debug_regs(vcpu);
@@ -147,17 +150,17 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 		 * debugging the system.
 		 */
 		if (vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP) {
-			*vcpu_cpsr(vcpu) |=  DBG_SPSR_SS;
-			mdscr = vcpu_read_sys_reg(vcpu, MDSCR_EL1);
+			*vcpu_cpsr(core_state) |=  DBG_SPSR_SS;
+			mdscr = vcpu_read_sys_reg(core_state, MDSCR_EL1);
 			mdscr |= DBG_MDSCR_SS;
-			vcpu_write_sys_reg(vcpu, mdscr, MDSCR_EL1);
+			vcpu_write_sys_reg(core_state, mdscr, MDSCR_EL1);
 		} else {
-			mdscr = vcpu_read_sys_reg(vcpu, MDSCR_EL1);
+			mdscr = vcpu_read_sys_reg(core_state, MDSCR_EL1);
 			mdscr &= ~DBG_MDSCR_SS;
-			vcpu_write_sys_reg(vcpu, mdscr, MDSCR_EL1);
+			vcpu_write_sys_reg(core_state, mdscr, MDSCR_EL1);
 		}
 
-		trace_kvm_arm_set_dreg32("SPSR_EL2", *vcpu_cpsr(vcpu));
+		trace_kvm_arm_set_dreg32("SPSR_EL2", *vcpu_cpsr(core_state));
 
 		/*
 		 * HW Breakpoints and watchpoints
@@ -170,12 +173,12 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 		 */
 		if (vcpu->guest_debug & KVM_GUESTDBG_USE_HW) {
 			/* Enable breakpoints/watchpoints */
-			mdscr = vcpu_read_sys_reg(vcpu, MDSCR_EL1);
+			mdscr = vcpu_read_sys_reg(core_state, MDSCR_EL1);
 			mdscr |= DBG_MDSCR_MDE;
-			vcpu_write_sys_reg(vcpu, mdscr, MDSCR_EL1);
+			vcpu_write_sys_reg(core_state, mdscr, MDSCR_EL1);
 
 			vcpu->arch.debug_ptr = &vcpu->arch.external_debug_state;
-			vcpu->arch.core_state.flags |= KVM_ARM64_DEBUG_DIRTY;
+			core_state->flags |= KVM_ARM64_DEBUG_DIRTY;
 			trap_debug = true;
 
 			trace_kvm_arm_set_regset("BKPTS", get_num_brps(),
@@ -196,15 +199,15 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 		vcpu->arch.core_state.mdcr_el2 |= MDCR_EL2_TDA;
 
 	/* If KDE or MDE are set, perform a full save/restore cycle. */
-	if (vcpu_read_sys_reg(vcpu, MDSCR_EL1) & (DBG_MDSCR_KDE | DBG_MDSCR_MDE))
-		vcpu->arch.core_state.flags |= KVM_ARM64_DEBUG_DIRTY;
+	if (vcpu_read_sys_reg(core_state, MDSCR_EL1) & (DBG_MDSCR_KDE | DBG_MDSCR_MDE))
+		core_state->flags |= KVM_ARM64_DEBUG_DIRTY;
 
 	/* Write mdcr_el2 changes since vcpu_load on VHE systems */
 	if (has_vhe() && orig_mdcr_el2 != vcpu->arch.core_state.mdcr_el2)
-		write_sysreg(vcpu->arch.core_state.mdcr_el2, mdcr_el2);
+		write_sysreg(core_state->mdcr_el2, mdcr_el2);
 
-	trace_kvm_arm_set_dreg32("MDCR_EL2", vcpu->arch.core_state.mdcr_el2);
-	trace_kvm_arm_set_dreg32("MDSCR_EL1", vcpu_read_sys_reg(vcpu, MDSCR_EL1));
+	trace_kvm_arm_set_dreg32("MDCR_EL2", core_state->mdcr_el2);
+	trace_kvm_arm_set_dreg32("MDSCR_EL1", vcpu_read_sys_reg(core_state, MDSCR_EL1));
 }
 
 void kvm_arm_clear_debug(struct kvm_vcpu *vcpu)

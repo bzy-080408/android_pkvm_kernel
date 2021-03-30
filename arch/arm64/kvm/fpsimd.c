@@ -114,15 +114,16 @@ void kvm_arch_vcpu_ctxsync_fp(struct kvm_vcpu *vcpu)
  */
 void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	unsigned long flags;
 	bool host_has_sve = system_supports_sve();
 	bool guest_has_sve = vcpu_has_sve(vcpu);
 
 	local_irq_save(flags);
 
-	if (vcpu->arch.core_state.flags & KVM_ARM64_FP_ENABLED) {
+	if (core_state->flags & KVM_ARM64_FP_ENABLED) {
 		if (guest_has_sve) {
-			__vcpu_sys_reg(vcpu, ZCR_EL1) = read_sysreg_el1(SYS_ZCR);
+			__vcpu_sys_reg(core_state, ZCR_EL1) = read_sysreg_el1(SYS_ZCR);
 
 			/* Restore the VL that was saved when bound to the CPU */
 			if (!has_vhe())
@@ -139,14 +140,14 @@ void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 		 * for EL0.  To avoid spurious traps, restore the trap state
 		 * seen by kvm_arch_vcpu_load_fp():
 		 */
-		if (vcpu->arch.core_state.flags & KVM_ARM64_HOST_SVE_ENABLED)
+		if (core_state->flags & KVM_ARM64_HOST_SVE_ENABLED)
 			sysreg_clear_set(CPACR_EL1, 0, CPACR_EL1_ZEN_EL0EN);
 		else
 			sysreg_clear_set(CPACR_EL1, CPACR_EL1_ZEN_EL0EN, 0);
 	}
 
 	update_thread_flag(TIF_SVE,
-			   vcpu->arch.core_state.flags & KVM_ARM64_HOST_SVE_IN_USE);
+			   core_state->flags & KVM_ARM64_HOST_SVE_IN_USE);
 
 	local_irq_restore(flags);
 }

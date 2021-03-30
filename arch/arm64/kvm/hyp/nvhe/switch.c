@@ -168,6 +168,7 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 /* Switch to the non-protected guest */
 static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	bool pmu_switch_needed;
@@ -186,7 +187,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	host_ctxt->__hyp_running_vcpu = vcpu;
-	guest_ctxt = &vcpu->arch.core_state.ctxt;
+	guest_ctxt = &core_state->ctxt;
 
 	pmu_switch_needed = __pmu_switch_to_guest(host_ctxt);
 
@@ -200,7 +201,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 	 */
 	__debug_save_host_buffers_nvhe(vcpu);
 
-	__adjust_pc(vcpu);
+	__adjust_pc(core_state);
 
 	/*
 	 * We must restore the 32-bit state before the sysregs, thanks
@@ -210,7 +211,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 	 * and #1319367 (A72), we must ensure that all VM-related sysreg are
 	 * restored before we enable S2 translation.
 	 */
-	__sysreg32_restore_state(vcpu);
+	__sysreg32_restore_state(core_state);
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
 	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
@@ -229,7 +230,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 	} while (fixup_guest_exit(vcpu, &exit_code));
 
 	__sysreg_save_state_nvhe(guest_ctxt);
-	__sysreg32_save_state(vcpu);
+	__sysreg32_save_state(core_state);
 	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
@@ -238,7 +239,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 
 	__sysreg_restore_state_nvhe(host_ctxt);
 
-	if (vcpu->arch.core_state.flags & KVM_ARM64_FP_ENABLED)
+	if (core_state->flags & KVM_ARM64_FP_ENABLED)
 		__fpsimd_save_fpexc32(vcpu);
 
 	__debug_switch_to_host(vcpu);
@@ -263,6 +264,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 /* Switch to the protected guest */
 static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	u64 exit_code;
@@ -280,11 +282,11 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	host_ctxt->__hyp_running_vcpu = vcpu;
-	guest_ctxt = &vcpu->arch.core_state.ctxt;
+	guest_ctxt = &core_state->ctxt;
 
 	__sysreg_save_state_nvhe(host_ctxt);
 
-	__adjust_pc(vcpu);
+	__adjust_pc(core_state);
 
 	__sysreg_restore_state_nvhe(guest_ctxt);
 

@@ -378,6 +378,7 @@ void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu)
 
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_s2_mmu *mmu;
 	int *last_ran;
 
@@ -415,7 +416,7 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		vcpu_set_wfx_traps(vcpu);
 
 	if (vcpu_has_ptrauth(vcpu))
-		vcpu_ptrauth_disable(vcpu);
+		vcpu_ptrauth_disable(core_state);
 }
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
@@ -476,14 +477,14 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
  */
 int kvm_arch_vcpu_runnable(struct kvm_vcpu *v)
 {
-	bool irq_lines = *vcpu_hcr(v) & (HCR_VI | HCR_VF);
+	bool irq_lines = *vcpu_hcr(&v->arch.core_state) & (HCR_VI | HCR_VF);
 	return ((irq_lines || kvm_vgic_vcpu_pending_irq(v))
 		&& !v->arch.power_off && !v->arch.pause);
 }
 
 bool kvm_arch_vcpu_in_kernel(struct kvm_vcpu *vcpu)
 {
-	return vcpu_mode_priv(vcpu);
+	return vcpu_mode_priv(&vcpu->arch.core_state);
 }
 
 /* Just ensure a guest exit from a particular CPU */
@@ -701,6 +702,7 @@ static void check_vcpu_requests(struct kvm_vcpu *vcpu)
  */
 int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_run *run = vcpu->run;
 	int ret;
 
@@ -799,7 +801,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		/**************************************************************
 		 * Enter the guest
 		 */
-		trace_kvm_entry(*vcpu_pc(vcpu));
+		trace_kvm_entry(*vcpu_pc(core_state));
 		guest_enter_irqoff();
 
 		ret = kvm_call_hyp_ret(__kvm_vcpu_run, vcpu);
@@ -857,7 +859,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		 * guest time.
 		 */
 		guest_exit();
-		trace_kvm_exit(ret, kvm_vcpu_trap_get_class(vcpu), *vcpu_pc(vcpu));
+		trace_kvm_exit(ret, kvm_vcpu_trap_get_class(core_state), *vcpu_pc(core_state));
 
 		/* Exit types that need handling before we can be preempted */
 		handle_exit_early(vcpu, ret);
@@ -872,7 +874,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		 * with the asymmetric AArch32 case), return to userspace with
 		 * a fatal error.
 		 */
-		if (!system_supports_32bit_el0() && vcpu_mode_is_32bit(vcpu)) {
+		if (!system_supports_32bit_el0() && vcpu_mode_is_32bit(core_state)) {
 			/*
 			 * As we have caught the guest red-handed, decide that
 			 * it isn't fit for purpose anymore by making the vcpu
@@ -909,7 +911,7 @@ static int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
 	else /* KVM_ARM_IRQ_CPU_FIQ */
 		bit_index = __ffs(HCR_VF);
 
-	hcr = vcpu_hcr(vcpu);
+	hcr = vcpu_hcr(&vcpu->arch.core_state);
 	if (level)
 		set = test_and_set_bit(bit_index, hcr);
 	else
@@ -1979,7 +1981,7 @@ struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr)
 
 	mpidr &= MPIDR_HWID_BITMASK;
 	kvm_for_each_vcpu(i, vcpu, kvm) {
-		if (mpidr == kvm_vcpu_get_mpidr_aff(vcpu))
+		if (mpidr == kvm_vcpu_get_mpidr_aff(&vcpu->arch.core_state))
 			return vcpu;
 	}
 	return NULL;

@@ -53,13 +53,13 @@ static u64 kvm_arm_timer_read(struct kvm_vcpu *vcpu,
 
 u32 timer_get_ctl(struct arch_timer_context *ctxt)
 {
-	struct kvm_vcpu *vcpu = ctxt->vcpu;
+	struct kvm_vcpu_arch_core *core_state = &ctxt->vcpu->arch.core_state;
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		return __vcpu_sys_reg(vcpu, CNTV_CTL_EL0);
+		return __vcpu_sys_reg(core_state, CNTV_CTL_EL0);
 	case TIMER_PTIMER:
-		return __vcpu_sys_reg(vcpu, CNTP_CTL_EL0);
+		return __vcpu_sys_reg(core_state, CNTP_CTL_EL0);
 	default:
 		WARN_ON(1);
 		return 0;
@@ -68,13 +68,13 @@ u32 timer_get_ctl(struct arch_timer_context *ctxt)
 
 u64 timer_get_cval(struct arch_timer_context *ctxt)
 {
-	struct kvm_vcpu *vcpu = ctxt->vcpu;
+	struct kvm_vcpu_arch_core *core_state = &ctxt->vcpu->arch.core_state;
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		return __vcpu_sys_reg(vcpu, CNTV_CVAL_EL0);
+		return __vcpu_sys_reg(core_state, CNTV_CVAL_EL0);
 	case TIMER_PTIMER:
-		return __vcpu_sys_reg(vcpu, CNTP_CVAL_EL0);
+		return __vcpu_sys_reg(core_state, CNTP_CVAL_EL0);
 	default:
 		WARN_ON(1);
 		return 0;
@@ -83,11 +83,11 @@ u64 timer_get_cval(struct arch_timer_context *ctxt)
 
 static u64 timer_get_offset(struct arch_timer_context *ctxt)
 {
-	struct kvm_vcpu *vcpu = ctxt->vcpu;
+	struct kvm_vcpu_arch_core *core_state = &ctxt->vcpu->arch.core_state;
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		return __vcpu_sys_reg(vcpu, CNTVOFF_EL2);
+		return __vcpu_sys_reg(core_state, CNTVOFF_EL2);
 	default:
 		return 0;
 	}
@@ -95,14 +95,14 @@ static u64 timer_get_offset(struct arch_timer_context *ctxt)
 
 static void timer_set_ctl(struct arch_timer_context *ctxt, u32 ctl)
 {
-	struct kvm_vcpu *vcpu = ctxt->vcpu;
+	struct kvm_vcpu_arch_core *core_state = &ctxt->vcpu->arch.core_state;
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		__vcpu_sys_reg(vcpu, CNTV_CTL_EL0) = ctl;
+		__vcpu_sys_reg(core_state, CNTV_CTL_EL0) = ctl;
 		break;
 	case TIMER_PTIMER:
-		__vcpu_sys_reg(vcpu, CNTP_CTL_EL0) = ctl;
+		__vcpu_sys_reg(core_state, CNTP_CTL_EL0) = ctl;
 		break;
 	default:
 		WARN_ON(1);
@@ -111,14 +111,14 @@ static void timer_set_ctl(struct arch_timer_context *ctxt, u32 ctl)
 
 static void timer_set_cval(struct arch_timer_context *ctxt, u64 cval)
 {
-	struct kvm_vcpu *vcpu = ctxt->vcpu;
+	struct kvm_vcpu_arch_core *core_state = &ctxt->vcpu->arch.core_state;
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		__vcpu_sys_reg(vcpu, CNTV_CVAL_EL0) = cval;
+		__vcpu_sys_reg(core_state, CNTV_CVAL_EL0) = cval;
 		break;
 	case TIMER_PTIMER:
-		__vcpu_sys_reg(vcpu, CNTP_CVAL_EL0) = cval;
+		__vcpu_sys_reg(core_state, CNTP_CVAL_EL0) = cval;
 		break;
 	default:
 		WARN_ON(1);
@@ -127,11 +127,11 @@ static void timer_set_cval(struct arch_timer_context *ctxt, u64 cval)
 
 static void timer_set_offset(struct arch_timer_context *ctxt, u64 offset)
 {
-	struct kvm_vcpu *vcpu = ctxt->vcpu;
+	struct kvm_vcpu_arch_core *core_state = &ctxt->vcpu->arch.core_state;
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		__vcpu_sys_reg(vcpu, CNTVOFF_EL2) = offset;
+		__vcpu_sys_reg(core_state, CNTVOFF_EL2) = offset;
 		break;
 	default:
 		WARN(offset, "timer %ld\n", arch_timer_ctx_index(ctxt));

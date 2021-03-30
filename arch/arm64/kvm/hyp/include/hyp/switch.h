@@ -56,10 +56,12 @@ static inline bool update_fp_enabled(struct kvm_vcpu *vcpu)
 /* Save the 32-bit only FPSIMD system register state */
 static inline void __fpsimd_save_fpexc32(struct kvm_vcpu *vcpu)
 {
-	if (!vcpu_el1_is_32bit(vcpu))
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
+	if (!vcpu_el1_is_32bit(core_state))
 		return;
 
-	__vcpu_sys_reg(vcpu, FPEXC32_EL2) = read_sysreg(fpexc32_el2);
+	__vcpu_sys_reg(core_state, FPEXC32_EL2) = read_sysreg(fpexc32_el2);
 }
 
 static inline void __activate_traps_fpsimd32(struct kvm_vcpu *vcpu)
@@ -73,7 +75,7 @@ static inline void __activate_traps_fpsimd32(struct kvm_vcpu *vcpu)
 	 * If FP/ASIMD is not implemented, FPEXC is UNDEFINED and any access to
 	 * it will cause an exception.
 	 */
-	if (vcpu_el1_is_32bit(vcpu) && system_supports_fpsimd()) {
+	if (vcpu_el1_is_32bit(&vcpu->arch.core_state) && system_supports_fpsimd()) {
 		write_sysreg(1 << 30, fpexc32_el2);
 		isb();
 	}
@@ -220,12 +222,13 @@ static inline void __hyp_sve_restore_guest(struct kvm_vcpu *vcpu)
 	sve_cond_update_zcr_vq(vcpu_sve_max_vq(vcpu) - 1, SYS_ZCR_EL2);
 	__sve_restore_state(vcpu_sve_pffr(vcpu),
 			    &vcpu->arch.core_state.ctxt.fp_regs.fpsr);
-	write_sysreg_el1(__vcpu_sys_reg(vcpu, ZCR_EL1), SYS_ZCR);
+	write_sysreg_el1(__vcpu_sys_reg(&vcpu->arch.core_state, ZCR_EL1), SYS_ZCR);
 }
 
 /* Check for an FPSIMD/SVE trap and handle as appropriate */
 static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	bool sve_guest, sve_host;
 	u8 esr_ec;
 	u64 reg;
@@ -235,13 +238,13 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 
 	if (system_supports_sve()) {
 		sve_guest = vcpu_has_sve(vcpu);
-		sve_host = vcpu->arch.core_state.flags & KVM_ARM64_HOST_SVE_IN_USE;
+		sve_host = core_state->flags & KVM_ARM64_HOST_SVE_IN_USE;
 	} else {
 		sve_guest = false;
 		sve_host = false;
 	}
 
-	esr_ec = kvm_vcpu_trap_get_class(vcpu);
+	esr_ec = kvm_vcpu_trap_get_class(core_state);
 	if (esr_ec != ESR_ELx_EC_FP_ASIMD &&
 	    esr_ec != ESR_ELx_EC_SVE)
 		return false;
@@ -266,40 +269,40 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 	}
 	isb();
 
-	if (vcpu->arch.core_state.flags & KVM_ARM64_FP_HOST) {
+	if (core_state->flags & KVM_ARM64_FP_HOST) {
 		if (sve_host)
 			__hyp_sve_save_host(vcpu);
 		else
 			__fpsimd_save_state(vcpu->arch.host_fpsimd_state);
 
-		vcpu->arch.core_state.flags &= ~KVM_ARM64_FP_HOST;
+		core_state->flags &= ~KVM_ARM64_FP_HOST;
 	}
 
 	if (sve_guest)
 		__hyp_sve_restore_guest(vcpu);
 	else
-		__fpsimd_restore_state(&vcpu->arch.core_state.ctxt.fp_regs);
+		__fpsimd_restore_state(&core_state->ctxt.fp_regs);
 
 	/* Skip restoring fpexc32 for AArch64 guests */
 	if (!(read_sysreg(hcr_el2) & HCR_RW))
-		write_sysreg(__vcpu_sys_reg(vcpu, FPEXC32_EL2), fpexc32_el2);
+		write_sysreg(__vcpu_sys_reg(core_state, FPEXC32_EL2), fpexc32_el2);
 
-	vcpu->arch.core_state.flags |= KVM_ARM64_FP_ENABLED;
+	core_state->flags |= KVM_ARM64_FP_ENABLED;
 
 	return true;
 }
 
-static inline bool handle_tx2_tvm(struct kvm_vcpu *vcpu)
+static inline bool handle_tx2_tvm(struct kvm_vcpu_arch_core *core_state)
 {
-	u32 sysreg = esr_sys64_to_sysreg(kvm_vcpu_get_esr(vcpu));
-	int rt = kvm_vcpu_sys_get_rt(vcpu);
-	u64 val = vcpu_get_reg(vcpu, rt);
+	u32 sysreg = esr_sys64_to_sysreg(kvm_vcpu_get_esr(core_state));
+	int rt = kvm_vcpu_sys_get_rt(core_state);
+	u64 val = vcpu_get_reg(core_state, rt);
 
 	/*
 	 * The normal sysreg handling code expects to see the traps,
 	 * let's not do anything here.
 	 */
-	if (vcpu->arch.core_state.hcr_el2 & HCR_TVM)
+	if (core_state->hcr_el2 & HCR_TVM)
 		return false;
 
 	switch (sysreg) {
@@ -340,7 +343,7 @@ static inline bool handle_tx2_tvm(struct kvm_vcpu *vcpu)
 		return false;
 	}
 
-	__kvm_skip_instr(vcpu);
+	__kvm_skip_instr(core_state);
 	return true;
 }
 
@@ -384,11 +387,12 @@ DECLARE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 
 static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_cpu_context *ctxt;
 	u64 val;
 
 	if (!vcpu_has_ptrauth(vcpu) ||
-	    !esr_is_ptrauth_trap(kvm_vcpu_get_esr(vcpu)))
+	    !esr_is_ptrauth_trap(kvm_vcpu_get_esr(core_state)))
 		return false;
 
 	ctxt = this_cpu_ptr(&kvm_hyp_ctxt);
@@ -398,7 +402,7 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
 	__ptrauth_save_key(ctxt, APDB);
 	__ptrauth_save_key(ctxt, APGA);
 
-	vcpu_ptrauth_enable(vcpu);
+	vcpu_ptrauth_enable(core_state);
 
 	val = read_sysreg(hcr_el2);
 	val |= (HCR_API | HCR_APK);
@@ -414,11 +418,13 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
  */
 static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
-		vcpu->arch.core_state.fault.esr_el2 = read_sysreg_el2(SYS_ESR);
+		core_state->fault.esr_el2 = read_sysreg_el2(SYS_ESR);
 
 	if (ARM_SERROR_PENDING(*exit_code)) {
-		u8 esr_ec = kvm_vcpu_trap_get_class(vcpu);
+		u8 esr_ec = kvm_vcpu_trap_get_class(core_state);
 
 		/*
 		 * HVC already have an adjusted PC, which we need to
@@ -442,8 +448,8 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 		goto exit;
 
 	if (cpus_have_final_cap(ARM64_WORKAROUND_CAVIUM_TX2_219_TVM) &&
-	    kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_SYS64 &&
-	    handle_tx2_tvm(vcpu))
+	    kvm_vcpu_trap_get_class(core_state) == ESR_ELx_EC_SYS64 &&
+	    handle_tx2_tvm(core_state))
 		goto guest;
 
 	/*
@@ -465,11 +471,11 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	if (static_branch_unlikely(&vgic_v2_cpuif_trap)) {
 		bool valid;
 
-		valid = kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_DABT_LOW &&
-			kvm_vcpu_trap_get_fault_type(vcpu) == FSC_FAULT &&
-			kvm_vcpu_dabt_isvalid(vcpu) &&
-			!kvm_vcpu_abt_issea(vcpu) &&
-			!kvm_vcpu_abt_iss1tw(vcpu);
+		valid = kvm_vcpu_trap_get_class(core_state) == ESR_ELx_EC_DABT_LOW &&
+			kvm_vcpu_trap_get_fault_type(core_state) == FSC_FAULT &&
+			kvm_vcpu_dabt_isvalid(core_state) &&
+			!kvm_vcpu_abt_issea(core_state) &&
+			!kvm_vcpu_abt_iss1tw(core_state);
 
 		if (valid) {
 			int ret = __vgic_v2_perform_cpuif_access(vcpu);
@@ -486,8 +492,8 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	}
 
 	if (static_branch_unlikely(&vgic_v3_cpuif_trap) &&
-	    (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_SYS64 ||
-	     kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_CP15_32)) {
+	    (kvm_vcpu_trap_get_class(core_state) == ESR_ELx_EC_SYS64 ||
+	     kvm_vcpu_trap_get_class(core_state) == ESR_ELx_EC_CP15_32)) {
 		int ret = __vgic_v3_perform_cpuif_access(vcpu);
 
 		if (ret == 1)

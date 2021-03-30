@@ -451,7 +451,7 @@ struct kvm_vcpu_arch {
 #define vcpu_has_ptrauth(vcpu)		false
 #endif
 
-#define vcpu_gp_regs(v)		(&(v)->arch.core_state.ctxt.regs)
+#define vcpu_gp_regs(v)		(&(v)->ctxt.regs)
 
 /*
  * Only use __vcpu_sys_reg/ctxt_sys_reg if you know you want the
@@ -464,10 +464,10 @@ struct kvm_vcpu_arch {
 
 #define ctxt_sys_reg(c,r)	(*__ctxt_sys_reg(c,r))
 
-#define __vcpu_sys_reg(v,r)	(ctxt_sys_reg(&(v)->arch.core_state.ctxt, (r)))
+#define __vcpu_sys_reg(v,r)	(ctxt_sys_reg(&(v)->ctxt, (r)))
 
-u64 vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg);
-void vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg);
+u64 vcpu_read_sys_reg(const struct kvm_vcpu_arch_core *core_state, int reg);
+void vcpu_write_sys_reg(struct kvm_vcpu_arch_core *core_state, u64 val, int reg);
 
 static inline bool __vcpu_read_sys_reg_from_cpu(int reg, u64 *val)
 {
@@ -701,7 +701,7 @@ static inline bool kvm_arm_is_pvtime_enabled(struct kvm_vcpu_arch *vcpu_arch)
 	return (vcpu_arch->steal.base != GPA_INVALID);
 }
 
-void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
+void kvm_set_sei_esr(struct kvm_vcpu_arch_core *core_state, u64 syndrome);
 
 struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 

@@ -156,38 +156,38 @@ static inline void __sysreg_restore_el2_return_state(struct kvm_cpu_context *ctx
 		write_sysreg_s(ctxt_sys_reg(ctxt, DISR_EL1), SYS_VDISR_EL2);
 }
 
-static inline void __sysreg32_save_state(struct kvm_vcpu *vcpu)
+static inline void __sysreg32_save_state(struct kvm_vcpu_arch_core *core_state)
 {
-	if (!vcpu_el1_is_32bit(vcpu))
+	if (!vcpu_el1_is_32bit(core_state))
 		return;
 
-	vcpu->arch.core_state.ctxt.spsr_abt = read_sysreg(spsr_abt);
-	vcpu->arch.core_state.ctxt.spsr_und = read_sysreg(spsr_und);
-	vcpu->arch.core_state.ctxt.spsr_irq = read_sysreg(spsr_irq);
-	vcpu->arch.core_state.ctxt.spsr_fiq = read_sysreg(spsr_fiq);
+	core_state->ctxt.spsr_abt = read_sysreg(spsr_abt);
+	core_state->ctxt.spsr_und = read_sysreg(spsr_und);
+	core_state->ctxt.spsr_irq = read_sysreg(spsr_irq);
+	core_state->ctxt.spsr_fiq = read_sysreg(spsr_fiq);
 
-	__vcpu_sys_reg(vcpu, DACR32_EL2) = read_sysreg(dacr32_el2);
-	__vcpu_sys_reg(vcpu, IFSR32_EL2) = read_sysreg(ifsr32_el2);
+	__vcpu_sys_reg(core_state, DACR32_EL2) = read_sysreg(dacr32_el2);
+	__vcpu_sys_reg(core_state, IFSR32_EL2) = read_sysreg(ifsr32_el2);
 
-	if (has_vhe() || vcpu->arch.core_state.flags & KVM_ARM64_DEBUG_DIRTY)
-		__vcpu_sys_reg(vcpu, DBGVCR32_EL2) = read_sysreg(dbgvcr32_el2);
+	if (has_vhe() || core_state->flags & KVM_ARM64_DEBUG_DIRTY)
+		__vcpu_sys_reg(core_state, DBGVCR32_EL2) = read_sysreg(dbgvcr32_el2);
 }
 
-static inline void __sysreg32_restore_state(struct kvm_vcpu *vcpu)
+static inline void __sysreg32_restore_state(struct kvm_vcpu_arch_core *core_state)
 {
-	if (!vcpu_el1_is_32bit(vcpu))
+	if (!vcpu_el1_is_32bit(core_state))
 		return;
 
-	write_sysreg(vcpu->arch.core_state.ctxt.spsr_abt, spsr_abt);
-	write_sysreg(vcpu->arch.core_state.ctxt.spsr_und, spsr_und);
-	write_sysreg(vcpu->arch.core_state.ctxt.spsr_irq, spsr_irq);
-	write_sysreg(vcpu->arch.core_state.ctxt.spsr_fiq, spsr_fiq);
+	write_sysreg(core_state->ctxt.spsr_abt, spsr_abt);
+	write_sysreg(core_state->ctxt.spsr_und, spsr_und);
+	write_sysreg(core_state->ctxt.spsr_irq, spsr_irq);
+	write_sysreg(core_state->ctxt.spsr_fiq, spsr_fiq);
 
-	write_sysreg(__vcpu_sys_reg(vcpu, DACR32_EL2), dacr32_el2);
-	write_sysreg(__vcpu_sys_reg(vcpu, IFSR32_EL2), ifsr32_el2);
+	write_sysreg(__vcpu_sys_reg(core_state, DACR32_EL2), dacr32_el2);
+	write_sysreg(__vcpu_sys_reg(core_state, IFSR32_EL2), ifsr32_el2);
 
-	if (has_vhe() || vcpu->arch.core_state.flags & KVM_ARM64_DEBUG_DIRTY)
-		write_sysreg(__vcpu_sys_reg(vcpu, DBGVCR32_EL2), dbgvcr32_el2);
+	if (has_vhe() || core_state->flags & KVM_ARM64_DEBUG_DIRTY)
+		write_sysreg(__vcpu_sys_reg(core_state, DBGVCR32_EL2), dbgvcr32_el2);
 }
 
 #endif /* __ARM64_KVM_HYP_SYSREG_SR_H__ */

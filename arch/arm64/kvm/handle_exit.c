@@ -29,20 +29,21 @@ typedef int (*exit_handle_fn)(struct kvm_vcpu *);
 static void kvm_handle_guest_serror(struct kvm_vcpu *vcpu, u32 esr)
 {
 	if (!arm64_is_ras_serror(esr) || arm64_is_fatal_ras_serror(NULL, esr))
-		kvm_inject_vabt(vcpu);
+		kvm_inject_vabt(&vcpu->arch.core_state);
 }
 
 static int handle_hvc(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int ret;
 
-	trace_kvm_hvc_arm64(*vcpu_pc(vcpu), vcpu_get_reg(vcpu, 0),
-			    kvm_vcpu_hvc_get_imm(vcpu));
+	trace_kvm_hvc_arm64(*vcpu_pc(core_state), vcpu_get_reg(core_state, 0),
+			    kvm_vcpu_hvc_get_imm(core_state));
 	vcpu->stat.hvc_exit_stat++;
 
 	ret = kvm_hvc_call_handler(vcpu);
 	if (ret < 0) {
-		vcpu_set_reg(vcpu, 0, ~0UL);
+		vcpu_set_reg(core_state, 0, ~0UL);
 		return 1;
 	}
 
@@ -51,6 +52,8 @@ static int handle_hvc(struct kvm_vcpu *vcpu)
 
 static int handle_smc(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
 	/*
 	 * "If an SMC instruction executed at Non-secure EL1 is
 	 * trapped to EL2 because HCR_EL2.TSC is 1, the exception is a
@@ -59,8 +62,8 @@ static int handle_smc(struct kvm_vcpu *vcpu)
 	 * We need to advance the PC after the trap, as it would
 	 * otherwise return to the same address...
 	 */
-	vcpu_set_reg(vcpu, 0, ~0UL);
-	kvm_incr_pc(vcpu);
+	vcpu_set_reg(core_state, 0, ~0UL);
+	kvm_incr_pc(core_state);
 	return 1;
 }
 
@@ -70,7 +73,9 @@ static int handle_smc(struct kvm_vcpu *vcpu)
  */
 static int handle_no_fpsimd(struct kvm_vcpu *vcpu)
 {
-	kvm_inject_undefined(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
+	kvm_inject_undefined(core_state);
 	return 1;
 }
 
@@ -88,18 +93,20 @@ static int handle_no_fpsimd(struct kvm_vcpu *vcpu)
  */
 static int kvm_handle_wfx(struct kvm_vcpu *vcpu)
 {
-	if (kvm_vcpu_get_esr(vcpu) & ESR_ELx_WFx_ISS_WFE) {
-		trace_kvm_wfx_arm64(*vcpu_pc(vcpu), true);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
+	if (kvm_vcpu_get_esr(core_state) & ESR_ELx_WFx_ISS_WFE) {
+		trace_kvm_wfx_arm64(*vcpu_pc(core_state), true);
 		vcpu->stat.wfe_exit_stat++;
-		kvm_vcpu_on_spin(vcpu, vcpu_mode_priv(vcpu));
+		kvm_vcpu_on_spin(vcpu, vcpu_mode_priv(core_state));
 	} else {
-		trace_kvm_wfx_arm64(*vcpu_pc(vcpu), false);
+		trace_kvm_wfx_arm64(*vcpu_pc(core_state), false);
 		vcpu->stat.wfi_exit_stat++;
 		kvm_vcpu_block(vcpu);
 		kvm_clear_request(KVM_REQ_UNHALT, vcpu);
 	}
 
-	kvm_incr_pc(vcpu);
+	kvm_incr_pc(core_state);
 
 	return 1;
 }
@@ -117,8 +124,9 @@ static int kvm_handle_wfx(struct kvm_vcpu *vcpu)
  */
 static int kvm_handle_guest_debug(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_run *run = vcpu->run;
-	u32 esr = kvm_vcpu_get_esr(vcpu);
+	u32 esr = kvm_vcpu_get_esr(core_state);
 	int ret = 0;
 
 	run->exit_reason = KVM_EXIT_DEBUG;
@@ -145,19 +153,20 @@ static int kvm_handle_guest_debug(struct kvm_vcpu *vcpu)
 
 static int kvm_handle_unknown_ec(struct kvm_vcpu *vcpu)
 {
-	u32 esr = kvm_vcpu_get_esr(vcpu);
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	u32 esr = kvm_vcpu_get_esr(core_state);
 
 	kvm_pr_unimpl("Unknown exception class: esr: %#08x -- %s\n",
 		      esr, esr_get_class_string(esr));
 
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(core_state);
 	return 1;
 }
 
 static int handle_sve(struct kvm_vcpu *vcpu)
 {
 	/* Until SVE is supported for guests: */
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(&vcpu->arch.core_state);
 	return 1;
 }
 
@@ -168,7 +177,7 @@ static int handle_sve(struct kvm_vcpu *vcpu)
  */
 static int kvm_handle_ptrauth(struct kvm_vcpu *vcpu)
 {
-	kvm_inject_undefined(vcpu);
+	kvm_inject_undefined(&vcpu->arch.core_state);
 	return 1;
 }
 
@@ -197,9 +206,9 @@ static exit_handle_fn arm_exit_handlers[] = {
 	[ESR_ELx_EC_PAC]	= kvm_handle_ptrauth,
 };
 
-static exit_handle_fn kvm_get_exit_handler(struct kvm_vcpu *vcpu)
+static exit_handle_fn kvm_get_exit_handler(struct kvm_vcpu_arch_core *core_state)
 {
-	u32 esr = kvm_vcpu_get_esr(vcpu);
+	u32 esr = kvm_vcpu_get_esr(core_state);
 	u8 esr_ec = ESR_ELx_EC(esr);
 
 	return arm_exit_handlers[esr_ec];
@@ -213,19 +222,20 @@ static exit_handle_fn kvm_get_exit_handler(struct kvm_vcpu *vcpu)
  */
 static int handle_trap_exceptions(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int handled;
 
 	/*
 	 * See ARM ARM B1.14.1: "Hyp traps on instructions
 	 * that fail their condition code check"
 	 */
-	if (!kvm_condition_valid(vcpu)) {
-		kvm_incr_pc(vcpu);
+	if (!kvm_condition_valid(core_state)) {
+		kvm_incr_pc(core_state);
 		handled = 1;
 	} else {
 		exit_handle_fn exit_handler;
 
-		exit_handler = kvm_get_exit_handler(vcpu);
+		exit_handler = kvm_get_exit_handler(core_state);
 		handled = exit_handler(vcpu);
 	}
 
@@ -274,13 +284,15 @@ int handle_exit(struct kvm_vcpu *vcpu, int exception_index)
 /* For exit types that need handling before we can be preempted */
 void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
 	if (ARM_SERROR_PENDING(exception_index)) {
 		if (this_cpu_has_cap(ARM64_HAS_RAS_EXTN)) {
-			u64 disr = kvm_vcpu_get_disr(vcpu);
+			u64 disr = kvm_vcpu_get_disr(core_state);
 
 			kvm_handle_guest_serror(vcpu, disr_to_esr(disr));
 		} else {
-			kvm_inject_vabt(vcpu);
+			kvm_inject_vabt(core_state);
 		}
 
 		return;
@@ -289,5 +301,5 @@ void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index)
 	exception_index = ARM_EXCEPTION_CODE(exception_index);
 
 	if (exception_index == ARM_EXCEPTION_EL1_SERROR)
-		kvm_handle_guest_serror(vcpu, kvm_vcpu_get_esr(vcpu));
+		kvm_handle_guest_serror(vcpu, kvm_vcpu_get_esr(core_state));
 }

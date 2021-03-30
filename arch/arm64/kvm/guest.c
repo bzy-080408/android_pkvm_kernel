@@ -196,6 +196,7 @@ static int get_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 
 static int set_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	__u32 __user *uaddr = (__u32 __user *)(unsigned long)reg->addr;
 	int nr_regs = sizeof(struct kvm_regs) / sizeof(__u32);
 	__uint128_t tmp;
@@ -233,13 +234,13 @@ static int set_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 		case PSR_AA32_MODE_SVC:
 		case PSR_AA32_MODE_ABT:
 		case PSR_AA32_MODE_UND:
-			if (!vcpu_el1_is_32bit(vcpu))
+			if (!vcpu_el1_is_32bit(core_state))
 				return -EINVAL;
 			break;
 		case PSR_MODE_EL0t:
 		case PSR_MODE_EL1t:
 		case PSR_MODE_EL1h:
-			if (vcpu_el1_is_32bit(vcpu))
+			if (vcpu_el1_is_32bit(core_state))
 				return -EINVAL;
 			break;
 		default:
@@ -250,10 +251,10 @@ static int set_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 
 	memcpy(addr, valp, KVM_REG_SIZE(reg->id));
 
-	if (*vcpu_cpsr(vcpu) & PSR_MODE32_BIT) {
+	if (*vcpu_cpsr(core_state) & PSR_MODE32_BIT) {
 		int i, nr_reg;
 
-		switch (*vcpu_cpsr(vcpu)) {
+		switch (*vcpu_cpsr(core_state)) {
 		/*
 		 * Either we are dealing with user mode, and only the
 		 * first 15 registers (+ PC) must be narrowed to 32bit.
@@ -274,9 +275,9 @@ static int set_core_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 		}
 
 		for (i = 0; i < nr_reg; i++)
-			vcpu_set_reg(vcpu, i, (u32)vcpu_get_reg(vcpu, i));
+			vcpu_set_reg(core_state, i, (u32)vcpu_get_reg(core_state, i));
 
-		*vcpu_pc(vcpu) = (u32)*vcpu_pc(vcpu);
+		*vcpu_pc(core_state) = (u32)*vcpu_pc(core_state);
 	}
 out:
 	return err;
@@ -782,11 +783,13 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 int __kvm_arm_vcpu_get_events(struct kvm_vcpu *vcpu,
 			      struct kvm_vcpu_events *events)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
 	events->exception.serror_pending = !!(vcpu->arch.core_state.hcr_el2 & HCR_VSE);
 	events->exception.serror_has_esr = cpus_have_const_cap(ARM64_HAS_RAS_EXTN);
 
 	if (events->exception.serror_pending && events->exception.serror_has_esr)
-		events->exception.serror_esr = vcpu_get_vsesr(vcpu);
+		events->exception.serror_esr = vcpu_get_vsesr(core_state);
 
 	/*
 	 * We never return a pending ext_dabt here because we deliver it to
@@ -800,6 +803,7 @@ int __kvm_arm_vcpu_get_events(struct kvm_vcpu *vcpu,
 int __kvm_arm_vcpu_set_events(struct kvm_vcpu *vcpu,
 			      struct kvm_vcpu_events *events)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	bool serror_pending = events->exception.serror_pending;
 	bool has_esr = events->exception.serror_has_esr;
 	bool ext_dabt_pending = events->exception.ext_dabt_pending;
@@ -809,15 +813,15 @@ int __kvm_arm_vcpu_set_events(struct kvm_vcpu *vcpu,
 			return -EINVAL;
 
 		if (!((events->exception.serror_esr) & ~ESR_ELx_ISS_MASK))
-			kvm_set_sei_esr(vcpu, events->exception.serror_esr);
+			kvm_set_sei_esr(core_state, events->exception.serror_esr);
 		else
 			return -EINVAL;
 	} else if (serror_pending) {
-		kvm_inject_vabt(vcpu);
+		kvm_inject_vabt(core_state);
 	}
 
 	if (ext_dabt_pending)
-		kvm_inject_dabt(vcpu, kvm_vcpu_get_hfar(vcpu));
+		kvm_inject_dabt(core_state, kvm_vcpu_get_hfar(core_state));
 
 	return 0;
 }

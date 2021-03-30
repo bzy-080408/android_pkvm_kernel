@@ -281,7 +281,7 @@ int vgic_init(struct kvm *kvm)
 			switch (dist->vgic_model) {
 			case KVM_DEV_TYPE_ARM_VGIC_V3:
 				irq->group = 1;
-				irq->mpidr = kvm_vcpu_get_mpidr_aff(vcpu);
+				irq->mpidr = kvm_vcpu_get_mpidr_aff(&vcpu->arch.core_state);
 				break;
 			case KVM_DEV_TYPE_ARM_VGIC_V2:
 				irq->group = 0;

@@ -180,9 +180,9 @@ struct kvm;
 
 #define kvm_flush_dcache_to_poc(a,l)	__flush_dcache_area((a), (l))
 
-static inline bool vcpu_has_cache_enabled(struct kvm_vcpu *vcpu)
+static inline bool vcpu_has_cache_enabled(struct kvm_vcpu_arch_core *core_state)
 {
-	return (vcpu_read_sys_reg(vcpu, SCTLR_EL1) & 0b101) == 0b101;
+	return (vcpu_read_sys_reg(core_state, SCTLR_EL1) & 0b101) == 0b101;
 }
 
 static inline void __clean_dcache_guest_page(kvm_pfn_t pfn, unsigned long size)
