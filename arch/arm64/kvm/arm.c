@@ -83,22 +83,19 @@ int kvm_arch_check_processor_compat(void *opaque)
 int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
 			    struct kvm_enable_cap *cap)
 {
-	int r;
-
-	if (cap->flags)
-		return -EINVAL;
-
 	switch (cap->cap) {
 	case KVM_CAP_ARM_NISV_TO_USER:
-		r = 0;
+		if (cap->flags)
+			return -EINVAL;
 		kvm->arch.return_nisv_io_abort_to_user = true;
 		break;
+	case KVM_CAP_ARM_PROTECTED_VM:
+		return kvm_arm_vm_ioctl_pkvm(kvm, cap);
 	default:
-		r = -EINVAL;
-		break;
+		return -EINVAL;
 	}
 
-	return r;
+	return 0;
 }
 
 static int kvm_arm_default_max_vcpus(void)
@@ -261,6 +258,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_ARM_PTRAUTH_ADDRESS:
 	case KVM_CAP_ARM_PTRAUTH_GENERIC:
 		r = system_has_full_ptr_auth();
+		break;
+	case KVM_CAP_ARM_PROTECTED_VM:
+		r = is_protected_kvm_enabled();
 		break;
 	default:
 		r = 0;
@@ -601,6 +601,10 @@ static int kvm_vcpu_first_run_init(struct kvm_vcpu *vcpu)
 		return ret;
 
 	ret = kvm_arm_pmu_v3_enable(vcpu);
+	if (ret)
+		return ret;
+
+	ret = kvm_arm_vcpu_pkvm_init(vcpu);
 
 	return ret;
 }
@@ -2112,7 +2116,11 @@ static int __init early_kvm_mode_cfg(char *arg)
 		return -EINVAL;
 
 	if (strcmp(arg, "protected") == 0) {
-		kvm_mode = KVM_MODE_PROTECTED;
+		if (!is_kernel_in_hyp_mode())
+			kvm_mode = KVM_MODE_PROTECTED;
+		else
+			pr_warn_once("Protected KVM not available with VHE\n");
+
 		return 0;
 	}
 
