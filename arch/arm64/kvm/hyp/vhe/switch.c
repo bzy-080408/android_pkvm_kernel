@@ -56,7 +56,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 	val |= CPTR_EL2_TAM;
 
 	if (update_fp_enabled(vcpu)) {
-		if (vcpu_has_sve(vcpu))
+		if (vcpu_has_sve(&vcpu->arch.core_state))
 			val |= CPACR_EL1_ZEN;
 	} else {
 		val &= ~CPACR_EL1_FPEN;
@@ -69,11 +69,11 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 }
 NOKPROBE_SYMBOL(__activate_traps);
 
-static void __deactivate_traps(struct kvm_vcpu *vcpu)
+static void __deactivate_traps(struct kvm_vcpu_arch_core *core_state)
 {
 	extern char vectors[];	/* kernel exception vectors */
 
-	___deactivate_traps(vcpu);
+	___deactivate_traps(core_state);
 
 	write_sysreg(HCR_HOST_VHE_FLAGS, hcr_el2);
 
@@ -110,12 +110,13 @@ void deactivate_traps_vhe_put(void)
 /* Switch to the guest for VHE systems running in EL2 */
 static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	u64 exit_code;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	host_ctxt->__hyp_running_vcpu = vcpu;
+	host_ctxt->__hyp_running_vcpu = core_state;
 	guest_ctxt = &vcpu->arch.core_state.ctxt;
 
 	sysreg_save_host_state_vhe(host_ctxt);
@@ -134,21 +135,21 @@ static int __kvm_vcpu_run_vhe(struct kvm_vcpu *vcpu)
 	__load_guest_stage2(vcpu->arch.hw_mmu);
 	__activate_traps(vcpu);
 
-	__adjust_pc(&vcpu->arch.core_state);
+	__adjust_pc(core_state);
 
 	sysreg_restore_guest_state_vhe(guest_ctxt);
 	__debug_switch_to_guest(vcpu);
 
 	do {
 		/* Jump in the fire! */
-		exit_code = __guest_enter(vcpu);
+		exit_code = __guest_enter(&vcpu->arch.core_state);
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
 
 	sysreg_save_guest_state_vhe(guest_ctxt);
 
-	__deactivate_traps(vcpu);
+	__deactivate_traps(core_state);
 
 	sysreg_restore_host_state_vhe(host_ctxt);
 
@@ -199,18 +200,18 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 {
 	struct kvm_cpu_context *host_ctxt;
-	struct kvm_vcpu *vcpu;
+	struct kvm_vcpu_arch_core *core_state;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	vcpu = host_ctxt->__hyp_running_vcpu;
+	core_state = host_ctxt->__hyp_running_vcpu;
 
-	__deactivate_traps(vcpu);
+	__deactivate_traps(core_state);
 	sysreg_restore_host_state_vhe(host_ctxt);
 
 	panic(__hyp_panic_string,
 	      spsr, elr,
 	      read_sysreg_el2(SYS_ESR), read_sysreg_el2(SYS_FAR),
-	      read_sysreg(hpfar_el2), par, vcpu);
+	      read_sysreg(hpfar_el2), par, core_state);
 }
 NOKPROBE_SYMBOL(__hyp_call_panic);
 

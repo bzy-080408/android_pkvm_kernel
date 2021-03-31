@@ -119,7 +119,7 @@ int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature)
 {
 	switch (feature) {
 	case KVM_ARM_VCPU_SVE:
-		if (!vcpu_has_sve(vcpu))
+		if (!vcpu_has_sve(&vcpu->arch.core_state))
 			return -EINVAL;
 
 		if (kvm_arm_vcpu_sve_finalized(vcpu))
@@ -133,7 +133,7 @@ int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature)
 
 bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu)
 {
-	if (vcpu_has_sve(vcpu) && !kvm_arm_vcpu_sve_finalized(vcpu))
+	if (vcpu_has_sve(&vcpu->arch.core_state) && !kvm_arm_vcpu_sve_finalized(vcpu))
 		return false;
 
 	return true;
@@ -146,7 +146,7 @@ void kvm_arm_vcpu_destroy(struct kvm_vcpu *vcpu)
 
 static void kvm_vcpu_reset_sve(struct kvm_vcpu *vcpu)
 {
-	if (vcpu_has_sve(vcpu))
+	if (vcpu_has_sve(&vcpu->arch.core_state))
 		memset(vcpu->arch.sve_state, 0, vcpu_sve_state_size(vcpu));
 }
 

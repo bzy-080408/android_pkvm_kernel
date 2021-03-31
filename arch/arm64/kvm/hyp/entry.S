@@ -18,7 +18,7 @@
 	.text
 
 /*
- * u64 __guest_enter(struct kvm_vcpu *vcpu);
+ * u64 __guest_enter(struct kvm_vcpu_arch_core *core_state);
  */
 SYM_FUNC_START(__guest_enter)
 	// x0: vcpu

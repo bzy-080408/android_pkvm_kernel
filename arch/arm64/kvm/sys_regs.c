@@ -320,14 +320,14 @@ static bool trap_dbgauthstatus_el1(struct kvm_vcpu *vcpu,
 /*
  * We want to avoid world-switching all the DBG registers all the
  * time:
- * 
+ *
  * - If we've touched any debug register, it is likely that we're
  *   going to touch more of them. It then makes sense to disable the
  *   traps and start doing the save/restore dance
  * - If debug is active (DBG_MDSCR_KDE or DBG_MDSCR_MDE set), it is
  *   then mandatory to save/restore the registers, as the guest
  *   depends on them.
- * 
+ *
  * For this, we use a DIRTY bit, indicating the guest has modified the
  * debug registers, used as follow:
  *
@@ -1052,7 +1052,7 @@ static u64 read_id_reg(const struct kvm_vcpu *vcpu,
 
 	switch (id) {
 	case SYS_ID_AA64PFR0_EL1:
-		if (!vcpu_has_sve(vcpu))
+		if (!vcpu_has_sve(&vcpu->arch.core_state))
 			val &= ~FEATURE(ID_AA64PFR0_SVE);
 		val &= ~FEATURE(ID_AA64PFR0_AMU);
 		val &= ~FEATURE(ID_AA64PFR0_CSV2);
@@ -1097,7 +1097,7 @@ static unsigned int id_visibility(const struct kvm_vcpu *vcpu,
 
 	switch (id) {
 	case SYS_ID_AA64ZFR0_EL1:
-		if (!vcpu_has_sve(vcpu))
+		if (!vcpu_has_sve(&vcpu->arch.core_state))
 			return REG_RAZ;
 		break;
 	}
@@ -1143,7 +1143,7 @@ static u64 sys_reg_to_index(const struct sys_reg_desc *reg);
 static unsigned int sve_visibility(const struct kvm_vcpu *vcpu,
 				   const struct sys_reg_desc *rd)
 {
-	if (vcpu_has_sve(vcpu))
+	if (vcpu_has_sve(&vcpu->arch.core_state))
 		return 0;
 
 	return REG_HIDDEN;

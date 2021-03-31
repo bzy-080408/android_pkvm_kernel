@@ -103,8 +103,8 @@ int main(void)
   DEFINE(FTR_OVR_MASK_OFFSET,	offsetof(struct arm64_ftr_override, mask));
   BLANK();
 #ifdef CONFIG_KVM
-  DEFINE(VCPU_CONTEXT,		offsetof(struct kvm_vcpu, arch.core_state.ctxt));
-  DEFINE(VCPU_FAULT_DISR,	offsetof(struct kvm_vcpu, arch.core_state.fault.disr_el1));
+  DEFINE(VCPU_CONTEXT,		offsetof(struct kvm_vcpu_arch_core, ctxt));
+  DEFINE(VCPU_FAULT_DISR,	offsetof(struct kvm_vcpu_arch_core, fault.disr_el1));
   DEFINE(VCPU_WORKAROUND_FLAGS,	offsetof(struct kvm_vcpu, arch.workaround_flags));
   DEFINE(CPU_USER_PT_REGS,	offsetof(struct kvm_cpu_context, regs));
   DEFINE(CPU_APIAKEYLO_EL1,	offsetof(struct kvm_cpu_context, sys_regs[APIAKEYLO_EL1]));

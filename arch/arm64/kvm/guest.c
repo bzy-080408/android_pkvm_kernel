@@ -57,6 +57,7 @@ static u64 core_reg_offset_from_id(u64 id)
 
 static int core_reg_size_from_offset(const struct kvm_vcpu *vcpu, u64 off)
 {
+	const struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	int size;
 
 	switch (off) {
@@ -94,7 +95,7 @@ static int core_reg_size_from_offset(const struct kvm_vcpu *vcpu, u64 off)
 	 * KVM_REG_ARM_CORE for accessing the FPSIMD V-registers on
 	 * SVE-enabled vcpus:
 	 */
-	if (vcpu_has_sve(vcpu) && core_reg_offset_is_vreg(off))
+	if (vcpu_has_sve(core_state) && core_reg_offset_is_vreg(off))
 		return -EINVAL;
 
 	return size;
@@ -289,10 +290,11 @@ out:
 
 static int get_sve_vls(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	unsigned int max_vq, vq;
 	u64 vqs[KVM_ARM64_SVE_VLS_WORDS];
 
-	if (!vcpu_has_sve(vcpu))
+	if (!vcpu_has_sve(core_state))
 		return -ENOENT;
 
 	if (WARN_ON(!sve_vl_valid(vcpu->arch.sve_max_vl)))
@@ -313,10 +315,11 @@ static int get_sve_vls(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 
 static int set_sve_vls(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	unsigned int max_vq, vq;
 	u64 vqs[KVM_ARM64_SVE_VLS_WORDS];
 
-	if (!vcpu_has_sve(vcpu))
+	if (!vcpu_has_sve(core_state))
 		return -ENOENT;
 
 	if (kvm_arm_vcpu_sve_finalized(vcpu))
@@ -396,6 +399,7 @@ static int sve_reg_to_region(struct sve_state_reg_region *region,
 			     struct kvm_vcpu *vcpu,
 			     const struct kvm_one_reg *reg)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	/* reg ID ranges for Z- registers */
 	const u64 zreg_id_min = KVM_REG_ARM64_SVE_ZREG(0, 0);
 	const u64 zreg_id_max = KVM_REG_ARM64_SVE_ZREG(SVE_NUM_ZREGS - 1,
@@ -425,7 +429,7 @@ static int sve_reg_to_region(struct sve_state_reg_region *region,
 	reg_num = (reg->id & SVE_REG_ID_MASK) >> SVE_REG_ID_SHIFT;
 
 	if (reg->id >= zreg_id_min && reg->id <= zreg_id_max) {
-		if (!vcpu_has_sve(vcpu) || (reg->id & SVE_REG_SLICE_MASK) > 0)
+		if (!vcpu_has_sve(core_state) || (reg->id & SVE_REG_SLICE_MASK) > 0)
 			return -ENOENT;
 
 		vq = vcpu_sve_max_vq(vcpu);
@@ -435,7 +439,7 @@ static int sve_reg_to_region(struct sve_state_reg_region *region,
 		reqlen = KVM_SVE_ZREG_SIZE;
 		maxlen = SVE_SIG_ZREG_SIZE(vq);
 	} else if (reg->id >= preg_id_min && reg->id <= preg_id_max) {
-		if (!vcpu_has_sve(vcpu) || (reg->id & SVE_REG_SLICE_MASK) > 0)
+		if (!vcpu_has_sve(core_state) || (reg->id & SVE_REG_SLICE_MASK) > 0)
 			return -ENOENT;
 
 		vq = vcpu_sve_max_vq(vcpu);
@@ -623,9 +627,10 @@ static int get_timer_reg(struct kvm_vcpu *vcpu, const struct kvm_one_reg *reg)
 
 static unsigned long num_sve_regs(const struct kvm_vcpu *vcpu)
 {
+	const struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	const unsigned int slices = vcpu_sve_slices(vcpu);
 
-	if (!vcpu_has_sve(vcpu))
+	if (!vcpu_has_sve(core_state))
 		return 0;
 
 	/* Policed by KVM_GET_REG_LIST: */
@@ -638,12 +643,13 @@ static unsigned long num_sve_regs(const struct kvm_vcpu *vcpu)
 static int copy_sve_reg_indices(const struct kvm_vcpu *vcpu,
 				u64 __user *uindices)
 {
+	const struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	const unsigned int slices = vcpu_sve_slices(vcpu);
 	u64 reg;
 	unsigned int i, n;
 	int num_regs = 0;
 
-	if (!vcpu_has_sve(vcpu))
+	if (!vcpu_has_sve(core_state))
 		return 0;
 
 	/* Policed by KVM_GET_REG_LIST: */

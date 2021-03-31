@@ -67,12 +67,12 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 	}
 }
 
-static void __deactivate_traps(struct kvm_vcpu *vcpu)
+static void __deactivate_traps(struct kvm_vcpu_arch_core *core_state)
 {
 	extern char __kvm_hyp_host_vector[];
 	u64 mdcr_el2, cptr;
 
-	___deactivate_traps(vcpu);
+	___deactivate_traps(core_state);
 
 	mdcr_el2 = read_sysreg(mdcr_el2);
 
@@ -102,7 +102,7 @@ static void __deactivate_traps(struct kvm_vcpu *vcpu)
 	write_sysreg(this_cpu_ptr(&kvm_init_params)->hcr_el2, hcr_el2);
 
 	cptr = CPTR_EL2_DEFAULT;
-	if (vcpu_has_sve(vcpu) && (vcpu->arch.core_state.flags & KVM_ARM64_FP_ENABLED))
+	if (vcpu_has_sve(core_state) && (core_state->flags & KVM_ARM64_FP_ENABLED))
 		cptr |= CPTR_EL2_TZ;
 
 	write_sysreg(cptr, cptr_el2);
@@ -186,7 +186,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 	}
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	host_ctxt->__hyp_running_vcpu = vcpu;
+	host_ctxt->__hyp_running_vcpu = core_state;
 	guest_ctxt = &core_state->ctxt;
 
 	pmu_switch_needed = __pmu_switch_to_guest(host_ctxt);
@@ -224,7 +224,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 
 	do {
 		/* Jump in the fire! */
-		exit_code = __guest_enter(vcpu);
+		exit_code = __guest_enter(core_state);
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
@@ -234,7 +234,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
-	__deactivate_traps(vcpu);
+	__deactivate_traps(core_state);
 	__load_host_stage2();
 
 	__sysreg_restore_state_nvhe(host_ctxt);
@@ -281,7 +281,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	}
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	host_ctxt->__hyp_running_vcpu = vcpu;
+	host_ctxt->__hyp_running_vcpu = core_state;
 	guest_ctxt = &core_state->ctxt;
 
 	__sysreg_save_state_nvhe(host_ctxt);
@@ -298,7 +298,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	do {
 		/* Jump in the fire! */
-		exit_code = __guest_enter(vcpu);
+		exit_code = __guest_enter(core_state);
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
@@ -307,7 +307,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
-	__deactivate_traps(vcpu);
+	__deactivate_traps(core_state);
 	__load_host_stage2();
 
 	__sysreg_restore_state_nvhe(host_ctxt);
@@ -339,14 +339,14 @@ void __noreturn hyp_panic(void)
 	u64 elr = read_sysreg_el2(SYS_ELR);
 	u64 par = read_sysreg_par();
 	struct kvm_cpu_context *host_ctxt;
-	struct kvm_vcpu *vcpu;
+	struct kvm_vcpu_arch_core *core_state;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	vcpu = host_ctxt->__hyp_running_vcpu;
+	core_state = host_ctxt->__hyp_running_vcpu;
 
-	if (vcpu) {
+	if (core_state) {
 		__timer_disable_traps();
-		__deactivate_traps(vcpu);
+		__deactivate_traps(core_state);
 		__load_host_stage2();
 		__sysreg_restore_state_nvhe(host_ctxt);
 	}

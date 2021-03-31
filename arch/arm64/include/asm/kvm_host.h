@@ -223,6 +223,8 @@ enum vcpu_sysreg {
 	NR_SYS_REGS	/* Nothing after this line! */
 };
 
+struct kvm_vcpu_arch_core;
+
 struct kvm_cpu_context {
 	struct user_pt_regs regs;	/* sp = sp_el0 */
 
@@ -235,7 +237,7 @@ struct kvm_cpu_context {
 
 	u64 sys_regs[NR_SYS_REGS];
 
-	struct kvm_vcpu *__hyp_running_vcpu;
+	struct kvm_vcpu_arch_core *__hyp_running_vcpu;
 };
 
 struct kvm_pmu_events {
@@ -439,8 +441,8 @@ struct kvm_vcpu_arch {
  */
 #define KVM_ARM64_INCREMENT_PC		(1 << 9) /* Increment PC */
 
-#define vcpu_has_sve(vcpu) (system_supports_sve() &&			\
-			    ((vcpu)->arch.core_state.flags & KVM_ARM64_GUEST_HAS_SVE))
+#define vcpu_has_sve(core_state) (system_supports_sve() &&			\
+			    ((core_state)->flags & KVM_ARM64_GUEST_HAS_SVE))
 
 #ifdef CONFIG_ARM64_PTR_AUTH
 #define vcpu_has_ptrauth(vcpu)						\

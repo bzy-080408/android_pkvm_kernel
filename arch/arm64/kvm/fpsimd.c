@@ -94,15 +94,17 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
  */
 void kvm_arch_vcpu_ctxsync_fp(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+
 	WARN_ON_ONCE(!irqs_disabled());
 
-	if (vcpu->arch.core_state.flags & KVM_ARM64_FP_ENABLED) {
-		fpsimd_bind_state_to_cpu(&vcpu->arch.core_state.ctxt.fp_regs,
+	if (core_state->flags & KVM_ARM64_FP_ENABLED) {
+		fpsimd_bind_state_to_cpu(&core_state->ctxt.fp_regs,
 					 vcpu->arch.sve_state,
 					 vcpu->arch.sve_max_vl);
 
 		clear_thread_flag(TIF_FOREIGN_FPSTATE);
-		update_thread_flag(TIF_SVE, vcpu_has_sve(vcpu));
+		update_thread_flag(TIF_SVE, vcpu_has_sve(core_state));
 	}
 }
 
@@ -117,7 +119,7 @@ void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	unsigned long flags;
 	bool host_has_sve = system_supports_sve();
-	bool guest_has_sve = vcpu_has_sve(vcpu);
+	bool guest_has_sve = vcpu_has_sve(core_state);
 
 	local_irq_save(flags);
 

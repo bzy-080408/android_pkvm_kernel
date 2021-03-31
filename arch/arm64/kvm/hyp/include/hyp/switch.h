@@ -119,7 +119,7 @@ static inline void ___activate_traps(struct kvm_vcpu *vcpu)
 		write_sysreg_s(vcpu->arch.core_state.vsesr_el2, SYS_VSESR_EL2);
 }
 
-static inline void ___deactivate_traps(struct kvm_vcpu *vcpu)
+static inline void ___deactivate_traps(struct kvm_vcpu_arch_core *core_state)
 {
 	/*
 	 * If we pended a virtual abort, preserve it until it gets
@@ -127,9 +127,9 @@ static inline void ___deactivate_traps(struct kvm_vcpu *vcpu)
 	 * the crucial bit is "On taking a vSError interrupt,
 	 * HCR_EL2.VSE is cleared to 0."
 	 */
-	if (vcpu->arch.core_state.hcr_el2 & HCR_VSE) {
-		vcpu->arch.core_state.hcr_el2 &= ~HCR_VSE;
-		vcpu->arch.core_state.hcr_el2 |= read_sysreg(hcr_el2) & HCR_VSE;
+	if (core_state->hcr_el2 & HCR_VSE) {
+		core_state->hcr_el2 &= ~HCR_VSE;
+		core_state->hcr_el2 |= read_sysreg(hcr_el2) & HCR_VSE;
 	}
 }
 
@@ -237,7 +237,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 		return false;
 
 	if (system_supports_sve()) {
-		sve_guest = vcpu_has_sve(vcpu);
+		sve_guest = vcpu_has_sve(core_state);
 		sve_host = core_state->flags & KVM_ARM64_HOST_SVE_IN_USE;
 	} else {
 		sve_guest = false;
