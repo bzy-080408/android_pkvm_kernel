@@ -121,6 +121,9 @@ KVM_NVHE_ALIAS(__end_rodata);
 KVM_NVHE_ALIAS(__bss_start);
 KVM_NVHE_ALIAS(__bss_stop);
 
+KVM_NVHE_ALIAS(memstart_addr);
+KVM_NVHE_ALIAS(kimage_voffset);
+
 /* Hyp memory sections */
 KVM_NVHE_ALIAS(__hyp_idmap_text_start);
 KVM_NVHE_ALIAS(__hyp_idmap_text_end);
