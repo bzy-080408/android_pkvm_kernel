@@ -16,11 +16,15 @@
 #include <linux/crypto.h>
 #include <linux/module.h>
 
+#include "sha-hmac.h"
+
 MODULE_DESCRIPTION("SHA-224/SHA-256 secure hash using ARMv8 Crypto Extensions");
 MODULE_AUTHOR("Ard Biesheuvel <ard.biesheuvel@linaro.org>");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS_CRYPTO("sha224");
 MODULE_ALIAS_CRYPTO("sha256");
+MODULE_ALIAS_CRYPTO("hmac(sha224)");
+MODULE_ALIAS_CRYPTO("hmac(sha256)");
 
 struct sha256_ce_state {
 	struct sha256_state	sst;
@@ -133,6 +137,49 @@ static int sha256_ce_import(struct shash_desc *desc, const void *in)
 	return 0;
 }
 
+static int sha256_hmac_ce_init(struct shash_desc *desc)
+{
+	const struct sha256_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+
+	return sha256_base_init(desc) ?:
+	       sha256_ce_update(desc, ctx->ikey, sizeof(ctx->ikey));
+}
+
+static int sha224_hmac_ce_init(struct shash_desc *desc)
+{
+	const struct sha256_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+
+	return sha224_base_init(desc) ?:
+	       sha256_ce_update(desc, ctx->ikey, sizeof(ctx->ikey));
+}
+
+static int sha256_hmac_ce_finup(struct shash_desc *desc, const u8 *data,
+				unsigned int len, u8 *out)
+{
+	const struct sha256_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+	SHASH_DESC_ON_STACK(idesc, dontcare);
+	u8 dg[SHA256_DIGEST_SIZE];
+	int err;
+
+	err = sha256_ce_finup(desc, data, len, dg);
+	if (err)
+		return err;
+
+	idesc->tfm = desc->tfm;
+	if (crypto_shash_digestsize(desc->tfm) == SHA256_DIGEST_SIZE)
+		sha256_base_init(idesc);
+	else
+		sha224_base_init(idesc);
+
+	return sha256_ce_update(idesc, ctx->okey, sizeof(ctx->okey)) ?:
+	       sha256_ce_finup(idesc, dg, crypto_shash_digestsize(desc->tfm), out);
+}
+
+static int sha256_hmac_ce_final(struct shash_desc *desc, u8 *out)
+{
+	return sha256_hmac_ce_finup(desc, NULL, 0, out);
+}
+
 static struct shash_alg algs[] = { {
 	.init			= sha224_base_init,
 	.update			= sha256_ce_update,
@@ -143,13 +190,12 @@ static struct shash_alg algs[] = { {
 	.descsize		= sizeof(struct sha256_ce_state),
 	.statesize		= sizeof(struct sha256_state),
 	.digestsize		= SHA224_DIGEST_SIZE,
-	.base			= {
-		.cra_name		= "sha224",
-		.cra_driver_name	= "sha224-ce",
-		.cra_priority		= 200,
-		.cra_blocksize		= SHA256_BLOCK_SIZE,
-		.cra_module		= THIS_MODULE,
-	}
+
+	.base.cra_name		= "sha224",
+	.base.cra_driver_name	= "sha224-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA256_BLOCK_SIZE,
+	.base.cra_module	= THIS_MODULE,
 }, {
 	.init			= sha256_base_init,
 	.update			= sha256_ce_update,
@@ -160,13 +206,49 @@ static struct shash_alg algs[] = { {
 	.descsize		= sizeof(struct sha256_ce_state),
 	.statesize		= sizeof(struct sha256_state),
 	.digestsize		= SHA256_DIGEST_SIZE,
-	.base			= {
-		.cra_name		= "sha256",
-		.cra_driver_name	= "sha256-ce",
-		.cra_priority		= 200,
-		.cra_blocksize		= SHA256_BLOCK_SIZE,
-		.cra_module		= THIS_MODULE,
-	}
+
+	.base.cra_name		= "sha256",
+	.base.cra_driver_name	= "sha256-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA256_BLOCK_SIZE,
+	.base.cra_module	= THIS_MODULE,
+}, {
+	.init			= sha224_hmac_ce_init,
+	.update			= sha256_ce_update,
+	.final			= sha256_hmac_ce_final,
+	.finup			= sha256_hmac_ce_finup,
+	.export			= sha256_ce_export,
+	.import			= sha256_ce_import,
+	.setkey			= crypto_sha256_hmac_arm64_setkey,
+	.descsize		= sizeof(struct sha256_ce_state),
+	.statesize		= sizeof(struct sha256_state),
+	.digestsize		= SHA224_DIGEST_SIZE,
+
+	.base.cra_name		= "hmac(sha224)",
+	.base.cra_driver_name	= "hmac-sha224-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA256_BLOCK_SIZE,
+	.base.cra_ctxsize	= sizeof(struct sha256_hmac_ctx),
+	.base.cra_module	= THIS_MODULE,
+
+}, {
+	.init			= sha256_hmac_ce_init,
+	.update			= sha256_ce_update,
+	.final			= sha256_hmac_ce_final,
+	.finup			= sha256_hmac_ce_finup,
+	.export			= sha256_ce_export,
+	.import			= sha256_ce_import,
+	.setkey			= crypto_sha256_hmac_arm64_setkey,
+	.descsize		= sizeof(struct sha256_ce_state),
+	.statesize		= sizeof(struct sha256_state),
+	.digestsize		= SHA256_DIGEST_SIZE,
+
+	.base.cra_name		= "hmac(sha256)",
+	.base.cra_driver_name	= "hmac-sha256-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA256_BLOCK_SIZE,
+	.base.cra_ctxsize	= sizeof(struct sha256_hmac_ctx),
+	.base.cra_module	= THIS_MODULE,
 } };
 
 static int __init sha2_ce_mod_init(void)
