@@ -20,11 +20,15 @@
 #include <linux/crypto.h>
 #include <linux/module.h>
 
+#include "sha-hmac.h"
+
 MODULE_DESCRIPTION("SHA-384/SHA-512 secure hash using ARMv8 Crypto Extensions");
 MODULE_AUTHOR("Ard Biesheuvel <ard.biesheuvel@linaro.org>");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS_CRYPTO("sha384");
 MODULE_ALIAS_CRYPTO("sha512");
+MODULE_ALIAS_CRYPTO("hmac(sha384)");
+MODULE_ALIAS_CRYPTO("hmac(sha512)");
 
 asmlinkage int sha512_ce_transform(struct sha512_state *sst, u8 const *src,
 				   int blocks);
@@ -81,6 +85,49 @@ static int sha512_ce_final(struct shash_desc *desc, u8 *out)
 	return sha512_base_finish(desc, out);
 }
 
+static int sha512_hmac_ce_init(struct shash_desc *desc)
+{
+	const struct sha512_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+
+	return sha512_base_init(desc) ?:
+	       sha512_ce_update(desc, ctx->ikey, sizeof(ctx->ikey));
+}
+
+static int sha384_hmac_ce_init(struct shash_desc *desc)
+{
+	const struct sha512_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+
+	return sha384_base_init(desc) ?:
+	       sha512_ce_update(desc, ctx->ikey, sizeof(ctx->ikey));
+}
+
+static int sha512_hmac_ce_finup(struct shash_desc *desc, const u8 *data,
+			        unsigned int len, u8 *out)
+{
+	const struct sha512_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+	SHASH_DESC_ON_STACK(idesc, dontcare);
+	u8 dg[SHA512_DIGEST_SIZE];
+	int err;
+
+	err = sha512_ce_finup(desc, data, len, dg);
+	if (err)
+		return err;
+
+	idesc->tfm = desc->tfm;
+	if (crypto_shash_digestsize(desc->tfm) == SHA512_DIGEST_SIZE)
+		sha512_base_init(idesc);
+	else
+		sha384_base_init(idesc);
+
+	return sha512_ce_update(idesc, ctx->okey, sizeof(ctx->okey)) ?:
+	       sha512_ce_finup(idesc, dg, crypto_shash_digestsize(desc->tfm), out);
+}
+
+static int sha512_hmac_ce_final(struct shash_desc *desc, u8 *out)
+{
+	return sha512_hmac_ce_finup(desc, NULL, 0, out);
+}
+
 static struct shash_alg algs[] = { {
 	.init			= sha384_base_init,
 	.update			= sha512_ce_update,
@@ -104,6 +151,34 @@ static struct shash_alg algs[] = { {
 	.base.cra_driver_name	= "sha512-ce",
 	.base.cra_priority	= 200,
 	.base.cra_blocksize	= SHA512_BLOCK_SIZE,
+	.base.cra_module	= THIS_MODULE,
+}, {
+	.init			= sha384_hmac_ce_init,
+	.update			= sha512_ce_update,
+	.final			= sha512_hmac_ce_final,
+	.finup			= sha512_hmac_ce_finup,
+	.setkey			= crypto_sha512_hmac_arm64_setkey,
+	.descsize		= sizeof(struct sha512_state),
+	.digestsize		= SHA384_DIGEST_SIZE,
+	.base.cra_name		= "hmac(sha384)",
+	.base.cra_driver_name	= "hmac-sha384-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA512_BLOCK_SIZE,
+	.base.cra_ctxsize	= sizeof(struct sha512_hmac_ctx),
+	.base.cra_module	= THIS_MODULE,
+}, {
+	.init			= sha512_hmac_ce_init,
+	.update			= sha512_ce_update,
+	.final			= sha512_hmac_ce_final,
+	.finup			= sha512_hmac_ce_finup,
+	.setkey			= crypto_sha512_hmac_arm64_setkey,
+	.descsize		= sizeof(struct sha512_state),
+	.digestsize		= SHA512_DIGEST_SIZE,
+	.base.cra_name		= "hmac(sha512)",
+	.base.cra_driver_name	= "hmac-sha512-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA512_BLOCK_SIZE,
+	.base.cra_ctxsize	= sizeof(struct sha512_hmac_ctx),
 	.base.cra_module	= THIS_MODULE,
 } };
 
