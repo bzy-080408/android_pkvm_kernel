@@ -26,6 +26,11 @@ struct sha1_ce_state {
 	u32			finalize;
 };
 
+struct sha1_hmac_ctx {
+	u8	ikey[SHA1_BLOCK_SIZE];
+	u8	okey[SHA1_BLOCK_SIZE];
+};
+
 extern const u32 sha1_ce_offsetof_count;
 extern const u32 sha1_ce_offsetof_finalize;
 
@@ -114,7 +119,69 @@ static int sha1_ce_import(struct shash_desc *desc, const void *in)
 	return 0;
 }
 
-static struct shash_alg alg = {
+static int sha1_hmac_ce_setkey(struct crypto_shash *shash, const u8 *inkey,
+			       unsigned int keylen)
+{
+	struct sha1_hmac_ctx *ctx = crypto_shash_ctx(shash);
+	u8 dg[SHA1_DIGEST_SIZE] = {};
+
+	memset(ctx->ikey, 0x36, sizeof(ctx->ikey));
+	memset(ctx->okey, 0x5c, sizeof(ctx->okey));
+
+	if (keylen > SHA1_BLOCK_SIZE) {
+		SHASH_DESC_ON_STACK(desc, dontcare);
+		int err;
+
+		desc->tfm = shash;
+		sha1_base_init(desc);
+
+		err = sha1_ce_finup(desc, inkey, keylen, dg);
+		if (err)
+			return err;
+
+		inkey = dg;
+		keylen = sizeof(dg);
+	}
+
+	crypto_xor(ctx->ikey, inkey, keylen);
+	crypto_xor(ctx->okey, inkey, keylen);
+
+	return 0;
+}
+
+static int sha1_hmac_ce_init(struct shash_desc *desc)
+{
+	const struct sha1_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+
+	return sha1_base_init(desc) ?:
+	       sha1_ce_update(desc, ctx->ikey, sizeof(ctx->ikey));
+}
+
+static int sha1_hmac_ce_finup(struct shash_desc *desc, const u8 *data,
+			      unsigned int len, u8 *out)
+{
+	const struct sha1_hmac_ctx *ctx = crypto_shash_ctx(desc->tfm);
+	SHASH_DESC_ON_STACK(idesc, dontcare);
+	u8 dg[SHA1_DIGEST_SIZE];
+	int err;
+
+	err = sha1_ce_finup(desc, data, len, dg);
+	if (err)
+		return err;
+
+	idesc->tfm = desc->tfm;
+	sha1_base_init(idesc);
+
+	return sha1_ce_update(idesc, ctx->okey, sizeof(ctx->okey)) ?:
+	       sha1_ce_finup(idesc, dg, crypto_shash_digestsize(desc->tfm), out);
+}
+
+static int sha1_hmac_ce_final(struct shash_desc *desc, u8 *out)
+{
+	return sha1_hmac_ce_finup(desc, NULL, 0, out);
+}
+
+static struct shash_alg algs[] = { {
 	.init			= sha1_base_init,
 	.update			= sha1_ce_update,
 	.final			= sha1_ce_final,
@@ -124,23 +191,40 @@ static struct shash_alg alg = {
 	.descsize		= sizeof(struct sha1_ce_state),
 	.statesize		= sizeof(struct sha1_state),
 	.digestsize		= SHA1_DIGEST_SIZE,
-	.base			= {
-		.cra_name		= "sha1",
-		.cra_driver_name	= "sha1-ce",
-		.cra_priority		= 200,
-		.cra_blocksize		= SHA1_BLOCK_SIZE,
-		.cra_module		= THIS_MODULE,
-	}
-};
+
+	.base.cra_name		= "sha1",
+	.base.cra_driver_name	= "sha1-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA1_BLOCK_SIZE,
+	.base.cra_module	= THIS_MODULE,
+}, {
+	.init			= sha1_hmac_ce_init,
+	.update			= sha1_ce_update,
+	.final			= sha1_hmac_ce_final,
+	.finup			= sha1_hmac_ce_finup,
+	.import			= sha1_ce_import,
+	.export			= sha1_ce_export,
+	.setkey			= sha1_hmac_ce_setkey,
+	.descsize		= sizeof(struct sha1_ce_state),
+	.statesize		= sizeof(struct sha1_state),
+	.digestsize		= SHA1_DIGEST_SIZE,
+
+	.base.cra_name		= "hmac(sha1)",
+	.base.cra_driver_name	= "hmac-sha1-ce",
+	.base.cra_priority	= 200,
+	.base.cra_blocksize	= SHA1_BLOCK_SIZE,
+	.base.cra_ctxsize	= sizeof(struct sha1_hmac_ctx),
+	.base.cra_module	= THIS_MODULE,
+} };
 
 static int __init sha1_ce_mod_init(void)
 {
-	return crypto_register_shash(&alg);
+	return crypto_register_shashes(algs, ARRAY_SIZE(algs));
 }
 
 static void __exit sha1_ce_mod_fini(void)
 {
-	crypto_unregister_shash(&alg);
+	crypto_unregister_shashes(algs, ARRAY_SIZE(algs));
 }
 
 module_cpu_feature_match(SHA1, sha1_ce_mod_init);
