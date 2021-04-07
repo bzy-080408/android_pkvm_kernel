@@ -149,13 +149,13 @@ void sha256_update(struct sha256_state *sctx, const u8 *data, unsigned int len)
 	}
 	memcpy(sctx->buf + partial, src, len - done);
 }
-EXPORT_SYMBOL(sha256_update);
+EXPORT_SYMBOL_NS(sha256_update, CRYPTO_INTERNAL);
 
 void sha224_update(struct sha256_state *sctx, const u8 *data, unsigned int len)
 {
 	sha256_update(sctx, data, len);
 }
-EXPORT_SYMBOL(sha224_update);
+EXPORT_SYMBOL_NS(sha224_update, CRYPTO_INTERNAL);
 
 static void __sha256_final(struct sha256_state *sctx, u8 *out, int digest_words)
 {
@@ -188,13 +188,13 @@ void sha256_final(struct sha256_state *sctx, u8 *out)
 {
 	__sha256_final(sctx, out, 8);
 }
-EXPORT_SYMBOL(sha256_final);
+EXPORT_SYMBOL_NS(sha256_final, CRYPTO_INTERNAL);
 
 void sha224_final(struct sha256_state *sctx, u8 *out)
 {
 	__sha256_final(sctx, out, 7);
 }
-EXPORT_SYMBOL(sha224_final);
+EXPORT_SYMBOL_NS(sha224_final, CRYPTO_INTERNAL);
 
 void sha256(const u8 *data, unsigned int len, u8 *out)
 {
