@@ -200,6 +200,8 @@ void sha256(const u8 *data, unsigned int len, u8 *out)
 {
 	struct sha256_state sctx;
 
+	// TODO add vendor hook here so fips140.ko can supersede it
+
 	sha256_init(&sctx);
 	sha256_update(&sctx, data, len);
 	sha256_final(&sctx, out);
