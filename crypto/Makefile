@@ -195,6 +195,9 @@ crypto_simd-y := simd.o
 obj-$(CONFIG_CRYPTO_SIMD) += crypto_simd.o
 
 ifneq ($(CONFIG_CRYPTO_FIPS140_INTEGRITY_CHECK),)
+
+FIPS140_CFLAGS := -D__DISABLE_EXPORTS -DBUILD_FIPS140_KO
+
 #
 # Create a separate FIPS archive containing a duplicate of each builtin generic
 # module that is in scope for FIPS 140-2 certification
@@ -206,7 +209,7 @@ crypto-fips-modules := drbg.o ecb.o cbc.o ctr.o gcm.o xts.o hmac.o memneq.o \
 crypto-fips-objs := $(foreach o,$(crypto-fips-modules),$(o:.o=-fips.o))
 extra-$(CONFIG_CRYPTO_FIPS140_INTEGRITY_CHECK) += crypto-fips.a
 
-$(obj)/%-fips.o: KBUILD_CFLAGS += -D__DISABLE_EXPORTS
+$(obj)/%-fips.o: KBUILD_CFLAGS += $(FIPS140_CFLAGS)
 $(obj)/%-fips.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
 
@@ -216,6 +219,8 @@ $(obj)/crypto-fips.a: $(addprefix $(obj)/,$(crypto-fips-objs)) FORCE
 fips140-objs		:= fips140-integrity.o crypto-fips.a \
 			   ../arch/$(ARCH)/crypto/crypto-$(ARCH)-fips.a
 obj-m			+= fips140.o
+
+CFLAGS_fips140-integrity.o += $(FIPS140_CFLAGS)
 
 hostprogs-always-y := fips140_gen_hmac
 HOSTLDLIBS_fips140_gen_hmac := -lcrypto -lelf
