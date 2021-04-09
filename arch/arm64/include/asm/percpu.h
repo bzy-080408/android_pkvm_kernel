@@ -36,9 +36,10 @@ static inline unsigned long __kern_my_cpu_offset(void)
 	 * We want to allow caching the value, so avoid using volatile and
 	 * instead use a fake stack read to hazard against barrier().
 	 */
-	asm(ALTERNATIVE("mrs %0, tpidr_el1",
-			"mrs %0, tpidr_el2",
-			ARM64_HAS_VIRT_HOST_EXTN)
+	asm(ALTERNATIVE_IF("mrs %0, tpidr_el1",
+			   "mrs %0, tpidr_el2",
+			   ARM64_HAS_VIRT_HOST_EXTN,
+			   CONFIG_ARM64_VHE)
 		: "=r" (off) :
 		"Q" (*(const unsigned long *)current_stack_pointer));
 

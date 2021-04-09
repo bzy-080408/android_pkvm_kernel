@@ -234,6 +234,10 @@ lr	.req	x30		// link register
 	.macro	this_cpu_offset, dst
 	mrs	\dst, tpidr_el2
 	.endm
+#elif !defined(CONFIG_ARM64_VHE)
+	.macro	this_cpu_offset, dst
+	mrs	\dst, tpidr_el1
+	.endm
 #else
 	.macro	this_cpu_offset, dst
 alternative_if_not ARM64_HAS_VIRT_HOST_EXTN
