@@ -60,8 +60,7 @@
 	".previous\n"							\
 	".endif\n"
 
-#define __ALTERNATIVE_CFG_CB(oldinstr, feature, cfg_enabled, cb)	\
-	".if "__stringify(cfg_enabled)" == 1\n"				\
+#define __ALTERNATIVE_CFG_CB(oldinstr, feature, cb)			\
 	"661:\n\t"							\
 	oldinstr "\n"							\
 	"662:\n"							\
@@ -69,14 +68,13 @@
 	ALTINSTR_ENTRY_CB(feature, cb)					\
 	".popsection\n"							\
 	"663:\n\t"							\
-	"664:\n\t"							\
-	".endif\n"
+	"664:\n"
 
 #define _ALTERNATIVE_CFG(oldinstr, newinstr, feature, cfg, ...)	\
 	__ALTERNATIVE_CFG(oldinstr, newinstr, feature, IS_ENABLED(cfg))
 
 #define ALTERNATIVE_CB(oldinstr, cb) \
-	__ALTERNATIVE_CFG_CB(oldinstr, ARM64_CB_PATCH, 1, cb)
+	__ALTERNATIVE_CFG_CB(oldinstr, ARM64_CB_PATCH, cb)
 #else
 
 #include <asm/assembler.h>
