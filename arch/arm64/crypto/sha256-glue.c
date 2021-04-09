@@ -72,7 +72,7 @@ int crypto_sha256_hmac_arm64_setkey(struct crypto_shash *shash, const u8 *inkey,
 				    unsigned int keylen)
 {
 	struct sha256_hmac_ctx *ctx = crypto_shash_ctx(shash);
-	u8 dg[SHA256_DIGEST_SIZE] = {};
+	u8 dg[SHA256_DIGEST_SIZE];
 
 	memset(ctx->ikey, 0x36, sizeof(ctx->ikey));
 	memset(ctx->okey, 0x5c, sizeof(ctx->okey));
@@ -92,7 +92,7 @@ int crypto_sha256_hmac_arm64_setkey(struct crypto_shash *shash, const u8 *inkey,
 			return err;
 
 		inkey = dg;
-		keylen = sizeof(dg);
+		keylen = crypto_shash_digestsize(shash);
 	}
 
 	crypto_xor(ctx->ikey, inkey, keylen);
