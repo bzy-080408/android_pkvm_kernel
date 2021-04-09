@@ -43,11 +43,14 @@
  *
  * Alternatives with callbacks do not generate replacement instructions.
  */
-#define __ALTERNATIVE_CFG(oldinstr, newinstr, feature, cfg_enabled)	\
-	".if "__stringify(cfg_enabled)" == 1\n"				\
+#define __ALTERNATIVE_CFG(oldinstr, newinstr, feature, cfg_enabled,	\
+			  old_enabled)					\
+	".if "__stringify(old_enabled)" == 1\n"				\
 	"661:\n\t"							\
 	oldinstr "\n"							\
 	"662:\n"							\
+	".endif\n"							\
+	".if "__stringify(cfg_enabled)" == 1\n"				\
 	".pushsection .altinstructions,\"a\"\n"				\
 	ALTINSTR_ENTRY(feature)						\
 	".popsection\n"							\
@@ -71,7 +74,11 @@
 	"664:\n"
 
 #define _ALTERNATIVE_CFG(oldinstr, newinstr, feature, cfg, ...)	\
-	__ALTERNATIVE_CFG(oldinstr, newinstr, feature, IS_ENABLED(cfg))
+	__ALTERNATIVE_CFG(oldinstr, newinstr, feature, IS_ENABLED(cfg), \
+			  IS_ENABLED(cfg))
+
+#define ALTERNATIVE_IF(oldinstr, newinstr, feature, cfg)	\
+	__ALTERNATIVE_CFG(oldinstr, newinstr, feature, IS_ENABLED(cfg), 1)
 
 #define ALTERNATIVE_CB(oldinstr, cb) \
 	__ALTERNATIVE_CFG_CB(oldinstr, ARM64_CB_PATCH, cb)
@@ -87,9 +94,11 @@
 	.byte \alt_len
 .endm
 
-.macro alternative_insn insn1, insn2, cap, enable = 1
-	.if \enable
+.macro alternative_insn insn1, insn2, cap, enable = 1, old_enable = 1
+	.if \old_enable
 661:	\insn1
+	.endif
+	.if \enable
 662:	.pushsection .altinstructions, "a"
 	altinstruction_entry 661b, 663f, \cap, 662b-661b, 664f-663f
 	.popsection
@@ -193,7 +202,10 @@ alternative_endif
 .endm
 
 #define _ALTERNATIVE_CFG(insn1, insn2, cap, cfg, ...)	\
-	alternative_insn insn1, insn2, cap, IS_ENABLED(cfg)
+	alternative_insn insn1, insn2, cap, IS_ENABLED(cfg), IS_ENABLED(cfg)
+
+#define ALTERNATIVE_IF(insn1, insn2, cap, cfg)	\
+	alternative_insn insn1, insn2, cap, IS_ENABLED(cfg), 1
 
 .macro user_alt, label, oldinstr, newinstr, cond
 9999:	alternative_insn "\oldinstr", "\newinstr", \cond
