@@ -988,7 +988,7 @@ static bool undef_access(struct kvm_vcpu *vcpu, struct sys_reg_params *p,
 static unsigned int ptrauth_visibility(const struct kvm_vcpu *vcpu,
 			const struct sys_reg_desc *rd)
 {
-	return vcpu_has_ptrauth(vcpu) ? 0 : REG_HIDDEN;
+	return vcpu_has_ptrauth(&vcpu->arch.core_state) ? 0 : REG_HIDDEN;
 }
 
 /*
@@ -1064,7 +1064,7 @@ static u64 read_id_reg(const struct kvm_vcpu *vcpu,
 		val &= ~FEATURE(ID_AA64PFR1_MTE);
 		break;
 	case SYS_ID_AA64ISAR1_EL1:
-		if (!vcpu_has_ptrauth(vcpu))
+		if (!vcpu_has_ptrauth(&vcpu->arch.core_state))
 			val &= ~(FEATURE(ID_AA64ISAR1_APA) |
 				 FEATURE(ID_AA64ISAR1_API) |
 				 FEATURE(ID_AA64ISAR1_GPA) |

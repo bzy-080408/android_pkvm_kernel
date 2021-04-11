@@ -445,12 +445,12 @@ struct kvm_vcpu_arch {
 			    ((core_state)->flags & KVM_ARM64_GUEST_HAS_SVE))
 
 #ifdef CONFIG_ARM64_PTR_AUTH
-#define vcpu_has_ptrauth(vcpu)						\
+#define vcpu_has_ptrauth(core_state)						\
 	((cpus_have_final_cap(ARM64_HAS_ADDRESS_AUTH) ||		\
 	  cpus_have_final_cap(ARM64_HAS_GENERIC_AUTH)) &&		\
-	 (vcpu)->arch.core_state.flags & KVM_ARM64_GUEST_HAS_PTRAUTH)
+	 (core_state)->flags & KVM_ARM64_GUEST_HAS_PTRAUTH)
 #else
-#define vcpu_has_ptrauth(vcpu)		false
+#define vcpu_has_ptrauth(core_state)		false
 #endif
 
 #define vcpu_gp_regs(v)		(&(v)->ctxt.regs)

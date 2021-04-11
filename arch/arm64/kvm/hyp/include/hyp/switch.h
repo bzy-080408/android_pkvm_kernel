@@ -193,18 +193,18 @@ static inline bool __get_fault_info(u64 esr, struct kvm_vcpu_fault_info *fault)
 	return true;
 }
 
-static inline bool __populate_fault_info(struct kvm_vcpu *vcpu)
+static inline bool __populate_fault_info(struct kvm_vcpu_arch_core *core_state)
 {
 	u8 ec;
 	u64 esr;
 
-	esr = vcpu->arch.core_state.fault.esr_el2;
+	esr = core_state->fault.esr_el2;
 	ec = ESR_ELx_EC(esr);
 
 	if (ec != ESR_ELx_EC_DABT_LOW && ec != ESR_ELx_EC_IABT_LOW)
 		return true;
 
-	return __get_fault_info(esr, &vcpu->arch.core_state.fault);
+	return __get_fault_info(esr, &core_state->fault);
 }
 
 static inline void __hyp_sve_save_host(struct kvm_vcpu *vcpu)
@@ -385,13 +385,12 @@ static inline bool esr_is_ptrauth_trap(u32 esr)
 
 DECLARE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 
-static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
+static inline bool __hyp_handle_ptrauth(struct kvm_vcpu_arch_core *core_state)
 {
-	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
 	struct kvm_cpu_context *ctxt;
 	u64 val;
 
-	if (!vcpu_has_ptrauth(vcpu) ||
+	if (!vcpu_has_ptrauth(core_state) ||
 	    !esr_is_ptrauth_trap(kvm_vcpu_get_esr(core_state)))
 		return false;
 
@@ -462,10 +461,10 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	if (__hyp_handle_fpsimd(vcpu))
 		goto guest;
 
-	if (__hyp_handle_ptrauth(vcpu))
+	if (__hyp_handle_ptrauth(core_state))
 		goto guest;
 
-	if (!__populate_fault_info(vcpu))
+	if (!__populate_fault_info(core_state))
 		goto guest;
 
 	if (static_branch_unlikely(&vgic_v2_cpuif_trap)) {

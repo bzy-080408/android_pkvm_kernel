@@ -415,7 +415,7 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	else
 		vcpu_set_wfx_traps(vcpu);
 
-	if (vcpu_has_ptrauth(vcpu))
+	if (vcpu_has_ptrauth(core_state))
 		vcpu_ptrauth_disable(core_state);
 }
 
