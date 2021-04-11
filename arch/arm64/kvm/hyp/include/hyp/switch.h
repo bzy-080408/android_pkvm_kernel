@@ -234,6 +234,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	const bool is_protected = is_nvhe_hyp_code() && kvm_vm_is_protected(kern_hyp_va(vcpu->kvm));
 	bool sve_guest, sve_host;
 	u8 esr_ec;
 	u64 reg;
@@ -241,7 +242,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 	if (!system_supports_fpsimd())
 		return false;
 
-	if (system_supports_sve()) {
+	if (system_supports_sve() && !is_protected) {
 		sve_guest = hyp_state_has_sve(vcpu_hyps);
 		sve_host = hyp_state_flags(vcpu_hyps) & KVM_ARM64_HOST_SVE_IN_USE;
 	} else {
@@ -249,7 +250,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 		sve_host = false;
 	}
 
-	esr_ec = kvm_vcpu_trap_get_class(vcpu);
+	esr_ec = kvm_hyp_state_trap_get_class(vcpu_hyps);
 	if (esr_ec != ESR_ELx_EC_FP_ASIMD &&
 	    esr_ec != ESR_ELx_EC_SVE)
 		return false;

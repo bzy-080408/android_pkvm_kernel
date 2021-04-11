@@ -277,7 +277,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	struct vgic_dist *vgic = &kvm->arch.vgic;
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
-	bool pmu_switch_needed;
 	u64 exit_code;
 
 	/*
@@ -295,29 +294,10 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	set_hyp_running_vcpu(host_ctxt, vcpu);
 	guest_ctxt = &vcpu->arch.ctxt;
 
-	pmu_switch_needed = __pmu_switch_to_guest(host_ctxt);
-
 	__sysreg_save_state_nvhe(host_ctxt);
-	/*
-	 * We must flush and disable the SPE buffer for nVHE, as
-	 * the translation regime(EL1&0) is going to be loaded with
-	 * that of the guest. And we must do this before we change the
-	 * translation regime to EL2 (via MDCR_EL2_E2PB == 0) and
-	 * before we load guest Stage1.
-	 */
-	__debug_save_host_buffers_nvhe(vcpu);
 
 	__adjust_pc(&vcpu_ctxt(vcpu), &hyp_state(vcpu));
 
-	/*
-	 * We must restore the 32-bit state before the sysregs, thanks
-	 * to erratum #852523 (Cortex-A57) or #853709 (Cortex-A72).
-	 *
-	 * Also, and in order to be able to deal with erratum #1319537 (A57)
-	 * and #1319367 (A72), we must ensure that all VM-related sysreg are
-	 * restored before we enable S2 translation.
-	 */
-	__sysreg32_restore_state(vcpu);
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
 	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
@@ -325,8 +305,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	__hyp_vgic_restore_state(vcpu);
 	__timer_enable_traps();
-
-	__debug_switch_to_guest(vcpu);
 
 	do {
 		struct kvm_cpu_context *hyp_ctxt = this_cpu_ptr(&kvm_hyp_ctxt);
@@ -339,7 +317,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	} while (fixup_guest_exit(vcpu, vgic, &exit_code));
 
 	__sysreg_save_state_nvhe(guest_ctxt);
-	__sysreg32_save_state(vcpu);
 	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
@@ -347,19 +324,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	__load_host_stage2();
 
 	__sysreg_restore_state_nvhe(host_ctxt);
-
-	if (hyp_state_flags(vcpu_hyps) & KVM_ARM64_FP_ENABLED)
-		__fpsimd_save_fpexc32(vcpu);
-
-	__debug_switch_to_host(vcpu);
-	/*
-	 * This must come after restoring the host sysregs, since a non-VHE
-	 * system may enable SPE here and make use of the TTBRs.
-	 */
-	__debug_restore_host_buffers_nvhe(vcpu);
-
-	if (pmu_switch_needed)
-		__pmu_switch_to_host(host_ctxt);
 
 	/* Returning to host will clear PSR.I, remask PMR if needed */
 	if (system_uses_irq_prio_masking())
