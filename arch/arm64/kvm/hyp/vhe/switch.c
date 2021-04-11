@@ -38,7 +38,7 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	u64 val;
 
-	___activate_traps(vcpu);
+	___activate_traps(&vcpu->arch.core_state);
 
 	val = read_sysreg(cpacr_el1);
 	val |= CPACR_EL1_TTA;
@@ -91,7 +91,7 @@ NOKPROBE_SYMBOL(__deactivate_traps);
 
 void activate_traps_vhe_load(struct kvm_vcpu *vcpu)
 {
-	__activate_traps_common(vcpu);
+	__activate_traps_common(&vcpu->arch.core_state);
 }
 
 void deactivate_traps_vhe_put(void)

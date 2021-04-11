@@ -81,7 +81,7 @@ static inline void __activate_traps_fpsimd32(struct kvm_vcpu *vcpu)
 	}
 }
 
-static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
+static inline void __activate_traps_common(struct kvm_vcpu_arch_core *core_state)
 {
 	/* Trap on AArch32 cp15 c15 (impdef sysregs) accesses (EL1 or EL0) */
 	write_sysreg(1 << 15, hstr_el2);
@@ -96,7 +96,7 @@ static inline void __activate_traps_common(struct kvm_vcpu *vcpu)
 		write_sysreg(0, pmselr_el0);
 		write_sysreg(ARMV8_PMU_USERENR_MASK, pmuserenr_el0);
 	}
-	write_sysreg(vcpu->arch.core_state.mdcr_el2, mdcr_el2);
+	write_sysreg(core_state->mdcr_el2, mdcr_el2);
 }
 
 static inline void __deactivate_traps_common(void)
@@ -106,9 +106,9 @@ static inline void __deactivate_traps_common(void)
 		write_sysreg(0, pmuserenr_el0);
 }
 
-static inline void ___activate_traps(struct kvm_vcpu *vcpu)
+static inline void ___activate_traps(struct kvm_vcpu_arch_core *core_state)
 {
-	u64 hcr = vcpu->arch.core_state.hcr_el2;
+	u64 hcr = core_state->hcr_el2;
 
 	if (cpus_have_final_cap(ARM64_WORKAROUND_CAVIUM_TX2_219_TVM))
 		hcr |= HCR_TVM;
@@ -116,7 +116,7 @@ static inline void ___activate_traps(struct kvm_vcpu *vcpu)
 	write_sysreg(hcr, hcr_el2);
 
 	if (cpus_have_final_cap(ARM64_HAS_RAS_EXTN) && (hcr & HCR_VSE))
-		write_sysreg_s(vcpu->arch.core_state.vsesr_el2, SYS_VSESR_EL2);
+		write_sysreg_s(core_state->vsesr_el2, SYS_VSESR_EL2);
 }
 
 static inline void ___deactivate_traps(struct kvm_vcpu_arch_core *core_state)
