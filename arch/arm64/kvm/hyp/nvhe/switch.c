@@ -118,7 +118,7 @@ static void __hyp_vgic_save_state(struct kvm_vcpu *vcpu)
 	}
 }
 
-/* Restore VGICv3 state on non_VEH systems */
+/* Restore VGICv3 state on nVHE systems */
 static void __hyp_vgic_restore_state(struct kvm_vcpu *vcpu)
 {
 	if (static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif)) {
@@ -165,7 +165,7 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 		write_sysreg(pmu->events_host, pmcntenset_el0);
 }
 
-/* Switch to the guest for legacy non-VHE systems */
+/* Switch to the guest for non-VHE an protected KVM systems */
 int __kvm_vcpu_run(struct kvm_vcpu *host_vcpu)
 {
 	struct kvm_vcpu *vcpu = kern_hyp_va(host_vcpu);
