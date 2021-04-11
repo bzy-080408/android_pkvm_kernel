@@ -415,10 +415,8 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu_arch_core *core_state)
  * the guest, false when we should restore the host state and return to the
  * main run loop.
  */
-static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+static inline bool _fixup_guest_exit(struct kvm *kvm, struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state, u64 *exit_code, bool is_protected)
 {
-	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
-
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
 		core_state->fault.esr_el2 = read_sysreg_el2(SYS_ESR);
 
@@ -458,7 +456,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	 * undefined instruction exception to the guest.
 	 * Similarly for trapped SVE accesses.
 	 */
-	if (__hyp_handle_fpsimd(vcpu))
+	if (!is_protected && __hyp_handle_fpsimd(vcpu))
 		goto guest;
 
 	if (__hyp_handle_ptrauth(core_state))
@@ -477,7 +475,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 			!kvm_vcpu_abt_iss1tw(core_state);
 
 		if (valid) {
-			int ret = __vgic_v2_perform_cpuif_access(vcpu);
+			int ret = __vgic_v2_perform_cpuif_access(&kvm->arch.vgic, core_state);
 
 			if (ret == 1)
 				goto guest;
@@ -490,7 +488,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 		}
 	}
 
-	if (static_branch_unlikely(&vgic_v3_cpuif_trap) &&
+	if (!is_protected && static_branch_unlikely(&vgic_v3_cpuif_trap) &&
 	    (kvm_vcpu_trap_get_class(core_state) == ESR_ELx_EC_SYS64 ||
 	     kvm_vcpu_trap_get_class(core_state) == ESR_ELx_EC_CP15_32)) {
 		int ret = __vgic_v3_perform_cpuif_access(vcpu);
@@ -507,6 +505,18 @@ guest:
 	/* Re-enter the guest */
 	asm(ALTERNATIVE("nop", "dmb sy", ARM64_WORKAROUND_1508412));
 	return true;
+}
+
+static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
+
+	return _fixup_guest_exit(kvm, vcpu, &vcpu->arch.core_state, exit_code, false);
+}
+
+static inline bool fixup_pvm_guest_exit(struct kvm *kvm, struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state, u64 *exit_code)
+{
+	return _fixup_guest_exit(kvm, vcpu, core_state, exit_code, true);
 }
 
 static inline void __kvm_unexpected_el2_exception(void)

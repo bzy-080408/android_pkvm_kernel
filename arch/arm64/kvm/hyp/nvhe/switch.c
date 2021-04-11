@@ -274,7 +274,10 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 /* Switch to the protected guest */
 static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 {
+	/* TODO: This will be the shadow core_state. */
 	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
+	/* TODO: This will be the shadow KVM. */
+	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
 	u64 exit_code;
@@ -300,6 +303,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
+	/* TODO: This will be the shadow hw_mmu. */
 	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
 	__activate_traps_pvm(core_state);
 
@@ -311,7 +315,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 		exit_code = __guest_enter(core_state);
 
 		/* And we're baaack! */
-	} while (fixup_guest_exit(vcpu, &exit_code));
+	} while (fixup_pvm_guest_exit(kvm, vcpu, core_state, &exit_code));
 
 	__sysreg_save_state_nvhe(guest_ctxt);
 	__timer_disable_traps();

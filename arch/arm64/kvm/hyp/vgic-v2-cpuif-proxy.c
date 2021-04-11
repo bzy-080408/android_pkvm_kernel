@@ -34,11 +34,8 @@ static bool __is_be(struct kvm_vcpu_arch_core *core_state)
  *  0: Not a GICV access
  * -1: Illegal GICV access successfully performed
  */
-int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
+int __vgic_v2_perform_cpuif_access(struct vgic_dist *vgic, struct kvm_vcpu_arch_core *core_state)
 {
-	struct kvm_vcpu_arch_core *core_state = &vcpu->arch.core_state;
-	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
-	struct vgic_dist *vgic = &kvm->arch.vgic;
 	phys_addr_t fault_ipa;
 	void __iomem *addr;
 	int rd;
