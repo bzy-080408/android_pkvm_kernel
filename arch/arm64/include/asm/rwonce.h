@@ -10,7 +10,7 @@
 #include <linux/compiler_types.h>
 #include <asm/alternative-macros.h>
 
-#ifndef BUILD_VDSO
+#if !defined(BUILD_VDSO) && !defined(BUILD_FIPS140_KO)
 
 #ifdef CONFIG_AS_HAS_LDAPR
 #define __LOAD_RCPC(sfx, regs...)					\
