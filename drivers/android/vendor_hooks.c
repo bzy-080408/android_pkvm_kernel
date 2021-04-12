@@ -58,6 +58,7 @@
 #include <trace/hooks/hung_task.h>
 #include <trace/hooks/mmc_core.h>
 #include <trace/hooks/libsha256.h>
+#include <trace/hooks/libaes.h>
 
 /*
  * Export tracepoints that act as a bare tracehook (ie: have no trace event
@@ -299,3 +300,6 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_save_vmalloc_stack);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_show_stack_hash);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_save_track_hash);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_sha256);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_aes_expandkey);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_aes_encrypt);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_aes_decrypt);
