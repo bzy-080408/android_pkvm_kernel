@@ -12,7 +12,7 @@
 
 #ifndef BUILD_VDSO
 
-#ifdef CONFIG_AS_HAS_LDAPR
+#if defined(CONFIG_AS_HAS_LDAPR) && !defined(BUILD_FIPS140_KO)
 #define __LOAD_RCPC(sfx, regs...)					\
 	ALTERNATIVE(							\
 		"ldar"	#sfx "\t" #regs,				\
