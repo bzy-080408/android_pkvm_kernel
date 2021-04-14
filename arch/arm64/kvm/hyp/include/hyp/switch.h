@@ -412,6 +412,18 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu_arch_core *core_state)
 	return true;
 }
 
+typedef int (*exit_handle_fn)(struct kvm_vcpu *, struct kvm_vcpu_arch_core *);
+
+exit_handle_fn kvm_get_nvhe_exit_handler(struct kvm_vcpu_arch_core *core_state);
+
+static exit_handle_fn kvm_get_hyp_exit_handler(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	if (is_nvhe_hyp_code())
+		return kvm_get_nvhe_exit_handler(core_state);
+	else
+		return NULL;
+}
+
 /*
  * Return true when we were able to fixup the guest exit and should return to
  * the guest, false when we should restore the host state and return to the
@@ -419,6 +431,8 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu_arch_core *core_state)
  */
 static inline bool _fixup_guest_exit(struct kvm *kvm, struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state, u64 *exit_code, bool is_protected)
 {
+	exit_handle_fn exit_handler;
+
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
 		core_state->fault.esr_el2 = read_sysreg_el2(SYS_ESR);
 
@@ -496,6 +510,17 @@ static inline bool _fixup_guest_exit(struct kvm *kvm, struct kvm_vcpu *vcpu, str
 		int ret = __vgic_v3_perform_cpuif_access(vcpu);
 
 		if (ret == 1)
+			goto guest;
+	}
+
+	/*
+	 * Check if there's an exit handler and allow it to handle the exit.
+	 *
+	 * For now limited to protected guests.
+	 */
+	if (is_protected) {
+		exit_handler = kvm_get_hyp_exit_handler(vcpu, core_state);
+		if (exit_handler && exit_handler(vcpu, core_state))
 			goto guest;
 	}
 

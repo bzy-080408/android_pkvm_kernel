@@ -176,6 +176,96 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 		write_sysreg(pmu->events_host, pmcntenset_el0);
 }
 
+typedef void (*entry_handle_fn)(const struct kvm_vcpu *, struct kvm_vcpu_arch_core *);
+
+static entry_handle_fn hyp_entry_handlers[] = {
+	[0 ... ESR_ELx_EC_MAX]		= NULL,
+	[ESR_ELx_EC_WFx]		= NULL,
+	[ESR_ELx_EC_CP15_32]		= NULL,
+	[ESR_ELx_EC_CP15_64]		= NULL,
+	[ESR_ELx_EC_CP14_MR]		= NULL,
+	[ESR_ELx_EC_CP14_LS]		= NULL,
+	[ESR_ELx_EC_CP14_64]		= NULL,
+	[ESR_ELx_EC_HVC32]		= NULL,
+	[ESR_ELx_EC_SMC32]		= NULL,
+	[ESR_ELx_EC_HVC64]		= NULL,
+	[ESR_ELx_EC_SMC64]		= NULL,
+	[ESR_ELx_EC_SYS64]		= NULL,
+	[ESR_ELx_EC_SVE]		= NULL,
+	[ESR_ELx_EC_IABT_LOW]		= NULL,
+	[ESR_ELx_EC_DABT_LOW]		= NULL,
+	[ESR_ELx_EC_SOFTSTP_LOW]	= NULL,
+	[ESR_ELx_EC_WATCHPT_LOW]	= NULL,
+	[ESR_ELx_EC_BREAKPT_LOW]	= NULL,
+	[ESR_ELx_EC_BKPT32]		= NULL,
+	[ESR_ELx_EC_BRK64]		= NULL,
+	[ESR_ELx_EC_FP_ASIMD]		= NULL,
+	[ESR_ELx_EC_PAC]		= NULL,
+};
+
+static exit_handle_fn hyp_exit_handlers[] = {
+	[0 ... ESR_ELx_EC_MAX]		= NULL,
+	[ESR_ELx_EC_WFx]		= NULL,
+	[ESR_ELx_EC_CP15_32]		= NULL,
+	[ESR_ELx_EC_CP15_64]		= NULL,
+	[ESR_ELx_EC_CP14_MR]		= NULL,
+	[ESR_ELx_EC_CP14_LS]		= NULL,
+	[ESR_ELx_EC_CP14_64]		= NULL,
+	[ESR_ELx_EC_HVC32]		= NULL,
+	[ESR_ELx_EC_SMC32]		= NULL,
+	[ESR_ELx_EC_HVC64]		= NULL,
+	[ESR_ELx_EC_SMC64]		= NULL,
+	[ESR_ELx_EC_SYS64]		= NULL,
+	[ESR_ELx_EC_SVE]		= NULL,
+	[ESR_ELx_EC_IABT_LOW]		= NULL,
+	[ESR_ELx_EC_DABT_LOW]		= NULL,
+	[ESR_ELx_EC_SOFTSTP_LOW]	= NULL,
+	[ESR_ELx_EC_WATCHPT_LOW]	= NULL,
+	[ESR_ELx_EC_BREAKPT_LOW]	= NULL,
+	[ESR_ELx_EC_BKPT32]		= NULL,
+	[ESR_ELx_EC_BRK64]		= NULL,
+	[ESR_ELx_EC_FP_ASIMD]		= NULL,
+	[ESR_ELx_EC_PAC]		= NULL,
+};
+
+exit_handle_fn kvm_get_nvhe_exit_handler(struct kvm_vcpu_arch_core *core_state)
+{
+	u32 esr = kvm_vcpu_get_esr(core_state);
+	u8 esr_ec = ESR_ELx_EC(esr);
+
+
+	return hyp_exit_handlers[esr_ec];
+}
+
+static void __process_hyp_vcpu_run_entry_state(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	entry_handle_fn entry_handler;
+	u8 esr_ec;
+
+	if (!core_state->pkvm.host_request_pending)
+		return;
+
+	esr_ec = ESR_ELx_EC(kvm_vcpu_get_esr(core_state));
+
+	/* TODO: For debugging. Remove. */
+	if (esr_ec >= ESR_ELx_EC_MAX)
+		HYP_PANIC;
+
+	entry_handler = hyp_entry_handlers[esr_ec];
+
+	/* TODO: For debugging. Remove. */
+	if (!entry_handler)
+		HYP_PANIC;
+
+	entry_handler(vcpu, core_state);
+
+	core_state->pkvm.host_request_pending = false;
+}
+
+static void __process_hyp_vcpu_run_exit_state(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+}
+
 /* Switch to the non-protected guest */
 static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 {
@@ -331,6 +421,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	__sysreg_save_state_nvhe(host_ctxt);
 
+	__process_hyp_vcpu_run_entry_state(vcpu, core_state);
 	__adjust_pc(core_state);
 
 	__sysreg_restore_state_nvhe(guest_ctxt);
@@ -356,6 +447,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	__deactivate_traps(core_state);
 	__load_host_stage2();
 
+	__process_hyp_vcpu_run_exit_state(vcpu, core_state);
 	__sysreg_restore_state_nvhe(host_ctxt);
 
 	/* Returning to host will clear PSR.I, remask PMR if needed */

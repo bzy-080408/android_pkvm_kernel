@@ -286,6 +286,13 @@ struct kvm_protected_vcpu {
 
 	/* A pointer to the associated KVM structure. */
 	struct kvm *kvm;
+
+	/*
+	 * Guest has a request pending for the host to handle on its behalf.
+	 *
+	 * Information about the request is communicated through host's vcpu.
+	 */
+	bool host_request_pending;
 };
 
 struct kvm_vcpu_arch_core {
