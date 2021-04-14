@@ -157,8 +157,8 @@ static void init_host_core(struct kvm_vcpu_arch_core *core, int shadow_handle)
 {
 	core->pkvm.shadow_handle = shadow_handle;
 
-	/* Set the PC to 0x0 so it doesn't confuse on traces and debugs. */
-	//*vcpu_pc(core) = 0x0;
+	/* Set the PC so it doesn't confuse on traces and debugs. */
+	*vcpu_pc(core) = 0x0;
 
 	/*
 	 * Treat the guest as if it were in EL1/H mode.
@@ -166,7 +166,7 @@ static void init_host_core(struct kvm_vcpu_arch_core *core, int shadow_handle)
 	 * For exception injection: inject into the guest's kernel.
 	 * Ensure that everything else is cleared.
 	 */
-	//*vcpu_cpsr(core) = PSR_MODE_EL1h;
+	*vcpu_cpsr(core) = PSR_MODE_EL1h;
 }
 
 /*

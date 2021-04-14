@@ -176,11 +176,190 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 		write_sysreg(pmu->events_host, pmcntenset_el0);
 }
 
+void handle_entry_wfx(const struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	const struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	core_state->flags = host_core->flags;
+}
+
+void handle_entry_hvc(const struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	const struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+
+	vcpu_set_reg(core_state, 0, vcpu_get_reg(host_core, 0));
+	vcpu_set_reg(core_state, 1, vcpu_get_reg(host_core, 1));
+	vcpu_set_reg(core_state, 2, vcpu_get_reg(host_core, 2));
+	vcpu_set_reg(core_state, 3, vcpu_get_reg(host_core, 3));
+
+	/*
+	 * TODO: Handle potential changes from PSCI calls.
+	 */
+}
+
+void handle_entry_sys64(const struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	const struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+	u32 esr_el2 = core_state->fault.esr_el2;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	core_state->flags = host_core->flags;
+
+	if (core_state->flags & KVM_ARM64_PENDING_EXCEPTION) {
+		/* All exceptions caused by this should be undef exceptions. */
+		u32 esr_el1 = (ESR_ELx_EC_UNKNOWN << ESR_ELx_EC_SHIFT);
+
+		__vcpu_sys_reg(core_state, ESR_EL1) = esr_el1;
+	} else if (esr_el2 & ESR_ELx_SYS64_ISS_DIR_READ) {
+		u64 rt_val = vcpu_get_reg(host_core, 0);
+		int rt = kvm_vcpu_sys_get_rt(core_state);
+
+		vcpu_set_reg(core_state, rt, rt_val);
+	}
+}
+
+void handle_entry_abt(const struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	// TODO: deal with kvm_set_sei_esr(), which might be called in RAS. Would it?
+
+	const struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	core_state->flags = host_core->flags;
+
+	if (core_state->flags & KVM_ARM64_PENDING_EXCEPTION) {
+		/* If the host wants to inject an exception, get syndrom and fault address. */
+		u32 esr_el1;
+		u32 far_el1 = kvm_vcpu_get_hfar(core_state);
+
+		if (kvm_vcpu_trap_is_iabt(core_state))
+			esr_el1 = ESR_ELx_EC_IABT_CUR << ESR_ELx_EC_SHIFT;
+		else
+			esr_el1 = ESR_ELx_EC_DABT_LOW << ESR_ELx_EC_SHIFT;
+
+		esr_el1 |= ESR_ELx_FSC_EXTABT;
+
+		__vcpu_sys_reg(core_state, ESR_EL1) = esr_el1;
+		__vcpu_sys_reg(core_state, FAR_EL1) = far_el1;
+	} else if (!kvm_vcpu_dabt_iswrite(core_state)) {
+		/* r0 is used for communicating between guest and host. */
+		u64 rd_val = vcpu_get_reg(host_core, 0);
+		int rd = kvm_vcpu_dabt_get_rd(core_state);
+
+		vcpu_set_reg(core_state, rd, rd_val);
+	}
+}
+
+static int handle_exit_wfx(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	if (is_nvhe_hyp_code()) {
+		struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+		u32 esr_el2 = core_state->fault.esr_el2;
+
+		/* TODO: Don't copy verbatim. Sanitize. */
+		host_core->flags = core_state->flags;
+		host_core->fault.esr_el2 = esr_el2;
+
+		core_state->pkvm.host_request_pending = true;
+	}
+
+	/* All is set up for the host to handle this. */
+	return 0;
+}
+
+static int handle_exit_sys64(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	if (is_nvhe_hyp_code()) {
+		struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+		u32 esr_el2 = core_state->fault.esr_el2;
+
+		/* TODO: Don't copy verbatim. Sanitize. */
+		host_core->flags = core_state->flags;
+
+		/* Host should not know the value of Rt. Set it to r0. */
+		host_core->fault.esr_el2 = esr_el2 & ~ESR_ELx_SYS64_ISS_RT_MASK;
+
+		/* For writes, pass the value to the host in its r0. */
+		if (esr_el2 & ESR_ELx_SYS64_ISS_DIR_WRITE) {
+			int rt = kvm_vcpu_sys_get_rt(core_state);
+			u64 rt_val = vcpu_get_reg(core_state, rt);
+
+			vcpu_set_reg(host_core, 0, rt_val);
+		}
+
+		core_state->pkvm.host_request_pending = true;
+	}
+
+	/* All is set up for the host to handle this. */
+	return 0;
+}
+
+static int handle_exit_hvc(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	if (is_nvhe_hyp_code()) {
+		struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+
+		host_core->fault.esr_el2 = core_state->fault.esr_el2;
+
+		/* SMCC in linux handles only four registers. */
+		vcpu_set_reg(host_core, 0, vcpu_get_reg(core_state, 0));
+		vcpu_set_reg(host_core, 1, vcpu_get_reg(core_state, 1));
+		vcpu_set_reg(host_core, 2, vcpu_get_reg(core_state, 2));
+		vcpu_set_reg(host_core, 3, vcpu_get_reg(core_state, 3));
+
+		core_state->pkvm.host_request_pending = true;
+	}
+
+	/* All is set up for the host to handle this. */
+	return 0;
+}
+
+static int handle_exit_abt(struct kvm_vcpu *vcpu, struct kvm_vcpu_arch_core *core_state)
+{
+	if (is_nvhe_hyp_code()) {
+		struct kvm_vcpu_arch_core *host_core = &vcpu->arch.core_state;
+		u32 esr_el2 = core_state->fault.esr_el2;
+
+		/* TODO: Don't copy verbatim. Sanitize. */
+		host_core->flags = core_state->flags;
+
+		/*
+		 * Host should not know what Rt is. All data exchange is done
+		 * though r0 in hyp_run using r0 in the host's vcpu as a proxy.
+		 */
+		if (esr_is_data_abort(esr_el2))
+			esr_el2 &= ~ESR_ELx_SRT_MASK;
+
+		/* TODO: Don't copy verbatim. Sanitize. */
+		host_core->fault.esr_el2 = esr_el2;
+		host_core->fault.far_el2 = core_state->fault.far_el2;
+		host_core->fault.hpfar_el2 = core_state->fault.hpfar_el2;
+		host_core->fault.disr_el1 = core_state->fault.disr_el1;
+
+		if (kvm_vcpu_dabt_iswrite(core_state)) {
+			int rt = kvm_vcpu_dabt_get_rd(core_state);
+			u64 rt_val = vcpu_get_reg(core_state, rt);
+
+			vcpu_set_reg(host_core, 0, rt_val);
+		}
+
+		/* TODO: not quite sure why this is needed. Investigate. */
+		if (kvm_vcpu_trap_is_iabt(core_state))
+			vcpu_set_reg(host_core, 0, vcpu_get_reg(core_state, 0));
+
+		core_state->pkvm.host_request_pending = true;
+	}
+
+	/* All is set up for the host to handle this. */
+	return 0;
+}
+
 typedef void (*entry_handle_fn)(const struct kvm_vcpu *, struct kvm_vcpu_arch_core *);
 
 static entry_handle_fn hyp_entry_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
-	[ESR_ELx_EC_WFx]		= NULL,
+	[ESR_ELx_EC_WFx]		= handle_entry_wfx,
 	[ESR_ELx_EC_CP15_32]		= NULL,
 	[ESR_ELx_EC_CP15_64]		= NULL,
 	[ESR_ELx_EC_CP14_MR]		= NULL,
@@ -188,12 +367,12 @@ static entry_handle_fn hyp_entry_handlers[] = {
 	[ESR_ELx_EC_CP14_64]		= NULL,
 	[ESR_ELx_EC_HVC32]		= NULL,
 	[ESR_ELx_EC_SMC32]		= NULL,
-	[ESR_ELx_EC_HVC64]		= NULL,
+	[ESR_ELx_EC_HVC64]		= handle_entry_hvc,
 	[ESR_ELx_EC_SMC64]		= NULL,
-	[ESR_ELx_EC_SYS64]		= NULL,
+	[ESR_ELx_EC_SYS64]		= handle_entry_sys64,
 	[ESR_ELx_EC_SVE]		= NULL,
-	[ESR_ELx_EC_IABT_LOW]		= NULL,
-	[ESR_ELx_EC_DABT_LOW]		= NULL,
+	[ESR_ELx_EC_IABT_LOW]		= handle_entry_abt,
+	[ESR_ELx_EC_DABT_LOW]		= handle_entry_abt,
 	[ESR_ELx_EC_SOFTSTP_LOW]	= NULL,
 	[ESR_ELx_EC_WATCHPT_LOW]	= NULL,
 	[ESR_ELx_EC_BREAKPT_LOW]	= NULL,
@@ -205,7 +384,7 @@ static entry_handle_fn hyp_entry_handlers[] = {
 
 static exit_handle_fn hyp_exit_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
-	[ESR_ELx_EC_WFx]		= NULL,
+	[ESR_ELx_EC_WFx]		= handle_exit_wfx,
 	[ESR_ELx_EC_CP15_32]		= NULL,
 	[ESR_ELx_EC_CP15_64]		= NULL,
 	[ESR_ELx_EC_CP14_MR]		= NULL,
@@ -213,12 +392,12 @@ static exit_handle_fn hyp_exit_handlers[] = {
 	[ESR_ELx_EC_CP14_64]		= NULL,
 	[ESR_ELx_EC_HVC32]		= NULL,
 	[ESR_ELx_EC_SMC32]		= NULL,
-	[ESR_ELx_EC_HVC64]		= NULL,
+	[ESR_ELx_EC_HVC64]		= handle_exit_hvc,
 	[ESR_ELx_EC_SMC64]		= NULL,
-	[ESR_ELx_EC_SYS64]		= NULL,
+	[ESR_ELx_EC_SYS64]		= handle_exit_sys64,
 	[ESR_ELx_EC_SVE]		= NULL,
-	[ESR_ELx_EC_IABT_LOW]		= NULL,
-	[ESR_ELx_EC_DABT_LOW]		= NULL,
+	[ESR_ELx_EC_IABT_LOW]		= handle_exit_abt,
+	[ESR_ELx_EC_DABT_LOW]		= handle_exit_abt,
 	[ESR_ELx_EC_SOFTSTP_LOW]	= NULL,
 	[ESR_ELx_EC_WATCHPT_LOW]	= NULL,
 	[ESR_ELx_EC_BREAKPT_LOW]	= NULL,
@@ -396,13 +575,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 		HYP_ASSERT(shadow_kvm->arch.pkvm.firmware_slot ==
 			   kern_hyp_va(kvm->arch.pkvm.firmware_slot));
 	}
-
-	/*
-	 * TODO: The rest of the code to only depend on the shadow state isn't
-	 * in place. Continue using the host's for now. This will be fixed later
-	 * in this patch series.
-	 */
-	core_state = &vcpu->arch.core_state;
 
 	/*
 	 * Having IRQs masked via PMR when entering the guest means the GIC
