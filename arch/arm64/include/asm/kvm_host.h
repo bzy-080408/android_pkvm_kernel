@@ -97,7 +97,8 @@ struct kvm_s2_mmu {
 	/* VTCR_EL2 value for this VM */
 	u64    vtcr;
 
-	struct kvm_arch *arch;
+	/* Points to the KVM's mmu lock. */
+	kvm_mmu_lock_t *lock;
 };
 
 struct kvm_arch_memory_slot {

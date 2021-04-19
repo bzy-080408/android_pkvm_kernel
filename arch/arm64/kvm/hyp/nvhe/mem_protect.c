@@ -104,7 +104,6 @@ int kvm_host_prepare_stage2(void *mem_pgt_pool, void *dev_pgt_pool)
 		return ret;
 
 	mmu->pgd_phys = __hyp_pa(host_kvm.pgt.pgd);
-	mmu->arch = &host_kvm.arch;
 	mmu->pgt = &host_kvm.pgt;
 	mmu->vmid.vmid_gen = 0;
 	mmu->vmid.vmid = 0;

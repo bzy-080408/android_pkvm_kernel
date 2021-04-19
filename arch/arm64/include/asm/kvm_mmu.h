@@ -288,9 +288,5 @@ static __always_inline void __load_guest_stage2(struct kvm_s2_mmu *mmu)
 	__load_stage2(mmu, kern_hyp_va(mmu)->vtcr);
 }
 
-static inline struct kvm *kvm_s2_mmu_to_kvm(struct kvm_s2_mmu *mmu)
-{
-	return container_of(mmu->arch, struct kvm, arch);
-}
 #endif /* __ASSEMBLY__ */
 #endif /* __ARM64_KVM_MMU_H__ */
