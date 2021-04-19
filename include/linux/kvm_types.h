@@ -18,6 +18,7 @@ struct kvm_memslots;
 
 enum kvm_mr_change;
 
+#include <linux/spinlock.h>
 #include <linux/types.h>
 
 #include <asm/kvm_types.h>
@@ -76,5 +77,10 @@ struct kvm_mmu_memory_cache {
 };
 #endif
 
+#ifdef KVM_HAVE_MMU_RWLOCK
+typedef rwlock_t kvm_mmu_lock_t;
+#else
+typedef spinlock_t kvm_mmu_lock_t;
+#endif /* KVM_HAVE_MMU_RWLOCK */
 
 #endif /* __KVM_TYPES_H__ */
