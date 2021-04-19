@@ -1015,7 +1015,7 @@ int kvm_pgtable_stage2_init_flags(struct kvm_pgtable *pgt, struct kvm_arch *arch
 				  enum kvm_pgtable_stage2_flags flags)
 {
 	size_t pgd_sz;
-	u64 vtcr = arch->vtcr;
+	u64 vtcr = arch->mmu.vtcr;
 	u32 ia_bits = VTCR_EL2_IPA(vtcr);
 	u32 sl0 = FIELD_GET(VTCR_EL2_SL0_MASK, vtcr);
 	u32 start_level = VTCR_EL2_TGRAN_SL0_BASE - sl0;

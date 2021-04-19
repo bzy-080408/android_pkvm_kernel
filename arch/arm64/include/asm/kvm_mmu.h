@@ -141,7 +141,7 @@ static __always_inline unsigned long __kern_hyp_va(unsigned long v)
  */
 #define KVM_PHYS_SHIFT	(40)
 
-#define kvm_phys_shift(kvm)		VTCR_EL2_IPA(kvm->arch.vtcr)
+#define kvm_phys_shift(kvm)		VTCR_EL2_IPA(kvm->arch.mmu.vtcr)
 #define kvm_phys_size(kvm)		(_AC(1, ULL) << kvm_phys_shift(kvm))
 #define kvm_phys_mask(kvm)		(kvm_phys_size(kvm) - _AC(1, ULL))
 
@@ -285,7 +285,7 @@ static __always_inline void __load_stage2(struct kvm_s2_mmu *mmu, unsigned long 
 
 static __always_inline void __load_guest_stage2(struct kvm_s2_mmu *mmu)
 {
-	__load_stage2(mmu, kern_hyp_va(mmu->arch)->vtcr);
+	__load_stage2(mmu, kern_hyp_va(mmu)->vtcr);
 }
 
 static inline struct kvm *kvm_s2_mmu_to_kvm(struct kvm_s2_mmu *mmu)

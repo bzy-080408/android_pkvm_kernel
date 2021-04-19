@@ -28,7 +28,7 @@
  * (IPA_SHIFT - 4).
  */
 #define stage2_pgtable_levels(ipa)	ARM64_HW_PGTABLE_LEVELS((ipa) - 4)
-#define kvm_stage2_levels(kvm)		VTCR_EL2_LVLS(kvm->arch.vtcr)
+#define kvm_stage2_levels(kvm)		VTCR_EL2_LVLS(kvm->arch.mmu.vtcr)
 
 /* stage2_pgdir_shift() is the size mapped by top-level stage2 entry for the VM */
 #define stage2_pgdir_shift(kvm)		pt_levels_pgdir_shift(kvm_stage2_levels(kvm))

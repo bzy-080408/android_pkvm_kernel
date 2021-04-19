@@ -82,8 +82,8 @@ static void prepare_host_vtcr(void)
 	parange = kvm_get_parange(id_aa64mmfr0_el1_sys_val);
 	phys_shift = id_aa64mmfr0_parange_to_phys_shift(parange);
 
-	host_kvm.arch.vtcr = kvm_get_vtcr(id_aa64mmfr0_el1_sys_val,
-					  id_aa64mmfr1_el1_sys_val, phys_shift);
+	host_kvm.arch.mmu.vtcr = kvm_get_vtcr(
+		id_aa64mmfr0_el1_sys_val, id_aa64mmfr1_el1_sys_val, phys_shift);
 }
 
 int kvm_host_prepare_stage2(void *mem_pgt_pool, void *dev_pgt_pool)
@@ -118,12 +118,12 @@ int __pkvm_prot_finalize(void)
 	struct kvm_nvhe_init_params *params = this_cpu_ptr(&kvm_init_params);
 
 	params->vttbr = kvm_get_vttbr(mmu);
-	params->vtcr = host_kvm.arch.vtcr;
+	params->vtcr = host_kvm.arch.mmu.vtcr;
 	params->hcr_el2 |= HCR_VM;
 	kvm_flush_dcache_to_poc(params, sizeof(*params));
 
 	write_sysreg(params->hcr_el2, hcr_el2);
-	__load_stage2(&host_kvm.arch.mmu, host_kvm.arch.vtcr);
+	__load_stage2(&host_kvm.arch.mmu, host_kvm.arch.mmu.vtcr);
 
 	/*
 	 * Make sure to have an ISB before the TLB maintenance below but only

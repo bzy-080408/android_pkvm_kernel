@@ -353,7 +353,7 @@ int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type)
 
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
-	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
+	kvm->arch.mmu.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
 
 	return 0;
 }

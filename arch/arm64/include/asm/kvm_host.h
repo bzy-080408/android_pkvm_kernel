@@ -94,6 +94,9 @@ struct kvm_s2_mmu {
 	/* The last vcpu id that ran on each physical CPU */
 	int __percpu *last_vcpu_ran;
 
+	/* VTCR_EL2 value for this VM */
+	u64    vtcr;
+
 	struct kvm_arch *arch;
 };
 
@@ -107,9 +110,6 @@ struct kvm_protected_vm {
 
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
-
-	/* VTCR_EL2 value for this VM */
-	u64    vtcr;
 
 	/* The maximum number of vCPUs depends on the used GIC model */
 	int max_vcpus;
