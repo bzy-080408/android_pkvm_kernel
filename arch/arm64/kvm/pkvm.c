@@ -119,13 +119,13 @@ static size_t shadow_size(const struct kvm *kvm)
 	 * kvm_vcpu_arch_core structures.
 	 * The remaining structs are not needed (for now).
 	 */
-	return sizeof(struct kvm) +
+	return sizeof(struct kvm_shadow_vm) +
 	       sizeof(struct kvm_vcpu_arch_core) * kvm->created_vcpus;
 }
 
 /*
  * Copy the host's kvm and core states into the donated shadow memory.
- * struct kvm is placed first, followed by a copy of all its cores.
+ * struct kvm_shadow_vm is placed first, followed by a copy of all its cores.
  *
  * The copies are all shallow copies, without any pointer values being fixed or
  * reset. It's up to hyp to fix these values.
@@ -134,13 +134,10 @@ static void copy_shadow_structs(void *shadow_addr, const struct kvm *host_kvm)
 {
 	int i;
 	struct kvm_vcpu_arch_core *shadow_cores;
-	struct kvm *kvm = shadow_addr;
 
-	memcpy(kvm, host_kvm, sizeof(*kvm));
-
-	/* Place shadow vcpus immediately after the shadow kvm struct. */
+	/* Place shadow vcpus immediately after the shadow vm. */
 	shadow_cores = (struct kvm_vcpu_arch_core *)
-		       ((unsigned long)shadow_addr + sizeof(*kvm));
+		       ((unsigned long)shadow_addr + sizeof(struct kvm_shadow_vm));
 
 	for (i = 0; i < host_kvm->created_vcpus; i++) {
 		struct kvm_vcpu_arch_core *shadow_core = &shadow_cores[i];
@@ -236,11 +233,11 @@ static int create_el2_shadow(struct kvm *kvm)
 
 	/* TODO: Only for debugging and sanity checking. */
 	printk(KERN_ALERT
-	       "%s:%d: SUCCESS: created_vcpus %d, shadow_order %u, shadow_num_pages %u, shadow_size(kvm) %lu, shadow_addr 0x%lx, sizeof(kvm) %lu, sizeof(kvm_vcpu_arch_core) %lu, ret %d, handle %d\n",
+	       "%s:%d: SUCCESS: created_vcpus %d, shadow_order %u, shadow_num_pages %u, shadow_size(kvm) %lu, shadow_addr 0x%lx, sizeof(kvm) %lu, sizeof(kvm_vcpu_arch_core) %lu, sizeof(kvm_shadow_vm) %lu, ret %d, handle %d\n",
 	       __func__, __LINE__, kvm->created_vcpus, shadow_order,
 	       (1u << shadow_order), shadow_size(kvm),
 	       (unsigned long)shadow_addr,
-	       sizeof(*kvm), sizeof(struct kvm_vcpu_arch_core), ret,
+	       sizeof(*kvm), sizeof(struct kvm_vcpu_arch_core), sizeof(struct kvm_shadow_vm), ret,
 	       kvm->arch.pkvm.shadow_handle);
 
 	return 0;

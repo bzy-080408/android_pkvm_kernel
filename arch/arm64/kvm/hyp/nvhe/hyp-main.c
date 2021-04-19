@@ -167,19 +167,18 @@ static void handle___pkvm_mark_hyp(struct kvm_cpu_context *host_ctxt)
 }
 static void handle___pkvm_init_shadow(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(const struct kvm *, host_kvm, host_ctxt, 1);
-	DECLARE_REG(void *, host_shadow_va, host_ctxt, 2);
-	DECLARE_REG(size_t, shadow_size, host_ctxt, 3);
+	DECLARE_REG(const struct kvm *, kvm, host_ctxt, 1);
+	DECLARE_REG(void *, shadow_va, host_ctxt, 2);
+	DECLARE_REG(size_t, size, host_ctxt, 3);
 
-	cpu_reg(host_ctxt, 1) = __pkvm_init_shadow(host_kvm, host_shadow_va,
-						       shadow_size);
+	cpu_reg(host_ctxt, 1) = __pkvm_init_shadow(kvm, shadow_va, size);
 }
 
 static void handle___pkvm_teardown_shadow(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(const struct kvm *, host_kvm, host_ctxt, 1);
+	DECLARE_REG(const struct kvm *, kvm, host_ctxt, 1);
 
-	__pkvm_teardown_shadow(host_kvm);
+	__pkvm_teardown_shadow(kvm);
 }
 
 typedef void (*hcall_t)(struct kvm_cpu_context *);

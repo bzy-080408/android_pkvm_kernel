@@ -110,6 +110,18 @@ struct kvm_protected_vm {
 	int shadow_handle;
 };
 
+/**
+ * Holds the relevant parts for the running of a protected VM.
+ * This strucutre contains the data that the hypervisor cannot trust the host
+ * with.
+ */
+struct kvm_shadow_vm {
+	/* TODO: Make this into a hyp-owned mmu. */
+	struct kvm_s2_mmu *mmu;
+	int created_vcpus;
+	int shadow_handle;
+};
+
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
 
@@ -284,8 +296,8 @@ struct kvm_protected_vcpu {
 	/* The handle id to the core struct in the hyp shadow area. */
 	int shadow_handle;
 
-	/* A pointer to the associated KVM structure. */
-	struct kvm *kvm;
+	/* A pointer to the associated shadow VM structure. */
+	struct kvm_shadow_vm *shadow_vm;
 
 	/*
 	 * Guest has a request pending for the host to handle on its behalf.

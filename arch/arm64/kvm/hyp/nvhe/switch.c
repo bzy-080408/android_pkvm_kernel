@@ -545,7 +545,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 {
 	struct kvm_vcpu_arch_core *core_state = hyp_get_shadow_core(vcpu);
-	/* TODO: This will be the shadow KVM. */
+	struct kvm_shadow_vm *shadow_vm = core_state->pkvm.shadow_vm;
 	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
@@ -553,27 +553,16 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	// TODO: Sanity checking for testing only. To be removed.
 	{
-		const struct kvm *shadow_kvm;
-
 		HYP_ASSERT(core_state);
 		HYP_ASSERT(core_state != &vcpu->arch.core_state);
 
-		shadow_kvm = core_state->pkvm.kvm;
-		HYP_ASSERT(shadow_kvm);
-		HYP_ASSERT(shadow_kvm != vcpu->kvm);
-		HYP_ASSERT(shadow_kvm != kvm);
-		HYP_ASSERT(shadow_kvm->created_vcpus == kvm->created_vcpus);
-		HYP_ASSERT(shadow_kvm->arch.max_vcpus == kvm->arch.max_vcpus);
-		HYP_ASSERT(shadow_kvm->arch.pfr0_csv2 == kvm->arch.pfr0_csv2);
-		HYP_ASSERT(shadow_kvm->arch.pfr0_csv3 == kvm->arch.pfr0_csv3);
-		HYP_ASSERT(shadow_kvm->arch.pkvm.enabled);
-		HYP_ASSERT(shadow_kvm->arch.pkvm.shadow_handle > 0);
-		HYP_ASSERT(shadow_kvm->arch.pkvm.shadow_handle ==
+		HYP_ASSERT(shadow_vm);
+		HYP_ASSERT(shadow_vm->created_vcpus == kvm->created_vcpus);
+		HYP_ASSERT(shadow_vm->shadow_handle > 0);
+		HYP_ASSERT(shadow_vm->shadow_handle ==
 			   kvm->arch.pkvm.shadow_handle);
-		HYP_ASSERT(shadow_kvm->arch.pkvm.shadow_handle ==
+		HYP_ASSERT(shadow_vm->shadow_handle ==
 			   core_state->pkvm.shadow_handle);
-		HYP_ASSERT(shadow_kvm->arch.pkvm.firmware_slot ==
-			   kern_hyp_va(kvm->arch.pkvm.firmware_slot));
 	}
 
 	/*
@@ -599,7 +588,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
 	/* TODO: This will be the shadow hw_mmu. */
-	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
+	__load_guest_stage2(shadow_vm->mmu);
 	__activate_traps_pvm(core_state);
 
 	__hyp_vgic_restore_state(vcpu);

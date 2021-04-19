@@ -99,7 +99,7 @@ static struct shadow_entry *get_shadow_entry(int shadow_handle)
 /*
  * Return a pointer to the hyp's shadow kvm corresponding to the handle.
  */
-static struct kvm *get_shadow_kvm(int shadow_handle)
+static struct kvm_shadow_vm *get_shadow_vm(int shadow_handle)
 {
 	const struct shadow_entry *shadow_entry;
 
@@ -107,18 +107,18 @@ static struct kvm *get_shadow_kvm(int shadow_handle)
 	if (unlikely(!shadow_entry))
 		return NULL;
 
-	return shadow_entry->kvm;
+	return shadow_entry->vm;
 }
 
 /*
  * Return a pointer to the kvm struct's ith shadow core.
  */
 static struct kvm_vcpu_arch_core *
-get_shadow_core_ptr(const struct kvm *kvm, int i)
+get_shadow_core_ptr(const struct kvm_shadow_vm *shadow_vm, int i)
 {
 	/* Shadow cores are located immediately after the shadow kvm. */
 	struct kvm_vcpu_arch_core *shadow_cores = (struct kvm_vcpu_arch_core *)
-		       ((unsigned long)kvm + sizeof(*kvm));
+		       ((unsigned long)shadow_vm + sizeof(*shadow_vm));
 
 	return &shadow_cores[i];
 }
@@ -130,7 +130,7 @@ struct kvm_vcpu_arch_core *hyp_get_shadow_core(const struct kvm_vcpu *vcpu)
 {
 	struct kvm_vcpu_arch_core *core;
 	const struct kvm_vcpu *vcpu_hyp_va;
-	const struct kvm *kvm;
+	const struct kvm_shadow_vm *shadow_vm;
 	int vcpu_idx;
 	int shadow_handle;
 
@@ -147,14 +147,14 @@ struct kvm_vcpu_arch_core *hyp_get_shadow_core(const struct kvm_vcpu *vcpu)
 	shadow_handle = vcpu_hyp_va->arch.core_state.pkvm.shadow_handle;
 	vcpu_idx = vcpu_hyp_va->vcpu_idx;
 
-	kvm = get_shadow_kvm(shadow_handle);
-	if (unlikely(!kvm))
+	shadow_vm = get_shadow_vm(shadow_handle);
+	if (unlikely(!shadow_vm))
 		return NULL;
 
-	if (unlikely(vcpu_idx < 0 || vcpu_idx >= kvm->created_vcpus))
+	if (unlikely(vcpu_idx < 0 || vcpu_idx >= shadow_vm->created_vcpus))
 		return NULL;
 
-	core = get_shadow_core_ptr(kvm, vcpu_idx);
+	core = get_shadow_core_ptr(shadow_vm, vcpu_idx);
 
 	update_shadow_core_cache(vcpu, core);
 
@@ -178,98 +178,40 @@ static int stage2_unmap_host(unsigned long pa, size_t size)
 }
 
 /*
- * Sanitize arch-dependent kvm shadow values.
+ * Initialize and sanitize the shadow_vm donated by the host.
  */
-static void fix_kvm_arch(struct kvm_arch *arch)
+static void fix_vm(const struct kvm *kvm, struct kvm_shadow_vm *shadow_vm)
 {
-	/*
-	 * TODO: Decide on how we're handling s2 mmu for protected guests.
-	 * For now do not use the shadow mmu.
-	 */
-	memset(&arch->mmu, 0, sizeof(arch->mmu));
+	shadow_vm->created_vcpus = kvm->created_vcpus;
 
-	/* GIC and PMU are not supported for protected VMs. */
-	memset(&arch->vgic, 0, sizeof(arch->vgic));
-	arch->pmu_filter = NULL;
-	arch->pmuver = 0;
-
-	/* Set the hyp virtual address for the firmware slot. */
-	arch->pkvm.firmware_slot = kern_hyp_va(arch->pkvm.firmware_slot);
-}
-
-/*
- * Fix and sanitize the values of the kvm donated by the host.
- */
-static void fix_kvm(struct kvm *kvm)
-{
-	refcount_set(&kvm->users_count, 1);
-	fix_kvm_arch(&kvm->arch);
-
-	kvm->mm = NULL;
-
-	memset(kvm->memslots, 0, sizeof(kvm->memslots));
-	memset(kvm->vcpus, 0, sizeof(kvm->vcpus));
-	memset(&kvm->vm_list, 0, sizeof(kvm->vm_list));
-	memset(kvm->buses, 0, sizeof(kvm->buses));
-
-#ifdef CONFIG_HAVE_KVM_EVENTFD
-	memset(&kvm->irqfds, 0, sizeof(kvm->irqfds));
-	memset(&kvm->ioeventfds, 0, sizeof(kvm->ioeventfds));
-#endif
-
-#ifdef CONFIG_KVM_MMIO
-	kvm->coalesced_mmio_ring = 0;
-	memset(&kvm->coalesced_zones, 0,
-	       sizeof(kvm->coalesced_zones));
-#endif
-
-#ifdef CONFIG_HAVE_KVM_IRQCHIP
-	kvm->irq_routing = NULL;
-#endif
-
-#ifdef CONFIG_HAVE_KVM_IRQFD
-	memset(&kvm->irq_ack_notifier_list, 0,
-	       sizeof(kvm->irq_ack_notifier_list));
-#endif
-
-#if defined(CONFIG_MMU_NOTIFIER) && defined(KVM_ARCH_WANT_MMU_NOTIFIER)
-	memset(&kvm->mmu_notifier, 0, sizeof(kvm->mmu_notifier));
-	kvm->mmu_notifier_count = 0;
-#endif
-	memset(&kvm->devices, 0, sizeof(kvm->devices));
-
-	kvm->debugfs_dentry = NULL;
-	kvm->debugfs_stat_data = NULL;
-	memset(&kvm->srcu, 0, sizeof(kvm->srcu));
-	memset(&kvm->irq_srcu, 0, sizeof(kvm->irq_srcu));
+	/* TODO: initialize the protected MMU. For now, use the host's. */
+	shadow_vm->mmu = &((struct kvm *)kvm)->arch.mmu;
 }
 
 /*
  * Fix and sanitize the values of the shadow_core donated by the host.
  */
 static void fix_core(struct kvm_vcpu_arch_core *shadow_core,
-		     struct kvm *kvm)
+		     struct kvm_shadow_vm *shadow_vm)
 {
 	/* Associate the core with its kvm. */
-	shadow_core->pkvm.shadow_handle = kvm->arch.pkvm.shadow_handle;
-	shadow_core->pkvm.kvm = kvm;
+	shadow_core->pkvm.shadow_handle = shadow_vm->shadow_handle;
+	shadow_core->pkvm.shadow_vm = shadow_vm;
 }
 
 /*
  * Fix and sanitize the values of the shadow_cores donated by the host, and
  * fix the corresponding pointer in the kvm.
  */
-static void fix_cores(struct kvm *kvm)
+static void fix_cores(struct kvm_shadow_vm *shadow_vm)
 {
 	int i;
 
-	for (i = 0; i < kvm->created_vcpus; i++) {
+	for (i = 0; i < shadow_vm->created_vcpus; i++) {
 		struct kvm_vcpu_arch_core *shadow_core =
-			get_shadow_core_ptr(kvm, i);
+			get_shadow_core_ptr(shadow_vm, i);
 
-		fix_core(shadow_core, kvm);
-		kvm->vcpus[i] =
-			NULL; // TODO: might be useful to maintain
+		fix_core(shadow_core, shadow_vm);
 	}
 }
 
@@ -281,32 +223,27 @@ static void fix_cores(struct kvm *kvm)
  *
  * Return 0 on success, negative error code on failure.
  */
-static int fix_shadow_structs(void *shadow_addr, size_t size)
+static int fix_shadow_structs(const struct kvm *kvm, void *shadow_addr, size_t size)
 
 {
-	int num_vcpus;
+	int num_vcpus = kvm->created_vcpus;
 	size_t expected_shadow_size;
-	struct kvm *kvm = (struct kvm *)shadow_addr;
+	struct kvm_shadow_vm *shadow_vm = (struct kvm_shadow_vm *)shadow_addr;
 
-	num_vcpus = kvm->created_vcpus;
 	if (num_vcpus < 1 || num_vcpus > KVM_MAX_VCPUS)
-		return -EINVAL;
-
-	/* Only use shadows for protected VMs. */
-	if (!kvm_vm_is_protected(kvm))
 		return -EINVAL;
 
 	/*
 	 * size is rounded up when allocated and donated by the host,
 	 * so it's likely larger than the sum of the struct sizes.
 	 */
-	expected_shadow_size = sizeof(struct kvm) +
+	expected_shadow_size = sizeof(struct kvm_shadow_vm) +
 			       sizeof(struct kvm_vcpu_arch_core) * num_vcpus;
 	if (size < expected_shadow_size)
 		return -EINVAL;
 
-	fix_kvm(kvm);
-	fix_cores(kvm);
+	fix_vm(kvm, shadow_vm);
+	fix_cores(shadow_vm);
 
 	return 0;
 }
@@ -317,8 +254,7 @@ static int fix_shadow_structs(void *shadow_addr, size_t size)
  * Return a unique handle to the protected VM on success,
  * negative error code on failure.
  */
-static int insert_shadow_table(struct kvm *kvm,
-			       const struct kvm *host_kvm,
+static int insert_shadow_table(struct kvm_shadow_vm *shadow_vm,
 			       size_t size)
 {
 	int ret;
@@ -340,14 +276,13 @@ static int insert_shadow_table(struct kvm *kvm,
 	}
 
 	/* Find the next free entry in the shadow table. */
-	while (shadow_table[next_shadow_alloc].kvm)
+	while (shadow_table[next_shadow_alloc].vm)
 		next_shadow_alloc = (next_shadow_alloc + 1) % KVM_MAX_PVMS;
 
 	shadow_table[next_shadow_alloc] =
-		(struct shadow_entry){ .kvm = kvm,
-				       .size = size };
+		(struct shadow_entry){ .vm = shadow_vm, .size = size };
 	ret = HANDLE_OFFSET + next_shadow_alloc;
-	kvm->arch.pkvm.shadow_handle = ret;
+	shadow_vm->shadow_handle = ret;
 
 	next_shadow_alloc = (next_shadow_alloc + 1) % KVM_MAX_PVMS;
 	num_shadow_entries++;
@@ -382,33 +317,33 @@ static void remove_shadow_table(struct shadow_entry *shadow_entry)
  * Return a unique handle to the protected VM on success,
  * negative error code on failure.
  */
-int __pkvm_init_shadow(const struct kvm *host_kvm,
-		       void *host_shadow_va,
-		       size_t size)
+int __pkvm_init_shadow(const struct kvm *kvm, void *shadow_va, size_t size)
 {
-	void *hyp_shadow_addr = kern_hyp_va(host_shadow_va);
+	void *hyp_shadow_addr = kern_hyp_va(shadow_va);
 	void *hyp_shadow_end =
 		(void *)((unsigned long)hyp_shadow_addr) + size;
-	struct kvm *kvm = hyp_shadow_addr;
-	const struct kvm *host_kvm_hyp = __hyp_pa(kern_hyp_va(host_kvm));
-	unsigned long host_shadow_pa = __pa((unsigned long)host_shadow_va);
+	struct kvm_shadow_vm *shadow_vm = hyp_shadow_addr;
+	unsigned long host_shadow_pa = __hyp_pa(kern_hyp_va(shadow_va));
 	int shadow_handle;
 	int ret = 0;
 
 	/* Don't automatically trust host-provided memory. */
-	ret = check_host_memory_addr((u64)host_kvm, sizeof(*host_kvm));
+	ret = check_host_memory_addr((u64)kvm, sizeof(*kvm));
 	if (ret < 0)
 		goto err;
 
-	ret = check_host_memory_addr((u64)host_shadow_va, size);
+	ret = check_host_memory_addr((u64)shadow_va, size);
 	if (ret < 0)
 		goto err;
+
+	kvm = kern_hyp_va(kvm);
 
 	/* Only use shadows for protected VMs. */
-	if (!kvm_vm_is_protected(host_kvm_hyp)) {
+	if (!kvm_vm_is_protected(kvm)) {
 		ret = -EINVAL;
 		goto err;
 	}
+
 	/* Unmap the donated shadow memory from the host's stage 2. */
 	ret = stage2_unmap_host(host_shadow_pa, size);
 	if (ret < 0)
@@ -425,14 +360,14 @@ int __pkvm_init_shadow(const struct kvm *host_kvm,
 		goto err_mark_host;
 
 	/* Add the entry to the shadow table. */
-	ret = insert_shadow_table(kvm, host_kvm, size);
+	ret = insert_shadow_table(shadow_vm, size);
 	if (ret < 0)
 		goto err_remove_hyp_mappings;
 
 	shadow_handle = ret;
 
 	/* Fix and sanitize the data in shadow memory. */
-	ret = fix_shadow_structs(hyp_shadow_addr, size);
+	ret = fix_shadow_structs(kvm, hyp_shadow_addr, size);
 	if (ret < 0)
 		goto err_clear_shadow;
 
@@ -454,36 +389,38 @@ err:
 	return ret;
 }
 
-void __pkvm_teardown_shadow(const struct kvm *host_kvm)
+void __pkvm_teardown_shadow(const struct kvm *kvm)
 {
-	struct kvm *kvm;
-	const struct kvm *host_kvm_hyp;
+	struct kvm_shadow_vm *shadow_vm;
 	struct shadow_entry *shadow_entry;
 	size_t size;
-	phys_addr_t shadow_kvm_pa;
+	phys_addr_t shadow_vm_pa;
 	int shadow_handle;
 
-	/* Don't trust the host that this memory location is legit. */
-	if (unlikely(
-		    check_host_memory_addr((u64)host_kvm, sizeof(*host_kvm))))
+	/* Don't automatically trust host-provided memory. */
+	if (check_host_memory_addr((u64)kvm, sizeof(*kvm)) < 0)
 		return;
 
-	host_kvm_hyp = kern_hyp_va(host_kvm);
+	kvm = kern_hyp_va(kvm);
 
-	shadow_handle = host_kvm->arch.pkvm.shadow_handle;
+	/* Only use shadows for protected VMs. */
+	if (!kvm_vm_is_protected(kvm))
+		return;
+
+	shadow_handle = kvm->arch.pkvm.shadow_handle;
 
 	/* Lookup then remove entry from the shadow table. */
 	shadow_entry = get_shadow_entry(shadow_handle);
 	size = shadow_entry->size;
-	kvm = shadow_entry->kvm;
-	shadow_kvm_pa = __hyp_pa(kern_hyp_va(kvm));
+	shadow_vm = shadow_entry->vm;
+	shadow_vm_pa = __hyp_pa(kern_hyp_va(shadow_vm));
 	remove_shadow_table(shadow_entry);
 
 	/* Clear the shadow memory since hyp is releasing it back to host. */
-	memset(kvm, 0, size);
+	memset(shadow_vm, 0, size);
 
 	/* TODO: Remove hyp mappings for the donated shadow area. */
 
 	/* Return shadow memory ownership to the host. */
-	__pkvm_mark_host(shadow_kvm_pa, shadow_kvm_pa + size);
+	__pkvm_mark_host(shadow_vm_pa, shadow_vm_pa + size);
 }
