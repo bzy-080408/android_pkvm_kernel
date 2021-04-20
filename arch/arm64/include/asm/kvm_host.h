@@ -276,26 +276,34 @@ struct vcpu_reset_state {
 	bool		reset;
 };
 
+/* Holds the hyp-relevant data of a vcpu.*/
+struct vcpu_hyp_state {
+	/* HYP configuration */
+	u64 hcr_el2;
+	u32 mdcr_el2;
+
+	/* Virtual SError ESR to restore when HCR_EL2.VSE is set */
+	u64 vsesr_el2;
+
+	/* Exception Information */
+	struct kvm_vcpu_fault_info fault;
+
+	/* Miscellaneous vcpu state flags */
+	u64 flags;
+};
+
 struct kvm_vcpu_arch {
 	struct kvm_cpu_context ctxt;
 	void *sve_state;
 	unsigned int sve_max_vl;
 
+	struct vcpu_hyp_state hyp_state;
+
 	/* Stage 2 paging state used by the hardware on next switch */
 	struct kvm_s2_mmu *hw_mmu;
 
-	/* HYP configuration */
-	u64 hcr_el2;
-	u32 mdcr_el2;
-
-	/* Exception Information */
-	struct kvm_vcpu_fault_info fault;
-
 	/* State of various workarounds, see kvm_asm.h for bit assignment */
 	u64 workaround_flags;
-
-	/* Miscellaneous vcpu state flags */
-	u64 flags;
 
 	/*
 	 * We maintain more than a single set of debug registers to support
@@ -361,9 +369,6 @@ struct kvm_vcpu_arch {
 	/* Detect first run of a vcpu */
 	bool has_run_once;
 
-	/* Virtual SError ESR to restore when HCR_EL2.VSE is set */
-	u64 vsesr_el2;
-
 	/* Additional reset state */
 	struct vcpu_reset_state	reset_state;
 
@@ -378,7 +383,7 @@ struct kvm_vcpu_arch {
 	} steal;
 };
 
-#define hyp_state(vcpu) ((vcpu)->arch)
+#define hyp_state(vcpu) ((vcpu)->arch.hyp_state)
 
 /* Accessors for hyp_state parameters related to the hypervistor state. */
 #define hyp_state_hcr_el2(hyps) (hyps)->hcr_el2
@@ -637,7 +642,7 @@ void kvm_arm_halt_guest(struct kvm *kvm);
 void kvm_arm_resume_guest(struct kvm *kvm);
 
 #ifndef __KVM_NVHE_HYPERVISOR__
-#define kvm_call_hyp_nvhe(f, ...)						\
+#define kvm_call_hyp_nvhe(f, ...)					\
 	({								\
 		struct arm_smccc_res res;				\
 									\
