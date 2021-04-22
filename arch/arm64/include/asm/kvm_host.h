@@ -378,6 +378,13 @@ struct kvm_vcpu_arch {
 	} steal;
 };
 
+/* Accessors for vcpu parameters related to the hypervistor state. */
+#define vcpu_hcr_el2(vcpu) (vcpu)->arch.hcr_el2
+#define vcpu_mdcr_el2(vcpu) (vcpu)->arch.mdcr_el2
+#define vcpu_vsesr_el2(vcpu) (vcpu)->arch.vsesr_el2
+#define vcpu_fault(vcpu) (vcpu)->arch.fault
+#define vcpu_flags(vcpu) (vcpu)->arch.flags
+
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */
 #define vcpu_sve_pffr(vcpu) (kern_hyp_va((vcpu)->arch.sve_state) +	\
 			     sve_ffr_offset((vcpu)->arch.sve_max_vl))
