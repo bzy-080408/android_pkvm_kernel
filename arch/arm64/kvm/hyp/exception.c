@@ -18,43 +18,68 @@
 #error Hypervisor code only!
 #endif
 
-static inline u64 __vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg)
+static inline u64 __ctxt_read_sys_reg(const struct kvm_cpu_context *vcpu_ctxt, int reg)
 {
 	u64 val;
 
 	if (__vcpu_read_sys_reg_from_cpu(reg, &val))
 		return val;
 
-	return __vcpu_sys_reg(vcpu, reg);
+	return ctxt_sys_reg(vcpu_ctxt, reg);
 }
 
-static inline void __vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
+static inline void __ctxt_write_sys_reg(struct kvm_cpu_context *vcpu_ctxt, u64 val, int reg)
 {
 	if (__vcpu_write_sys_reg_to_cpu(val, reg))
 		return;
 
-	 __vcpu_sys_reg(vcpu, reg) = val;
+	 ctxt_sys_reg(vcpu_ctxt, reg) = val;
 }
 
-static void __vcpu_write_spsr(struct kvm_vcpu *vcpu, u64 val)
+static void __ctxt_write_spsr(struct kvm_cpu_context *vcpu_ctxt, u64 val)
 {
 	write_sysreg_el1(val, SYS_SPSR);
 }
 
-static void __vcpu_write_spsr_abt(struct kvm_vcpu *vcpu, u64 val)
+static void __ctxt_write_spsr_abt(struct kvm_cpu_context *vcpu_ctxt, u64 val)
 {
 	if (has_vhe())
 		write_sysreg(val, spsr_abt);
 	else
-		vcpu->arch.ctxt.spsr_abt = val;
+		*ctxt_spsr_abt(vcpu_ctxt) = val;
 }
 
-static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
+static void __ctxt_write_spsr_und(struct kvm_cpu_context *vcpu_ctxt, u64 val)
 {
 	if (has_vhe())
 		write_sysreg(val, spsr_und);
 	else
-		vcpu->arch.ctxt.spsr_und = val;
+		*ctxt_spsr_und(vcpu_ctxt) = val;
+}
+
+static inline u64 __vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg)
+{
+	return __ctxt_read_sys_reg(&vcpu_ctxt(vcpu), reg);
+}
+
+static inline void __vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
+{
+	__ctxt_write_sys_reg(&vcpu_ctxt(vcpu), val, reg);
+}
+
+static void __vcpu_write_spsr(struct kvm_vcpu *vcpu, u64 val)
+{
+	__ctxt_write_spsr(&vcpu_ctxt(vcpu), val);
+}
+
+static void __vcpu_write_spsr_abt(struct kvm_vcpu *vcpu, u64 val)
+{
+	__ctxt_write_spsr_abt(&vcpu_ctxt(vcpu), val);
+}
+
+static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
+{
+	__ctxt_write_spsr_und(&vcpu_ctxt(vcpu), val);
 }
 
 /*

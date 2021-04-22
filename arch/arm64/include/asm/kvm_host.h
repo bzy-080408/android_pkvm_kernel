@@ -445,7 +445,23 @@ struct kvm_vcpu_arch {
 #define vcpu_has_ptrauth(vcpu)		false
 #endif
 
-#define vcpu_gp_regs(v)		(&(v)->arch.ctxt.regs)
+#define vcpu_ctxt(vcpu) ((vcpu)->arch.ctxt)
+
+/* VCPU Context accessors (direct) */
+#define ctxt_gp_regs(c)		(&(c)->regs)
+#define ctxt_spsr_abt(c)	(&(c)->spsr_abt)
+#define ctxt_spsr_und(c)	(&(c)->spsr_und)
+#define ctxt_spsr_irq(c)	(&(c)->spsr_irq)
+#define ctxt_spsr_fiq(c)	(&(c)->spsr_fiq)
+#define ctxt_fp_regs(c)		(&(c)->fp_regs)
+
+/* VCPU Context accessors */
+#define vcpu_gp_regs(v)		ctxt_gp_regs(&vcpu_ctxt(v))
+#define vcpu_spsr_abt(v)	ctxt_spsr_abt(&vcpu_ctxt(v))
+#define vcpu_spsr_und(v)	ctxt_spsr_und(&vcpu_ctxt(v))
+#define vcpu_spsr_irq(v)	ctxt_spsr_irq(&vcpu_ctxt(v))
+#define vcpu_spsr_fiq(v)	ctxt_spsr_fiq(&vcpu_ctxt(v))
+#define vcpu_fp_regs(v)		ctxt_fp_regs(&vcpu_ctxt(v))
 
 /*
  * Only use __vcpu_sys_reg/ctxt_sys_reg if you know you want the

@@ -127,19 +127,34 @@ static inline void vcpu_set_vsesr(struct kvm_vcpu *vcpu, u64 vsesr)
 	vcpu->arch.vsesr_el2 = vsesr;
 }
 
+static __always_inline unsigned long *ctxt_pc(const struct kvm_cpu_context *ctxt)
+{
+	return (unsigned long *)&ctxt_gp_regs(ctxt)->pc;
+}
+
 static __always_inline unsigned long *vcpu_pc(const struct kvm_vcpu *vcpu)
 {
-	return (unsigned long *)&vcpu_gp_regs(vcpu)->pc;
+	return ctxt_pc(&vcpu_ctxt(vcpu));
+}
+
+static __always_inline unsigned long *ctxt_cpsr(const struct kvm_cpu_context *ctxt)
+{
+	return (unsigned long *)&ctxt_gp_regs(ctxt)->pstate;
 }
 
 static __always_inline unsigned long *vcpu_cpsr(const struct kvm_vcpu *vcpu)
 {
-	return (unsigned long *)&vcpu_gp_regs(vcpu)->pstate;
+	return ctxt_cpsr(&vcpu_ctxt(vcpu));
+}
+
+static __always_inline bool ctxt_mode_is_32bit(const struct kvm_cpu_context *ctxt)
+{
+	return !!(*ctxt_cpsr(ctxt) & PSR_MODE32_BIT);
 }
 
 static __always_inline bool vcpu_mode_is_32bit(const struct kvm_vcpu *vcpu)
 {
-	return !!(*vcpu_cpsr(vcpu) & PSR_MODE32_BIT);
+	return ctxt_mode_is_32bit(&vcpu_ctxt(vcpu));
 }
 
 static __always_inline bool kvm_condition_valid(const struct kvm_vcpu *vcpu)
@@ -150,27 +165,45 @@ static __always_inline bool kvm_condition_valid(const struct kvm_vcpu *vcpu)
 	return true;
 }
 
+static inline void ctxt_set_thumb(struct kvm_cpu_context *ctxt)
+{
+	*ctxt_cpsr(ctxt) |= PSR_AA32_T_BIT;
+}
+
 static inline void vcpu_set_thumb(struct kvm_vcpu *vcpu)
 {
-	*vcpu_cpsr(vcpu) |= PSR_AA32_T_BIT;
+	ctxt_set_thumb(&vcpu_ctxt(vcpu));
 }
 
 /*
- * vcpu_get_reg and vcpu_set_reg should always be passed a register number
- * coming from a read of ESR_EL2. Otherwise, it may give the wrong result on
- * AArch32 with banked registers.
+ * vcpu/ctxt_get_reg and vcpu/ctxt_set_reg should always be passed a register
+ * number coming from a read of ESR_EL2. Otherwise, it may give the wrong result
+ * on AArch32 with banked registers.
  */
+static __always_inline unsigned long
+ctxt_get_reg(const struct kvm_cpu_context *ctxt, u8 reg_num)
+{
+	return (reg_num == 31) ? 0 : ctxt_gp_regs(ctxt)->regs[reg_num];
+}
+
+static __always_inline void
+ctxt_set_reg(struct kvm_cpu_context *ctxt, u8 reg_num, unsigned long val)
+{
+	if (reg_num != 31)
+		ctxt_gp_regs(ctxt)->regs[reg_num] = val;
+}
+
 static __always_inline unsigned long vcpu_get_reg(const struct kvm_vcpu *vcpu,
 					 u8 reg_num)
 {
-	return (reg_num == 31) ? 0 : vcpu_gp_regs(vcpu)->regs[reg_num];
+	return ctxt_get_reg(&vcpu_ctxt(vcpu), reg_num);
+
 }
 
 static __always_inline void vcpu_set_reg(struct kvm_vcpu *vcpu, u8 reg_num,
 				unsigned long val)
 {
-	if (reg_num != 31)
-		vcpu_gp_regs(vcpu)->regs[reg_num] = val;
+	ctxt_set_reg(&vcpu_ctxt(vcpu), reg_num, val);
 }
 
 /*
