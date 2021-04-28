@@ -27,6 +27,19 @@ static bool is_ffa_call(u64 func_id)
 	       ARM_SMCCC_FUNC_NUM(func_id) <= FFA_MAX_FUNC_NUM;
 }
 
+/**
+ * ffa_version() - Handles the FFA_VERSION function.
+ * @input_version: The version passed by the caller; not currently used.
+ *
+ * Return: The supported FF-A version, encoded appropriately.
+ */
+static struct arm_smccc_1_2_regs ffa_version(u32 input_version)
+{
+	return (struct arm_smccc_1_2_regs){
+		.a0 = FFA_SUPPORTED_VERSION,
+	};
+}
+
 bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 {
 	struct arm_smccc_1_2_regs ret;
@@ -73,6 +86,8 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 		break;
 	}
 	case FFA_VERSION:
+		ret = ffa_version(a1);
+		break;
 	case FFA_RXTX_MAP:
 	case FFA_RXTX_UNMAP:
 	case FFA_MEM_DONATE:
