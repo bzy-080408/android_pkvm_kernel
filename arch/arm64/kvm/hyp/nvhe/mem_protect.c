@@ -946,7 +946,7 @@ static int hyp_ack_share(u64 addr, const struct pkvm_mem_transition *tx,
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
 
-	if (perms != PAGE_HYP)
+	if (perms != PAGE_HYP && perms != PAGE_HYP_RO)
 		return -EPERM;
 
 	if (__hyp_ack_skip_pgtable_check(tx))
@@ -1469,6 +1469,94 @@ static int do_donate(struct pkvm_mem_donation *donation)
 		return ret;
 
 	return WARN_ON(__do_donate(donation));
+}
+
+/**
+ * __pkvm_host_check_share_hyp_prot() - Checks whether the host is allowed to
+ *                                      share the given range of pages with the
+ *                                      hypervisor with the given permissions.
+ * @host_addr:
+ *   The IPA of the start of the memory range in the host stage-2 page table.
+ * @size: The length of the memory range in bytes.
+ * @prot:
+ *   The permissions with which the memory would be mapped into the hypervisor
+ *   page table.
+ *
+ * Context: The caller must hold both ```host_kvm.lock``` and
+ * ```pkvm_pgd_lock```.
+ *
+ * Return: 0 if the transition is valid, or a negative error value if not.
+ */
+int __pkvm_host_check_share_hyp_prot(hpa_t host_addr, size_t size,
+				     enum kvm_pgtable_prot prot)
+{
+	void *hyp_addr = __hyp_va(host_addr);
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = (u64) hyp_addr,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_HYP,
+			},
+		},
+		.prot	= prot,
+	};
+
+	return check_share(&share);
+}
+
+/**
+ * __pkvm_host_share_hyp_prot() - Shares the given range of pages from the host
+ *                                to the hypervisor.
+ * @host_addr:
+ *   The IPA of the start of the memory range in the host stage-2 page table.
+ * @size: The length of the memory range in bytes.
+ * @prot:
+ *   The permissions with which the memory should be mapped into the hypervisor
+ *   page table.
+ * @hyp_addr_ret:
+ *   A pointer through which to return the virtual address at which the memory
+ *   range is mapped in the hypervisor page table.
+ *
+ * Context: The caller must hold both ```host_kvm.lock``` and
+ * ```pkvm_pgd_lock```.
+ *
+ * Return: 0 on success, or a negative error value on failure.
+ */
+int __pkvm_host_share_hyp_prot(hpa_t host_addr, size_t size,
+			       enum kvm_pgtable_prot prot, void **hyp_addr_ret)
+{
+	int ret;
+	void *hyp_addr = __hyp_va(host_addr);
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = (u64) hyp_addr,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_HYP,
+			},
+		},
+		.prot	= prot,
+	};
+
+	ret = do_share(&share);
+
+	if (ret == 0 && hyp_addr_ret != NULL)
+		*hyp_addr_ret = hyp_addr;
+
+	return ret;
 }
 
 int __pkvm_host_share_hyp(u64 pfn)

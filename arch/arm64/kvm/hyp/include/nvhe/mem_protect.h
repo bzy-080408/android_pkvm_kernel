@@ -8,6 +8,7 @@
 #define __KVM_NVHE_MEM_PROTECT__
 #include <linux/kvm_host.h>
 #include <asm/kvm_hyp.h>
+#include <asm/kvm_mmu.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/virt.h>
 #include <nvhe/spinlock.h>
@@ -43,21 +44,40 @@ static inline enum pkvm_page_state pkvm_getstate(enum kvm_pgtable_prot prot)
 	return prot & PKVM_PAGE_STATE_PROT_MASK;
 }
 
+/**
+ * struct host_kvm - properties and state of the host VM.
+ * @tx_buffer:
+ *   The FF-A TX buffer which the host has configured, mapped to the
+ *   hypervisor's VA space.
+ * @rx_buffer:
+ *   The FF-A RX buffer which the host has configured, mapped to the
+ *   hypervisor's VA space.
+ */
 struct host_kvm {
 	struct kvm_arch arch;
 	struct kvm_pgtable pgt;
 	struct kvm_pgtable_mm_ops mm_ops;
 	hyp_spinlock_t lock;
+	void *tx_buffer;
+	void *rx_buffer;
 };
 extern struct host_kvm host_kvm;
 
 typedef u32 pkvm_id;
 
+/** The ID of the host VM. */
+extern const pkvm_id pkvm_host_id;
+
+/** The ID of the hypervisor itself. */
 extern const pkvm_id pkvm_hyp_id;
 
 extern unsigned long hyp_nr_cpus;
 
 int __pkvm_prot_finalize(void);
+int __pkvm_host_check_share_hyp_prot(hpa_t host_addr, size_t size,
+				     enum kvm_pgtable_prot prot);
+int __pkvm_host_share_hyp_prot(hpa_t host_addr, size_t size,
+			       enum kvm_pgtable_prot prot, void **hyp_addr_ret);
 int __pkvm_host_share_hyp(u64 pfn);
 int __pkvm_host_unshare_hyp(u64 pfn);
 int __pkvm_host_reclaim_page(u64 pfn);
