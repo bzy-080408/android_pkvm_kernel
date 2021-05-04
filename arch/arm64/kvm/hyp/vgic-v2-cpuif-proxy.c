@@ -34,19 +34,15 @@ static bool __is_be(struct kvm_cpu_context *vcpu_ctxt)
  *  0: Not a GICV access
  * -1: Illegal GICV access successfully performed
  */
-int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
+int __vgic_v2_perform_cpuif_access(struct vgic_dist *vgic, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
-	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
-	struct vgic_dist *vgic = &kvm->arch.vgic;
 	phys_addr_t fault_ipa;
 	void __iomem *addr;
 	int rd;
 
 	/* Build the full address */
-	fault_ipa  = kvm_vcpu_get_fault_ipa(vcpu);
-	fault_ipa |= kvm_vcpu_get_hfar(vcpu) & GENMASK(11, 0);
+	fault_ipa  = kvm_hyp_state_get_fault_ipa(vcpu_hyps);
+	fault_ipa |= kvm_hyp_state_get_hfar(vcpu_hyps) & GENMASK(11, 0);
 
 	/* If not for GICV, move on */
 	if (fault_ipa <  vgic->vgic_cpu_base ||
@@ -54,7 +50,7 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 		return 0;
 
 	/* Reject anything but a 32bit access */
-	if (kvm_vcpu_dabt_get_as(vcpu) != sizeof(u32)) {
+	if (kvm_hyp_state_dabt_get_as(vcpu_hyps) != sizeof(u32)) {
 		__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 		return -1;
 	}
@@ -65,11 +61,11 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 		return -1;
 	}
 
-	rd = kvm_vcpu_dabt_get_rd(vcpu);
+	rd = kvm_hyp_state_dabt_get_rd(vcpu_hyps);
 	addr  = kvm_vgic_global_state.vcpu_hyp_va;
 	addr += fault_ipa - vgic->vgic_cpu_base;
 
-	if (kvm_vcpu_dabt_iswrite(vcpu)) {
+	if (kvm_hyp_state_dabt_iswrite(vcpu_hyps)) {
 		u32 data = ctxt_get_reg(vcpu_ctxt, rd);
 		if (__is_be(vcpu_ctxt)) {
 			/* guest pre-swabbed data, undo this for writel() */

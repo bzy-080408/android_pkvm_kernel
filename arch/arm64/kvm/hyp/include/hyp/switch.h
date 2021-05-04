@@ -426,7 +426,7 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
  * the guest, false when we should restore the host state and return to the
  * main run loop.
  */
-static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, struct vgic_dist *vgic, u64 *exit_code)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
@@ -488,7 +488,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 			!kvm_vcpu_abt_iss1tw(vcpu);
 
 		if (valid) {
-			int ret = __vgic_v2_perform_cpuif_access(vcpu);
+			int ret = __vgic_v2_perform_cpuif_access(vgic, vcpu_ctxt, vcpu_hyps);
 
 			if (ret == 1)
 				goto guest;
