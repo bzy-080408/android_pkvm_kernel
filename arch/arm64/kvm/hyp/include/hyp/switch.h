@@ -425,11 +425,8 @@ static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
  * the guest, false when we should restore the host state and return to the
  * main run loop.
  */
-static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, struct vgic_dist *vgic, u64 *exit_code)
+static inline bool _fixup_guest_exit(struct kvm_vcpu *vcpu, struct vgic_dist *vgic, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps, u64 *exit_code)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
-
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
 		hyp_state_fault(vcpu_hyps).esr_el2 = read_sysreg_el2(SYS_ESR);
 
@@ -518,6 +515,24 @@ guest:
 	/* Re-enter the guest */
 	asm(ALTERNATIVE("nop", "dmb sy", ARM64_WORKAROUND_1508412));
 	return true;
+}
+
+static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
+	struct vcpu_hyp_state *hyps = &vcpu->arch.hyp_state;
+	// TODO: create helper for getting VA
+	struct kvm *kvm = vcpu->kvm;
+
+	if (is_nvhe_hyp_code())
+		kvm = kern_hyp_va(kvm);
+
+	return _fixup_guest_exit(vcpu, &kvm->arch.vgic, ctxt, hyps, exit_code);
+}
+
+static inline bool fixup_pvm_guest_exit(struct kvm_vcpu *vcpu, struct vgic_dist *vgic, struct kvm_cpu_context *ctxt, struct vcpu_hyp_state *hyps, u64 *exit_code)
+{
+	return _fixup_guest_exit(vcpu, vgic, ctxt, hyps, exit_code);
 }
 
 static inline void __kvm_unexpected_el2_exception(void)
