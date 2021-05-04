@@ -55,7 +55,7 @@ DECLARE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
  */
 #define __kvm_swab32(x)	___constant_swab32(x)
 
-int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu);
+int __vgic_v2_perform_cpuif_access(struct vgic_dist *vgic, struct kvm_cpu_context *ctxt, struct vcpu_hyp_state *hyps);
 
 void __vgic_v3_save_state(struct vgic_v3_cpu_if *cpu_if);
 void __vgic_v3_restore_state(struct vgic_v3_cpu_if *cpu_if);
