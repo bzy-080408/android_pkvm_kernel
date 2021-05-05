@@ -81,10 +81,10 @@ alternative_else_nop_endif
 
 SYM_INNER_LABEL(__guest_exit_panic, SYM_L_GLOBAL)
 	// x2-x29,lr: vcpu regs
-	// vcpu x0-x1 on the stack
+	// vcpu ctxt x0-x1 on the stack
 
 	// If the hyp context is loaded, go straight to hyp_panic
-	get_loaded_vcpu x0, x1
+	get_loaded_vcpu_ctxt x0, x1
 	cbnz	x0, 1f
 	b	hyp_panic
 

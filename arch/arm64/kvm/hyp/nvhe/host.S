@@ -138,7 +138,7 @@ SYM_FUNC_END(__hyp_do_panic)
 	.align 7
 	/* If a guest is loaded, panic out of it. */
 	stp	x0, x1, [sp, #-16]!
-	get_loaded_vcpu x0, x1
+	get_loaded_vcpu_ctxt x0, x1
 	cbnz	x0, __guest_exit_panic
 	add	sp, sp, #16
 
