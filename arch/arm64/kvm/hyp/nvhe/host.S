@@ -91,7 +91,7 @@ SYM_FUNC_START(__hyp_do_panic)
 
 	/* Load the format arguments into x1-7. */
 	mov	x6, x3
-	get_vcpu_ptr x7, x3
+	get_vcpu_ctxt_ptr x7, x3
 	mrs	x3, esr_el2
 	mrs	x4, far_el2
 	mrs	x5, hpfar_el2
