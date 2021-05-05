@@ -100,7 +100,7 @@ void activate_traps_vhe_load(struct vcpu_hyp_state *vcpu_hyps);
 void deactivate_traps_vhe_put(void);
 #endif
 
-u64 __guest_enter(struct kvm_vcpu *vcpu);
+u64 __guest_enter(struct kvm_cpu_context *guest_ctxt);
 
 bool kvm_host_psci_handler(struct kvm_cpu_context *host_ctxt);
 

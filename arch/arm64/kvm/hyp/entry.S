@@ -18,12 +18,12 @@
 	.text
 
 /*
- * u64 __guest_enter(struct kvm_vcpu *vcpu);
+ * u64 __guest_enter(struct kvm_cpu_context *guest_ctxt);
  */
 SYM_FUNC_START(__guest_enter)
-	// x0: vcpu
+	// x0: guest context (input parameter)
 	// x1-x17: clobbered by macros
-	// x29: guest context
+	// x29: guest context (maintained for call duration)
 
 	adr_this_cpu x1, kvm_hyp_ctxt, x2
 
@@ -47,9 +47,7 @@ alternative_else_nop_endif
 	ret
 
 1:
-	set_loaded_vcpu x0, x1, x2
-
-	add	x29, x0, #VCPU_CONTEXT
+	mov	x29, x0
 
 	// Macro ptrauth_switch_to_guest format:
 	// 	ptrauth_switch_to_guest(guest cxt, tmp1, tmp2, tmp3)
