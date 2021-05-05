@@ -237,6 +237,13 @@ struct kvm_cpu_context {
 	struct kvm_vcpu *__hyp_running_vcpu;
 };
 
+#define get_hyp_running_vcpu(ctxt) (ctxt)->__hyp_running_vcpu
+#define set_hyp_running_vcpu(ctxt, vcpu) (ctxt)->__hyp_running_vcpu = (vcpu)
+#define is_hyp_running_vcpu(ctxt) (ctxt)->__hyp_running_vcpu
+
+#define get_hyp_running_ctxt(host_ctxt) (host_ctxt)->__hyp_running_vcpu ? &(host_ctxt)->__hyp_running_vcpu->arch.ctxt : NULL
+#define get_hyp_running_hyps(host_ctxt) (host_ctxt)->__hyp_running_vcpu ? &(host_ctxt)->__hyp_running_vcpu->arch.hyp_state : NULL
+
 struct kvm_pmu_events {
 	u32 events_host;
 	u32 events_guest;

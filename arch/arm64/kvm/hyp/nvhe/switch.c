@@ -191,7 +191,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	}
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	host_ctxt->__hyp_running_vcpu = vcpu;
+	set_hyp_running_vcpu(host_ctxt, vcpu);
 	guest_ctxt = &vcpu->arch.ctxt;
 
 	pmu_switch_needed = __pmu_switch_to_guest(host_ctxt);
@@ -261,7 +261,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	if (system_uses_irq_prio_masking())
 		gic_write_pmr(GIC_PRIO_IRQOFF);
 
-	host_ctxt->__hyp_running_vcpu = NULL;
+	set_hyp_running_vcpu(host_ctxt, NULL);
 
 	return exit_code;
 }
@@ -274,12 +274,10 @@ void __noreturn hyp_panic(void)
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_vcpu *vcpu;
 	struct vcpu_hyp_state *vcpu_hyps;
-	struct kvm_cpu_context *vcpu_ctxt;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	vcpu = host_ctxt->__hyp_running_vcpu;
-	vcpu_hyps = &hyp_state(vcpu);
-	vcpu_ctxt = &vcpu_ctxt(vcpu);
+	vcpu = get_hyp_running_vcpu(host_ctxt);
+	vcpu_hyps = get_hyp_running_hyps(host_ctxt);
 
 	if (vcpu) {
 		__timer_disable_traps();
