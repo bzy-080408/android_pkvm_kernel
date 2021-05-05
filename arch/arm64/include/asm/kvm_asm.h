@@ -243,31 +243,18 @@ extern u32 __kvm_get_mdcr_el2(void);
 	add	\reg, \reg, #HOST_DATA_CONTEXT
 .endm
 
-.macro get_vcpu_ptr vcpu, ctxt
-	get_host_ctxt \ctxt, \vcpu
-	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
-.endm
-
 .macro get_vcpu_ctxt_ptr vcpu, ctxt
 	get_host_ctxt \ctxt, \vcpu
-	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
-	add	\vcpu, \vcpu, #VCPU_CONTEXT
+	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_CTXT]
 .endm
 
 .macro get_vcpu_hyps_ptr vcpu, ctxt
 	get_host_ctxt \ctxt, \vcpu
-	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
-	add	\vcpu, \vcpu, #VCPU_HYPS
-.endm
-
-.macro get_loaded_vcpu vcpu, ctxt
-	adr_this_cpu \ctxt, kvm_hyp_ctxt, \vcpu
-	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
+	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_HYPS]
 .endm
 
 .macro set_loaded_vcpu vcpu, ctxt, tmp
 	adr_this_cpu \ctxt, kvm_hyp_ctxt, \tmp
-	str	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
 
 	add	\tmp, \vcpu, #VCPU_CONTEXT
 	str	\tmp, [\ctxt, #HOST_CONTEXT_CTXT]
@@ -278,21 +265,18 @@ extern u32 __kvm_get_mdcr_el2(void);
 
 .macro clear_loaded_vcpu ctxt, tmp
 	adr_this_cpu \ctxt, kvm_hyp_ctxt, \tmp
-	str	xzr, [\ctxt, #HOST_CONTEXT_VCPU]
 	str	xzr, [\ctxt, #HOST_CONTEXT_CTXT]
 	str	xzr, [\ctxt, #HOST_CONTEXT_HYPS]
 .endm
 
 .macro get_loaded_vcpu_ctxt vcpu, ctxt
 	adr_this_cpu \ctxt, kvm_hyp_ctxt, \vcpu
-	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
-	add	\vcpu, \vcpu, #VCPU_CONTEXT
+	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_CTXT]
 .endm
 
 .macro get_loaded_vcpu_hyps vcpu, ctxt
 	adr_this_cpu \ctxt, kvm_hyp_ctxt, \vcpu
-	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
-	add	\vcpu, \vcpu, #VCPU_HYPS
+	ldr	\vcpu, [\ctxt, #HOST_CONTEXT_HYPS]
 .endm
 
 /*

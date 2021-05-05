@@ -272,14 +272,12 @@ void __noreturn hyp_panic(void)
 	u64 elr = read_sysreg_el2(SYS_ELR);
 	u64 par = read_sysreg_par();
 	struct kvm_cpu_context *host_ctxt;
-	struct kvm_vcpu *vcpu;
 	struct vcpu_hyp_state *vcpu_hyps;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	vcpu = get_hyp_running_vcpu(host_ctxt);
 	vcpu_hyps = get_hyp_running_hyps(host_ctxt);
 
-	if (vcpu) {
+	if (vcpu_hyps) {
 		__timer_disable_traps();
 		__deactivate_traps(vcpu_hyps);
 		__load_host_stage2();
