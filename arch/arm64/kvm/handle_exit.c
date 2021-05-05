@@ -293,7 +293,7 @@ void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index)
 }
 
 void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr, u64 elr,
-					      u64 par, uintptr_t vcpu,
+					      u64 par, uintptr_t vcpu_ctxt,
 					      u64 far, u64 hpfar) {
 	u64 elr_in_kimg = __phys_to_kimg(__hyp_pa(elr));
 	u64 hyp_offset = elr_in_kimg - kaslr_offset() - elr;
@@ -333,6 +333,6 @@ void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr, u64 elr,
 	 */
 	kvm_err("Hyp Offset: 0x%llx\n", hyp_offset);
 
-	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%016lx\n",
-	      spsr, elr, esr, far, hpfar, par, vcpu);
+	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU_CTXT:%016lx\n",
+	      spsr, elr, esr, far, hpfar, par, vcpu_ctxt);
 }

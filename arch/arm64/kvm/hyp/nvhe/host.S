@@ -87,7 +87,7 @@ SYM_FUNC_START(__hyp_do_panic)
 
 	/* Load the panic arguments into x0-7 */
 	mrs	x0, esr_el2
-	get_vcpu_ptr x4, x5
+	get_vcpu_ctxt_ptr x4, x5
 	mrs	x5, far_el2
 	mrs	x6, hpfar_el2
 	mov	x7, xzr			// Unused argument

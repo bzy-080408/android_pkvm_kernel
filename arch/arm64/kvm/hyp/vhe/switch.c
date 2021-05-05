@@ -203,20 +203,20 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 static void __hyp_call_panic(u64 spsr, u64 elr, u64 par)
 {
 	struct kvm_cpu_context *host_ctxt;
-	struct kvm_vcpu *vcpu;
+	struct kvm_cpu_context *vcpu_ctxt;
 	struct vcpu_hyp_state *vcpu_hyps;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	vcpu = get_hyp_running_vcpu(host_ctxt);
+	vcpu_ctxt = get_hyp_running_ctxt(host_ctxt);
 	vcpu_hyps = get_hyp_running_hyps(host_ctxt);
 
 	__deactivate_traps(vcpu_hyps);
 	sysreg_restore_host_state_vhe(host_ctxt);
 
-	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%p\n",
+	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU_CTXT:%p\n",
 	      spsr, elr,
 	      read_sysreg_el2(SYS_ESR), read_sysreg_el2(SYS_FAR),
-	      read_sysreg(hpfar_el2), par, vcpu);
+	      read_sysreg(hpfar_el2), par, vcpu_ctxt);
 }
 NOKPROBE_SYMBOL(__hyp_call_panic);
 
