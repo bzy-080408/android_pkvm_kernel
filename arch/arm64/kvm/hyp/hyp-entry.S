@@ -71,17 +71,17 @@ wa_epilogue:
 	sb
 
 el1_trap:
-	get_vcpu_ptr	x1, x0
+	get_vcpu_ctxt_ptr	x1, x0
 	mov	x0, #ARM_EXCEPTION_TRAP
 	b	__guest_exit
 
 el1_irq:
-	get_vcpu_ptr	x1, x0
+	get_vcpu_ctxt_ptr	x1, x0
 	mov	x0, #ARM_EXCEPTION_IRQ
 	b	__guest_exit
 
 el1_error:
-	get_vcpu_ptr	x1, x0
+	get_vcpu_ctxt_ptr	x1, x0
 	mov	x0, #ARM_EXCEPTION_EL1_SERROR
 	b	__guest_exit
 
@@ -100,7 +100,7 @@ el2_sync:
 
 1:
 	/* Let's attempt a recovery from the illegal exception return */
-	get_vcpu_ptr	x1, x0
+	get_vcpu_ctxt_ptr	x1, x0
 	mov	x0, #ARM_EXCEPTION_IL
 	b	__guest_exit
 
