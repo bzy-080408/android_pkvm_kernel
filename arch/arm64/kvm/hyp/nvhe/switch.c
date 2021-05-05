@@ -228,8 +228,11 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__debug_switch_to_guest(vcpu);
 
 	do {
+		struct kvm_cpu_context *hyp_ctxt = this_cpu_ptr(&kvm_hyp_ctxt);
+		set_hyp_running_vcpu(hyp_ctxt, vcpu);
+
 		/* Jump in the fire! */
-		exit_code = __guest_enter(vcpu);
+		exit_code = __guest_enter(guest_ctxt);
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, vgic, &exit_code));
