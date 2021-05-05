@@ -268,6 +268,19 @@ extern u32 __kvm_get_mdcr_el2(void);
 .macro set_loaded_vcpu vcpu, ctxt, tmp
 	adr_this_cpu \ctxt, kvm_hyp_ctxt, \tmp
 	str	\vcpu, [\ctxt, #HOST_CONTEXT_VCPU]
+
+	add	\tmp, \vcpu, #VCPU_CONTEXT
+	str	\tmp, [\ctxt, #HOST_CONTEXT_CTXT]
+
+	add	\tmp, \vcpu, #VCPU_HYPS
+	str	\tmp, [\ctxt, #HOST_CONTEXT_HYPS]
+.endm
+
+.macro clear_loaded_vcpu ctxt, tmp
+	adr_this_cpu \ctxt, kvm_hyp_ctxt, \tmp
+	str	xzr, [\ctxt, #HOST_CONTEXT_VCPU]
+	str	xzr, [\ctxt, #HOST_CONTEXT_CTXT]
+	str	xzr, [\ctxt, #HOST_CONTEXT_HYPS]
 .endm
 
 .macro get_loaded_vcpu_ctxt vcpu, ctxt

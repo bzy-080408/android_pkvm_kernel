@@ -235,14 +235,27 @@ struct kvm_cpu_context {
 	u64 sys_regs[NR_SYS_REGS];
 
 	struct kvm_vcpu *__hyp_running_vcpu;
+	struct kvm_cpu_context *__hyp_running_ctxt;
+	struct vcpu_hyp_state *__hyp_running_hyps;
 };
 
 #define get_hyp_running_vcpu(ctxt) (ctxt)->__hyp_running_vcpu
-#define set_hyp_running_vcpu(ctxt, vcpu) (ctxt)->__hyp_running_vcpu = (vcpu)
+#define set_hyp_running_vcpu(host_ctxt, vcpu) do { \
+	struct kvm_vcpu *v = (vcpu); \
+	(host_ctxt)->__hyp_running_vcpu = v; \
+	if (vcpu) { \
+		(host_ctxt)->__hyp_running_ctxt = &v->arch.ctxt; \
+		(host_ctxt)->__hyp_running_hyps = &v->arch.hyp_state; \
+	} else { \
+		(host_ctxt)->__hyp_running_ctxt = NULL; \
+		(host_ctxt)->__hyp_running_hyps = NULL;	\
+	}\
+} while(0)
+
 #define is_hyp_running_vcpu(ctxt) (ctxt)->__hyp_running_vcpu
 
-#define get_hyp_running_ctxt(host_ctxt) (host_ctxt)->__hyp_running_vcpu ? &(host_ctxt)->__hyp_running_vcpu->arch.ctxt : NULL
-#define get_hyp_running_hyps(host_ctxt) (host_ctxt)->__hyp_running_vcpu ? &(host_ctxt)->__hyp_running_vcpu->arch.hyp_state : NULL
+#define get_hyp_running_ctxt(host_ctxt) (host_ctxt)->__hyp_running_ctxt
+#define get_hyp_running_hyps(host_ctxt) (host_ctxt)->__hyp_running_hyps
 
 struct kvm_pmu_events {
 	u32 events_host;
