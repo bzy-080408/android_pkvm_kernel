@@ -99,15 +99,12 @@ SYM_INNER_LABEL(__guest_exit_panic, SYM_L_GLOBAL)
 	adr_l	x1, hyp_panic
 	str	x1, [x0, #CPU_XREG_OFFSET(30)]
 
-	get_vcpu_ptr	x1, x0
+	get_vcpu_ctxt_ptr	x1, x0
 
 SYM_INNER_LABEL(__guest_exit, SYM_L_GLOBAL)
 	// x0: return code
-	// x1: vcpu
+	// x1: ctxt
 	// x2-x29,lr: vcpu regs
-	// vcpu x0-x1 on the stack
-
-	add	x1, x1, #VCPU_CONTEXT
 
 	ALTERNATIVE(nop, SET_PSTATE_PAN(1), ARM64_HAS_PAN, CONFIG_ARM64_PAN)
 
