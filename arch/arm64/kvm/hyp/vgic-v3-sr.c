@@ -1097,11 +1097,10 @@ static void __vgic_v3_write_ctlr(struct vgic_v3_cpu_if *cpu_if,
 	write_gicreg(vmcr, ICH_VMCR_EL2);
 }
 
-int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
+int __vgic_v3_perform_cpuif_access(struct vgic_v3_cpu_if *cpu_if,
+				   struct kvm_cpu_context *vcpu_ctxt,
+				   struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vgic_v3_cpu_if *cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	int rt;
 	u32 esr;
 	u32 vmcr;
@@ -1112,7 +1111,7 @@ int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
 
 	esr = kvm_hyp_state_get_esr(vcpu_hyps);
 	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
-		if (!kvm_condition_valid(vcpu)) {
+		if (!__kvm_condition_valid(vcpu_ctxt, vcpu_hyps)) {
 			__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 			return 1;
 		}

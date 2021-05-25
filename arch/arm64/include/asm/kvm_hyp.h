@@ -63,7 +63,9 @@ void __vgic_v3_activate_traps(struct vgic_v3_cpu_if *cpu_if);
 void __vgic_v3_deactivate_traps(struct vgic_v3_cpu_if *cpu_if);
 void __vgic_v3_save_aprs(struct vgic_v3_cpu_if *cpu_if);
 void __vgic_v3_restore_aprs(struct vgic_v3_cpu_if *cpu_if);
-int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu);
+int __vgic_v3_perform_cpuif_access(struct vgic_v3_cpu_if *cpu_if,
+				   struct kvm_cpu_context *vcpu_ctxt,
+				   struct vcpu_hyp_state *vcpu_hyps);
 
 #ifdef __KVM_NVHE_HYPERVISOR__
 void __timer_enable_traps(void);

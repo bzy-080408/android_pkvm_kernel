@@ -504,7 +504,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, struct vgic_dist *vgi
 	if (static_branch_unlikely(&vgic_v3_cpuif_trap) &&
 	    (kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_SYS64 ||
 	     kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_CP15_32)) {
-		int ret = __vgic_v3_perform_cpuif_access(vcpu);
+		int ret = __vgic_v3_perform_cpuif_access(&vcpu->arch.vgic_cpu.vgic_v3, vcpu_ctxt, vcpu_hyps);
 
 		if (ret == 1)
 			goto guest;
