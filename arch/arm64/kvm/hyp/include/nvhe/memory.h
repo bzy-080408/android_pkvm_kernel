@@ -7,6 +7,8 @@
 
 #include <linux/types.h>
 
+#define HYP_PAGE_COALESCEABLE	BIT(0)
+
 struct hyp_page {
 	unsigned short refcount;
 	u8 order;
