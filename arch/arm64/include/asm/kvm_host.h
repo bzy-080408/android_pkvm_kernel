@@ -101,6 +101,11 @@ struct kvm_s2_mmu {
 struct kvm_arch_memory_slot {
 };
 
+struct kvm_protected_vm {
+	bool enabled;
+	struct kvm_memory_slot *firmware_slot;
+};
+
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
 
@@ -136,6 +141,8 @@ struct kvm_arch {
 
 	/* Memory Tagging Extension enabled for the guest */
 	bool mte_enabled;
+	
+	struct kvm_protected_vm pkvm;
 };
 
 struct kvm_vcpu_fault_info {
@@ -777,10 +784,8 @@ void kvm_arch_free_vm(struct kvm *kvm);
 
 int kvm_arm_setup_stage2(struct kvm *kvm, unsigned long type);
 
-static inline bool kvm_vm_is_protected(struct kvm *kvm)
-{
-	return false;
-}
+int kvm_arm_vm_ioctl_pkvm(struct kvm *kvm, struct kvm_enable_cap *cap);
+#define kvm_vm_is_protected(kvm) (kvm->arch.pkvm.enabled)
 
 int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature);
 bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
