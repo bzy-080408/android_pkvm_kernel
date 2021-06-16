@@ -217,7 +217,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__activate_traps(vcpu);
 
 	__hyp_vgic_restore_state(vcpu);
-	__timer_enable_traps(vcpu);
+	__timer_enable_traps();
 
 	__debug_switch_to_guest(vcpu);
 
@@ -230,7 +230,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 
 	__sysreg_save_state_nvhe(guest_ctxt);
 	__sysreg32_save_state(vcpu);
-	__timer_disable_traps(vcpu);
+	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
 	__deactivate_traps(vcpu);
@@ -272,7 +272,7 @@ void __noreturn hyp_panic(void)
 	vcpu = host_ctxt->__hyp_running_vcpu;
 
 	if (vcpu) {
-		__timer_disable_traps(vcpu);
+		__timer_disable_traps();
 		__deactivate_traps(vcpu);
 		__load_host_stage2();
 		__sysreg_restore_state_nvhe(host_ctxt);
