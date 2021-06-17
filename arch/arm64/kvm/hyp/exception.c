@@ -329,11 +329,9 @@ static void enter_exception32(struct kvm_cpu_context *vcpu_ctxt, u32 mode,
 	*ctxt_pc(vcpu_ctxt) = vect_offset;
 }
 
-void kvm_inject_exception(struct kvm_vcpu *vcpu)
+void kvm_inject_exception(struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
-	if (vcpu_el1_is_32bit(vcpu)) {
+	if (hyp_state_el1_is_32bit(vcpu_hyps)) {
 		switch (hyp_state_flags(vcpu_hyps) & KVM_ARM64_EXCEPT_MASK) {
 		case KVM_ARM64_EXCEPT_AA32_UND:
 			enter_exception32(vcpu_ctxt, PSR_AA32_MODE_UND, 4);

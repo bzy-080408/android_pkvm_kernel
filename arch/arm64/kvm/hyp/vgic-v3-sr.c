@@ -1086,7 +1086,7 @@ int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
 	esr = kvm_vcpu_get_esr(vcpu);
 	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
 		if (!kvm_condition_valid(vcpu)) {
-			__kvm_skip_instr(vcpu);
+			__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 			return 1;
 		}
 
@@ -1198,7 +1198,7 @@ int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
 	rt = kvm_vcpu_sys_get_rt(vcpu);
 	fn(vcpu, vmcr, rt);
 
-	__kvm_skip_instr(vcpu);
+	__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 
 	return 1;
 }

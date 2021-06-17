@@ -55,13 +55,13 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 
 	/* Reject anything but a 32bit access */
 	if (kvm_vcpu_dabt_get_as(vcpu) != sizeof(u32)) {
-		__kvm_skip_instr(vcpu);
+		__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 		return -1;
 	}
 
 	/* Not aligned? Don't bother */
 	if (fault_ipa & 3) {
-		__kvm_skip_instr(vcpu);
+		__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 		return -1;
 	}
 
@@ -85,7 +85,7 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 		ctxt_set_reg(vcpu_ctxt, rd, data);
 	}
 
-	__kvm_skip_instr(vcpu);
+	__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 
 	return 1;
 }

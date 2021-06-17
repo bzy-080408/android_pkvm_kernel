@@ -44,20 +44,18 @@ static const unsigned short cc_map[16] = {
 /*
  * Check if a trapped instruction should have been executed or not.
  */
-bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
+bool kvm_condition_valid32(const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps)
 {
-	const struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	const struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	unsigned long cpsr;
 	u32 cpsr_cond;
 	int cond;
 
 	/* Top two bits non-zero?  Unconditional. */
-	if (kvm_vcpu_get_esr(vcpu) >> 30)
+	if (kvm_hyp_state_get_esr(vcpu_hyps) >> 30)
 		return true;
 
 	/* Is condition field valid? */
-	cond = kvm_vcpu_get_condition(vcpu);
+	cond = kvm_hyp_state_get_condition(vcpu_hyps);
 	if (cond == 0xE)
 		return true;
 
@@ -125,15 +123,13 @@ static void kvm_adjust_itstate(struct kvm_cpu_context *vcpu_ctxt)
  * kvm_skip_instr - skip a trapped instruction and proceed to the next
  * @vcpu: The vcpu pointer
  */
-void kvm_skip_instr32(struct kvm_vcpu *vcpu)
+void kvm_skip_instr32(struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u32 pc = *ctxt_pc(vcpu_ctxt);
 	bool is_thumb;
 
 	is_thumb = !!(*ctxt_cpsr(vcpu_ctxt) & PSR_AA32_T_BIT);
-	if (is_thumb && !kvm_vcpu_trap_il_is32bit(vcpu))
+	if (is_thumb && !kvm_hyp_state_trap_il_is32bit(vcpu_hyps))
 		pc += 2;
 	else
 		pc += 4;
