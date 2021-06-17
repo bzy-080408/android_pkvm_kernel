@@ -350,7 +350,7 @@ static inline bool handle_tx2_tvm(struct kvm_vcpu *vcpu)
 		return false;
 	}
 
-	__kvm_skip_instr(vcpu);
+	__kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 	return true;
 }
 

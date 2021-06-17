@@ -33,8 +33,8 @@ enum exception_type {
 	except_type_serror	= 0x180,
 };
 
-bool kvm_condition_valid32(const struct kvm_vcpu *vcpu);
-void kvm_skip_instr32(struct kvm_vcpu *vcpu);
+bool kvm_condition_valid32(const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps);
+void kvm_skip_instr32(struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps);
 
 void kvm_inject_undefined(struct kvm_vcpu *vcpu);
 void kvm_inject_vabt(struct kvm_vcpu *vcpu);
@@ -162,12 +162,17 @@ static __always_inline bool vcpu_mode_is_32bit(const struct kvm_vcpu *vcpu)
 	return ctxt_mode_is_32bit(&vcpu_ctxt(vcpu));
 }
 
-static __always_inline bool kvm_condition_valid(const struct kvm_vcpu *vcpu)
+static __always_inline bool __kvm_condition_valid(const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps)
 {
-	if (vcpu_mode_is_32bit(vcpu))
-		return kvm_condition_valid32(vcpu);
+	if (ctxt_mode_is_32bit(vcpu_ctxt))
+		return kvm_condition_valid32(vcpu_ctxt, vcpu_hyps);
 
 	return true;
+}
+
+static __always_inline bool kvm_condition_valid(const struct kvm_vcpu *vcpu)
+{
+	return __kvm_condition_valid(&vcpu->arch.ctxt, &hyp_state(vcpu));
 }
 
 static inline void ctxt_set_thumb(struct kvm_cpu_context *ctxt)

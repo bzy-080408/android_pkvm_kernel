@@ -204,7 +204,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	 */
 	__debug_save_host_buffers_nvhe(vcpu);
 
-	__kvm_adjust_pc(vcpu);
+	kvm_adjust_pc(vcpu_ctxt, vcpu_hyps);
 
 	/*
 	 * We must restore the 32-bit state before the sysregs, thanks

@@ -13,12 +13,10 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_host.h>
 
-static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
+static inline void kvm_skip_instr(struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
-		kvm_skip_instr32(vcpu);
+		kvm_skip_instr32(vcpu_ctxt, vcpu_hyps);
 	} else {
 		*ctxt_pc(vcpu_ctxt) += 4;
 		*ctxt_cpsr(vcpu_ctxt) &= ~PSR_BTYPE_MASK;
@@ -32,14 +30,12 @@ static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
  * Skip an instruction which has been emulated at hyp while most guest sysregs
  * are live.
  */
-static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
+static inline void __kvm_skip_instr(struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	*ctxt_pc(vcpu_ctxt) = read_sysreg_el2(SYS_ELR);
 	ctxt_gp_regs(vcpu_ctxt)->pstate = read_sysreg_el2(SYS_SPSR);
 
-	kvm_skip_instr(vcpu);
+	kvm_skip_instr(vcpu_ctxt, vcpu_hyps);
 
 	write_sysreg_el2(ctxt_gp_regs(vcpu_ctxt)->pstate, SYS_SPSR);
 	write_sysreg_el2(*ctxt_pc(vcpu_ctxt), SYS_ELR);
@@ -53,5 +49,7 @@ static inline void kvm_skip_host_instr(void)
 {
 	write_sysreg_el2(read_sysreg_el2(SYS_ELR) + 4, SYS_ELR);
 }
+
+void kvm_adjust_pc(struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps);
 
 #endif
