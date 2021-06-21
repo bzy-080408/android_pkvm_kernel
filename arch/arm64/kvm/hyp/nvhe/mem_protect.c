@@ -18,6 +18,9 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 
+#define KVM_INVALID_PTE_OWNER_MASK	GENMASK(9, 2)
+#define KVM_MAX_OWNER_ID		1
+
 #define KVM_HOST_S2_FLAGS (KVM_PGTABLE_S2_NOFWB | KVM_PGTABLE_S2_IDMAP)
 
 extern unsigned long hyp_nr_cpus;
@@ -293,10 +296,13 @@ int host_stage2_idmap_locked(phys_addr_t addr, u64 size,
 
 int host_stage2_set_owner_locked(phys_addr_t addr, u64 size, u8 owner_id)
 {
+	kvm_pte_t annotation;
+
 	hyp_assert_lock_held(&host_kvm.lock);
 
-	return host_stage2_try(kvm_pgtable_stage2_set_owner, &host_kvm.pgt,
-			       addr, size, &host_s2_pool, owner_id);
+	annotation = FIELD_PREP(KVM_INVALID_PTE_OWNER_MASK, owner_id);
+	return host_stage2_try(kvm_pgtable_stage2_annotate, &host_kvm.pgt,
+			       addr, size, &host_s2_pool, annotation);
 }
 
 static bool host_stage2_force_pte_cb(u64 addr, u64 end, enum kvm_pgtable_prot prot)
