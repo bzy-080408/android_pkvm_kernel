@@ -1440,6 +1440,115 @@ static void handle_access_fault(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 		kvm_set_pfn_accessed(pte_pfn(pte));
 }
 
+/* Replace this with something more structured once day */
+#define MMIO_NOTE	(('M' << 24 | 'M' << 16 | 'I' << 8 | 'O') << 1)
+
+bool kvm_install_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
+{
+	struct kvm_mmu_memory_cache *memcache;
+	struct kvm_memory_slot *memslot;
+	struct kvm *kvm = vcpu->kvm;
+	int ret, idx;
+
+	if (!test_bit(KVM_ARCH_FLAG_MMIO_GUARD, &kvm->arch.flags))
+		return false;
+
+	/* Must be page-aligned */
+	if (ipa & ~PAGE_MASK)
+		return false;
+
+	/*
+	 * The page cannot be in a memslot. At some point, this will
+	 * have to deal with device mappings though.
+	 */
+	idx = srcu_read_lock(&kvm->srcu);
+	mutex_lock(&kvm->slots_arch_lock);
+	memslot = gfn_to_memslot(kvm, ipa >> PAGE_SHIFT);
+	if (memslot) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* Guest has direct access to the GICv2 virtual CPU interface */
+	if (irqchip_in_kernel(kvm) &&
+	    kvm->arch.vgic.vgic_model == KVM_DEV_TYPE_ARM_VGIC_V2 &&
+	    ipa == kvm->arch.vgic.vgic_cpu_base) {
+		ret = 0;
+		goto out;
+	}
+
+	memcache = &vcpu->arch.mmu_page_cache;
+	if (kvm_mmu_topup_memory_cache(memcache,
+				       kvm_mmu_cache_min_pages(kvm))) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	spin_lock(&kvm->mmu_lock);
+	ret = kvm_pgtable_stage2_annotate(vcpu->arch.hw_mmu->pgt,
+					  ipa, PAGE_SIZE, memcache,
+					  MMIO_NOTE);
+	spin_unlock(&kvm->mmu_lock);
+
+out:
+	mutex_unlock(&kvm->slots_arch_lock);
+	srcu_read_unlock(&kvm->srcu, idx);
+	return ret == 0;
+}
+
+static bool __check_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
+{
+	kvm_pte_t pte = 0;
+	u32 level = 0;
+	int ret;
+
+	lockdep_assert_held(&vcpu->kvm->mmu_lock);
+
+	ret = kvm_pgtable_get_leaf(vcpu->arch.hw_mmu->pgt, ipa, &pte, &level);
+	VM_BUG_ON(ret);
+	VM_BUG_ON(level >= KVM_PGTABLE_MAX_LEVELS);
+
+	/* Must be a PAGE_SIZE mapping with our annotation */
+	return (BIT(ARM64_HW_PGTABLE_LEVEL_SHIFT(level)) == PAGE_SIZE &&
+		pte == MMIO_NOTE);
+}
+
+bool kvm_remove_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
+{
+	bool ret;
+
+	if (!test_bit(KVM_ARCH_FLAG_MMIO_GUARD, &vcpu->kvm->arch.flags))
+		return false;
+
+	/* Keep the PT locked across the two walks */
+	spin_lock(&vcpu->kvm->mmu_lock);
+
+	ret = __check_ioguard_page(vcpu, ipa);
+	if (ret)		/* Drop the annotation */
+		kvm_pgtable_stage2_unmap(vcpu->arch.hw_mmu->pgt,
+					 ALIGN_DOWN(ipa, PAGE_SIZE), PAGE_SIZE);
+
+	spin_unlock(&vcpu->kvm->mmu_lock);
+	return ret;
+}
+
+bool kvm_check_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
+{
+	bool ret;
+
+	if (!test_bit(KVM_ARCH_FLAG_MMIO_GUARD, &vcpu->kvm->arch.flags))
+		return true;
+
+	spin_lock(&vcpu->kvm->mmu_lock);
+	ret = __check_ioguard_page(vcpu, ipa & PAGE_MASK);
+	spin_unlock(&vcpu->kvm->mmu_lock);
+
+	if (!ret)
+		kvm_inject_dabt(vcpu, kvm_vcpu_get_hfar(vcpu));
+
+	return ret;
+}
+
 /**
  * kvm_handle_guest_abort - handles all 2nd stage aborts
  * @vcpu:	the VCPU pointer
