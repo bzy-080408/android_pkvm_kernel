@@ -41,9 +41,14 @@ void kvm_inject_vabt(struct kvm_vcpu *vcpu);
 void kvm_inject_dabt(struct kvm_vcpu *vcpu, unsigned long addr);
 void kvm_inject_pabt(struct kvm_vcpu *vcpu, unsigned long addr);
 
+static __always_inline bool hyp_state_el1_is_32bit(struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !(hyp_state_hcr_el2(vcpu_hyps) & HCR_RW);
+}
+
 static __always_inline bool vcpu_el1_is_32bit(struct kvm_vcpu *vcpu)
 {
-	return !(vcpu_hcr_el2(vcpu) & HCR_RW);
+	return hyp_state_el1_is_32bit(&hyp_state(vcpu));
 }
 
 static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
@@ -252,14 +257,19 @@ static inline bool vcpu_mode_priv(const struct kvm_vcpu *vcpu)
 	return mode != PSR_MODE_EL0t;
 }
 
-static __always_inline u32 kvm_vcpu_get_esr(const struct kvm_vcpu *vcpu)
+static __always_inline u32 kvm_hyp_state_get_esr(const struct vcpu_hyp_state *vcpu_hyps)
 {
-	return vcpu_fault(vcpu).esr_el2;
+	return hyp_state_fault(vcpu_hyps).esr_el2;
 }
 
-static __always_inline int kvm_vcpu_get_condition(const struct kvm_vcpu *vcpu)
+static __always_inline u32 kvm_vcpu_get_esr(const struct kvm_vcpu *vcpu)
 {
-	u32 esr = kvm_vcpu_get_esr(vcpu);
+	return kvm_hyp_state_get_esr(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_get_condition(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr = kvm_hyp_state_get_esr(vcpu_hyps);
 
 	if (esr & ESR_ELx_CV)
 		return (esr & ESR_ELx_COND_MASK) >> ESR_ELx_COND_SHIFT;
@@ -267,111 +277,216 @@ static __always_inline int kvm_vcpu_get_condition(const struct kvm_vcpu *vcpu)
 	return -1;
 }
 
+static __always_inline int kvm_vcpu_get_condition(const struct kvm_vcpu *vcpu)
+{
+	return kvm_hyp_state_get_condition(&hyp_state(vcpu));
+}
+
+static __always_inline phys_addr_t kvm_hyp_state_get_hfar(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return hyp_state_fault(vcpu_hyps).far_el2;
+}
+
 static __always_inline unsigned long kvm_vcpu_get_hfar(const struct kvm_vcpu *vcpu)
 {
-	return vcpu_fault(vcpu).far_el2;
+	return kvm_hyp_state_get_hfar(&hyp_state(vcpu));
+}
+
+static __always_inline phys_addr_t kvm_hyp_state_get_fault_ipa(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return ((phys_addr_t) hyp_state_fault(vcpu_hyps).hpfar_el2 & HPFAR_MASK) << 8;
 }
 
 static __always_inline phys_addr_t kvm_vcpu_get_fault_ipa(const struct kvm_vcpu *vcpu)
 {
-	return ((phys_addr_t) vcpu_fault(vcpu).hpfar_el2 & HPFAR_MASK) << 8;
+	return kvm_hyp_state_get_fault_ipa(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_get_disr(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return hyp_state_fault(vcpu_hyps).disr_el1;
 }
 
 static inline u64 kvm_vcpu_get_disr(const struct kvm_vcpu *vcpu)
 {
-	return vcpu_fault(vcpu).disr_el1;
+	return kvm_hyp_state_get_disr(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_get_imm(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_xVC_IMM_MASK;
 }
 
 static inline u32 kvm_vcpu_hvc_get_imm(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_get_esr(vcpu) & ESR_ELx_xVC_IMM_MASK;
+	return kvm_hyp_state_get_imm(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_dabt_isvalid(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !!(kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_ISV);
 }
 
 static __always_inline bool kvm_vcpu_dabt_isvalid(const struct kvm_vcpu *vcpu)
 {
-	return !!(kvm_vcpu_get_esr(vcpu) & ESR_ELx_ISV);
+	return kvm_hyp_state_dabt_isvalid(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_iss_nisv_sanitized(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_get_esr(vcpu_hyps) & (ESR_ELx_CM | ESR_ELx_WNR | ESR_ELx_FSC);
 }
 
 static inline unsigned long kvm_vcpu_dabt_iss_nisv_sanitized(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_get_esr(vcpu) & (ESR_ELx_CM | ESR_ELx_WNR | ESR_ELx_FSC);
+	return kvm_hyp_state_iss_nisv_sanitized(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_issext(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !!(kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_SSE);
 }
 
 static inline bool kvm_vcpu_dabt_issext(const struct kvm_vcpu *vcpu)
 {
-	return !!(kvm_vcpu_get_esr(vcpu) & ESR_ELx_SSE);
+	return kvm_hyp_state_issext(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_issf(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !!(kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_SF);
 }
 
 static inline bool kvm_vcpu_dabt_issf(const struct kvm_vcpu *vcpu)
 {
-	return !!(kvm_vcpu_get_esr(vcpu) & ESR_ELx_SF);
+	return kvm_hyp_state_issf(&hyp_state(vcpu));
+}
+
+static __always_inline phys_addr_t kvm_hyp_state_dabt_get_rd(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return (kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_SRT_MASK) >> ESR_ELx_SRT_SHIFT;
 }
 
 static __always_inline int kvm_vcpu_dabt_get_rd(const struct kvm_vcpu *vcpu)
 {
-	return (kvm_vcpu_get_esr(vcpu) & ESR_ELx_SRT_MASK) >> ESR_ELx_SRT_SHIFT;
+	return kvm_hyp_state_dabt_get_rd(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_abt_iss1tw(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !!(kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_S1PTW);
 }
 
 static __always_inline bool kvm_vcpu_abt_iss1tw(const struct kvm_vcpu *vcpu)
 {
-	return !!(kvm_vcpu_get_esr(vcpu) & ESR_ELx_S1PTW);
+	return kvm_hyp_state_abt_iss1tw(&hyp_state(vcpu));
 }
 
 /* Always check for S1PTW *before* using this. */
+static __always_inline u32 kvm_hyp_state_dabt_iswrite(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_WNR;
+}
+
 static __always_inline bool kvm_vcpu_dabt_iswrite(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_get_esr(vcpu) & ESR_ELx_WNR;
+	return kvm_hyp_state_dabt_iswrite(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_dabt_is_cm(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !!(kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_CM);
 }
 
 static inline bool kvm_vcpu_dabt_is_cm(const struct kvm_vcpu *vcpu)
 {
-	return !!(kvm_vcpu_get_esr(vcpu) & ESR_ELx_CM);
+	return kvm_hyp_state_dabt_is_cm(&hyp_state(vcpu));
+}
+
+static __always_inline phys_addr_t kvm_hyp_state_dabt_get_as(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return 1 << ((kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_SAS) >> ESR_ELx_SAS_SHIFT);
 }
 
 static __always_inline unsigned int kvm_vcpu_dabt_get_as(const struct kvm_vcpu *vcpu)
 {
-	return 1 << ((kvm_vcpu_get_esr(vcpu) & ESR_ELx_SAS) >> ESR_ELx_SAS_SHIFT);
+	return kvm_hyp_state_dabt_get_as(&hyp_state(vcpu));
 }
 
 /* This one is not specific to Data Abort */
+static __always_inline u32 kvm_hyp_state_trap_il_is32bit(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return !!(kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_IL);
+}
+
 static __always_inline bool kvm_vcpu_trap_il_is32bit(const struct kvm_vcpu *vcpu)
 {
-	return !!(kvm_vcpu_get_esr(vcpu) & ESR_ELx_IL);
+	return kvm_hyp_state_trap_il_is32bit(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_trap_get_class(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return ESR_ELx_EC(kvm_hyp_state_get_esr(vcpu_hyps));
 }
 
 static __always_inline u8 kvm_vcpu_trap_get_class(const struct kvm_vcpu *vcpu)
 {
-	return ESR_ELx_EC(kvm_vcpu_get_esr(vcpu));
+	return kvm_hyp_state_trap_get_class(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_trap_is_iabt(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_trap_get_class(vcpu_hyps) == ESR_ELx_EC_IABT_LOW;
 }
 
 static inline bool kvm_vcpu_trap_is_iabt(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_IABT_LOW;
+	return kvm_hyp_state_trap_is_iabt(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_trap_is_exec_fault(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_trap_is_iabt(vcpu_hyps) && !kvm_hyp_state_abt_iss1tw(vcpu_hyps);
 }
 
 static inline bool kvm_vcpu_trap_is_exec_fault(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_trap_is_iabt(vcpu) && !kvm_vcpu_abt_iss1tw(vcpu);
+	return kvm_hyp_state_trap_is_exec_fault(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_trap_get_fault(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_FSC;
 }
 
 static __always_inline u8 kvm_vcpu_trap_get_fault(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_get_esr(vcpu) & ESR_ELx_FSC;
+	return kvm_hyp_state_trap_get_fault(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_trap_get_fault_type(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_FSC_TYPE;
 }
 
 static __always_inline u8 kvm_vcpu_trap_get_fault_type(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_get_esr(vcpu) & ESR_ELx_FSC_TYPE;
+	return kvm_hyp_state_trap_get_fault_type(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_trap_get_fault_level(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	return kvm_hyp_state_get_esr(vcpu_hyps) & ESR_ELx_FSC_LEVEL;
 }
 
 static __always_inline u8 kvm_vcpu_trap_get_fault_level(const struct kvm_vcpu *vcpu)
 {
-	return kvm_vcpu_get_esr(vcpu) & ESR_ELx_FSC_LEVEL;
+	return kvm_hyp_state_trap_get_fault_level(&hyp_state(vcpu));
 }
 
-static __always_inline bool kvm_vcpu_abt_issea(const struct kvm_vcpu *vcpu)
+static __always_inline u32 kvm_hyp_state_abt_issea(const struct vcpu_hyp_state *vcpu_hyps)
 {
-	switch (kvm_vcpu_trap_get_fault(vcpu)) {
+	switch (kvm_hyp_state_trap_get_fault(vcpu_hyps)) {
 	case FSC_SEA:
 	case FSC_SEA_TTW0:
 	case FSC_SEA_TTW1:
@@ -388,10 +503,21 @@ static __always_inline bool kvm_vcpu_abt_issea(const struct kvm_vcpu *vcpu)
 	}
 }
 
+static __always_inline bool kvm_vcpu_abt_issea(const struct kvm_vcpu *vcpu)
+{
+	return kvm_hyp_state_abt_issea(&hyp_state(vcpu));
+}
+
+static __always_inline u32 kvm_hyp_state_sys_get_rt(const struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr = kvm_hyp_state_get_esr(vcpu_hyps);
+	return ESR_ELx_SYS64_ISS_RT(esr);
+}
+
+
 static __always_inline int kvm_vcpu_sys_get_rt(struct kvm_vcpu *vcpu)
 {
-	u32 esr = kvm_vcpu_get_esr(vcpu);
-	return ESR_ELx_SYS64_ISS_RT(esr);
+	return kvm_hyp_state_sys_get_rt(&hyp_state(vcpu));
 }
 
 static inline bool kvm_is_write_fault(struct kvm_vcpu *vcpu)

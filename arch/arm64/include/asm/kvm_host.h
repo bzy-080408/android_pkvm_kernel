@@ -378,12 +378,21 @@ struct kvm_vcpu_arch {
 	} steal;
 };
 
+#define hyp_state(vcpu) ((vcpu)->arch)
+
+/* Accessors for hyp_state parameters related to the hypervistor state. */
+#define hyp_state_hcr_el2(hyps) (hyps)->hcr_el2
+#define hyp_state_mdcr_el2(hyps) (hyps)->mdcr_el2
+#define hyp_state_vsesr_el2(hyps) (hyps)->vsesr_el2
+#define hyp_state_fault(hyps) (hyps)->fault
+#define hyp_state_flags(hyps) (hyps)->flags
+
 /* Accessors for vcpu parameters related to the hypervistor state. */
-#define vcpu_hcr_el2(vcpu) (vcpu)->arch.hcr_el2
-#define vcpu_mdcr_el2(vcpu) (vcpu)->arch.mdcr_el2
-#define vcpu_vsesr_el2(vcpu) (vcpu)->arch.vsesr_el2
-#define vcpu_fault(vcpu) (vcpu)->arch.fault
-#define vcpu_flags(vcpu) (vcpu)->arch.flags
+#define vcpu_hcr_el2(vcpu) hyp_state_hcr_el2(&hyp_state(vcpu))
+#define vcpu_mdcr_el2(vcpu) hyp_state_mdcr_el2(&hyp_state(vcpu))
+#define vcpu_vsesr_el2(vcpu) hyp_state_vsesr_el2(&hyp_state(vcpu))
+#define vcpu_fault(vcpu) hyp_state_fault(&hyp_state(vcpu))
+#define vcpu_flags(vcpu) hyp_state_flags(&hyp_state(vcpu))
 
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */
 #define vcpu_sve_pffr(vcpu) (kern_hyp_va((vcpu)->arch.sve_state) +	\
@@ -440,17 +449,21 @@ struct kvm_vcpu_arch {
  */
 #define KVM_ARM64_INCREMENT_PC		(1 << 9) /* Increment PC */
 
-#define vcpu_has_sve(vcpu) (system_supports_sve() &&			\
-			    ((vcpu)->arch.flags & KVM_ARM64_GUEST_HAS_SVE))
+#define hyp_state_has_sve(hyps) (system_supports_sve() &&		\
+			    (hyp_state_flags((hyps)) & KVM_ARM64_GUEST_HAS_SVE))
+
+#define vcpu_has_sve(vcpu) hyp_state_has_sve(&hyp_state(vcpu))
 
 #ifdef CONFIG_ARM64_PTR_AUTH
-#define vcpu_has_ptrauth(vcpu)						\
+#define hyp_state_has_ptrauth(hyps)					\
 	((cpus_have_final_cap(ARM64_HAS_ADDRESS_AUTH) ||		\
 	  cpus_have_final_cap(ARM64_HAS_GENERIC_AUTH)) &&		\
-	 (vcpu)->arch.flags & KVM_ARM64_GUEST_HAS_PTRAUTH)
+	 hyp_state_flags(hyps) & KVM_ARM64_GUEST_HAS_PTRAUTH)
 #else
-#define vcpu_has_ptrauth(vcpu)		false
+#define hyp_state_has_ptrauth(hyps)		false
 #endif
+
+#define vcpu_has_ptrauth(vcpu)	hyp_state_has_ptrauth(&hyp_state(vcpu))
 
 #define vcpu_ctxt(vcpu) ((vcpu)->arch.ctxt)
 
@@ -793,8 +806,11 @@ int kvm_arm_vm_ioctl_pkvm(struct kvm *kvm, struct kvm_enable_cap *cap);
 int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature);
 bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 
+#define kvm_arm_hyp_state_sve_finalized(hyps) \
+	(hyp_state_flags((hyps)) & KVM_ARM64_VCPU_SVE_FINALIZED)
+
 #define kvm_arm_vcpu_sve_finalized(vcpu) \
-	((vcpu)->arch.flags & KVM_ARM64_VCPU_SVE_FINALIZED)
+	kvm_arm_hyp_state_sve_finalized(&hyp_state(vcpu))
 
 #define kvm_vcpu_has_pmu(vcpu)					\
 	(test_bit(KVM_ARM_VCPU_PMU_V3, (vcpu)->arch.features))
