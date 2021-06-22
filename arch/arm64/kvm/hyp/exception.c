@@ -59,26 +59,31 @@ static void __ctxt_write_spsr_und(struct kvm_cpu_context *vcpu_ctxt, u64 val)
 
 static inline u64 __vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg)
 {
+	const struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	return __ctxt_read_sys_reg(&vcpu_ctxt(vcpu), reg);
 }
 
 static inline void __vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_sys_reg(&vcpu_ctxt(vcpu), val, reg);
 }
 
 static void __vcpu_write_spsr(struct kvm_vcpu *vcpu, u64 val)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_spsr(&vcpu_ctxt(vcpu), val);
 }
 
 static void __vcpu_write_spsr_abt(struct kvm_vcpu *vcpu, u64 val)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_spsr_abt(&vcpu_ctxt(vcpu), val);
 }
 
 static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_spsr_und(&vcpu_ctxt(vcpu), val);
 }
 
@@ -326,9 +331,10 @@ static void enter_exception32(struct kvm_cpu_context *vcpu_ctxt, u32 mode,
 
 void kvm_inject_exception(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (vcpu_el1_is_32bit(vcpu)) {
-		switch (vcpu_flags(vcpu) & KVM_ARM64_EXCEPT_MASK) {
+		switch (hyp_state_flags(vcpu_hyps) & KVM_ARM64_EXCEPT_MASK) {
 		case KVM_ARM64_EXCEPT_AA32_UND:
 			enter_exception32(vcpu_ctxt, PSR_AA32_MODE_UND, 4);
 			break;
@@ -343,7 +349,7 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu)
 			break;
 		}
 	} else {
-		switch (vcpu_flags(vcpu) & KVM_ARM64_EXCEPT_MASK) {
+		switch (hyp_state_flags(vcpu_hyps) & KVM_ARM64_EXCEPT_MASK) {
 		case (KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
 		      KVM_ARM64_EXCEPT_AA64_EL1):
 			enter_exception64(vcpu_ctxt, PSR_MODE_EL1h,

@@ -37,11 +37,12 @@ DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u64 val;
 
-	___activate_traps(vcpu);
-	__activate_traps_common(vcpu);
+	___activate_traps(vcpu_hyps);
+	__activate_traps_common(vcpu_hyps);
 
 	val = CPTR_EL2_DEFAULT;
 	val |= CPTR_EL2_TTA | CPTR_EL2_TAM;
@@ -68,13 +69,12 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 	}
 }
 
-static void __deactivate_traps(struct kvm_vcpu *vcpu)
+static void __deactivate_traps(struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	extern char __kvm_hyp_host_vector[];
 	u64 mdcr_el2, cptr;
 
-	___deactivate_traps(vcpu);
+	___deactivate_traps(vcpu_hyps);
 
 	mdcr_el2 = read_sysreg(mdcr_el2);
 
@@ -104,7 +104,7 @@ static void __deactivate_traps(struct kvm_vcpu *vcpu)
 	write_sysreg(this_cpu_ptr(&kvm_init_params)->hcr_el2, hcr_el2);
 
 	cptr = CPTR_EL2_DEFAULT;
-	if (vcpu_has_sve(vcpu) && (vcpu_flags(vcpu) & KVM_ARM64_FP_ENABLED))
+	if (hyp_state_has_sve(vcpu_hyps) && (hyp_state_flags(vcpu_hyps) & KVM_ARM64_FP_ENABLED))
 		cptr |= CPTR_EL2_TZ;
 
 	write_sysreg(cptr, cptr_el2);
@@ -170,6 +170,7 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 /* Switch to the guest for legacy non-VHE systems */
 int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
@@ -236,12 +237,12 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
-	__deactivate_traps(vcpu);
+	__deactivate_traps(vcpu_hyps);
 	__load_host_stage2();
 
 	__sysreg_restore_state_nvhe(host_ctxt);
 
-	if (vcpu_flags(vcpu) & KVM_ARM64_FP_ENABLED)
+	if (hyp_state_flags(vcpu_hyps) & KVM_ARM64_FP_ENABLED)
 		__fpsimd_save_fpexc32(vcpu);
 
 	__debug_switch_to_host(vcpu);
@@ -270,15 +271,17 @@ void __noreturn hyp_panic(void)
 	u64 par = read_sysreg_par();
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_vcpu *vcpu;
+	struct vcpu_hyp_state *vcpu_hyps;
 	struct kvm_cpu_context *vcpu_ctxt;
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	vcpu = host_ctxt->__hyp_running_vcpu;
+	vcpu_hyps = &hyp_state(vcpu);
 	vcpu_ctxt = &vcpu_ctxt(vcpu);
 
 	if (vcpu) {
 		__timer_disable_traps();
-		__deactivate_traps(vcpu);
+		__deactivate_traps(vcpu_hyps);
 		__load_host_stage2();
 		__sysreg_restore_state_nvhe(host_ctxt);
 	}

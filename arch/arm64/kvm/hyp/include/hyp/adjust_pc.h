@@ -17,6 +17,7 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu);
 
 static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
 		kvm_skip_instr32(vcpu);
@@ -35,6 +36,7 @@ static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
  */
 static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	*ctxt_pc(vcpu_ctxt) = read_sysreg_el2(SYS_ELR);
 	ctxt_gp_regs(vcpu_ctxt)->pstate = read_sysreg_el2(SYS_SPSR);
@@ -51,14 +53,15 @@ static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
  */
 static inline void __adjust_pc(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
-	if (vcpu_flags(vcpu) & KVM_ARM64_PENDING_EXCEPTION) {
+	if (hyp_state_flags(vcpu_hyps) & KVM_ARM64_PENDING_EXCEPTION) {
 		kvm_inject_exception(vcpu);
-		vcpu_flags(vcpu) &= ~(KVM_ARM64_PENDING_EXCEPTION |
+		hyp_state_flags(vcpu_hyps) &= ~(KVM_ARM64_PENDING_EXCEPTION |
 				      KVM_ARM64_EXCEPT_MASK);
-	} else 	if (vcpu_flags(vcpu) & KVM_ARM64_INCREMENT_PC) {
+	} else 	if (hyp_state_flags(vcpu_hyps) & KVM_ARM64_INCREMENT_PC) {
 		kvm_skip_instr(vcpu);
-		vcpu_flags(vcpu) &= ~KVM_ARM64_INCREMENT_PC;
+		hyp_state_flags(vcpu_hyps) &= ~KVM_ARM64_INCREMENT_PC;
 	}
 }
 

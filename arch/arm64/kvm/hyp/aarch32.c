@@ -46,6 +46,7 @@ static const unsigned short cc_map[16] = {
  */
 bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
 {
+	const struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	const struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	unsigned long cpsr;
 	u32 cpsr_cond;
@@ -126,6 +127,7 @@ static void kvm_adjust_itstate(struct kvm_cpu_context *vcpu_ctxt)
  */
 void kvm_skip_instr32(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u32 pc = *ctxt_pc(vcpu_ctxt);
 	bool is_thumb;
