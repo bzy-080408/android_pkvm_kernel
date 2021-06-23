@@ -101,8 +101,8 @@ void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu)
 
 void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 {
-	bool trap_debug = !(vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY);
-	unsigned long mdscr, orig_mdcr_el2 = vcpu->arch.mdcr_el2;
+	bool trap_debug = !(vcpu_flags(vcpu) & KVM_ARM64_DEBUG_DIRTY);
+	unsigned long mdscr, orig_mdcr_el2 = vcpu_mdcr_el2(vcpu);
 
 	trace_kvm_arm_setup_debug(vcpu, vcpu->guest_debug);
 
@@ -110,8 +110,8 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 	 * This also clears MDCR_EL2_E2PB_MASK to disable guest access
 	 * to the profiling buffer.
 	 */
-	vcpu->arch.mdcr_el2 = __this_cpu_read(mdcr_el2) & MDCR_EL2_HPMN_MASK;
-	vcpu->arch.mdcr_el2 |= (MDCR_EL2_TPM |
+	vcpu_mdcr_el2(vcpu) = __this_cpu_read(mdcr_el2) & MDCR_EL2_HPMN_MASK;
+	vcpu_mdcr_el2(vcpu) |= (MDCR_EL2_TPM |
 				MDCR_EL2_TPMS |
 				MDCR_EL2_TTRF |
 				MDCR_EL2_TPMCR |
@@ -121,7 +121,7 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 	/* Is Guest debugging in effect? */
 	if (vcpu->guest_debug) {
 		/* Route all software debug exceptions to EL2 */
-		vcpu->arch.mdcr_el2 |= MDCR_EL2_TDE;
+		vcpu_mdcr_el2(vcpu) |= MDCR_EL2_TDE;
 
 		/* Save guest debug state */
 		save_guest_debug_regs(vcpu);
@@ -175,7 +175,7 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 			vcpu_write_sys_reg(vcpu, mdscr, MDSCR_EL1);
 
 			vcpu->arch.debug_ptr = &vcpu->arch.external_debug_state;
-			vcpu->arch.flags |= KVM_ARM64_DEBUG_DIRTY;
+			vcpu_flags(vcpu) |= KVM_ARM64_DEBUG_DIRTY;
 			trap_debug = true;
 
 			trace_kvm_arm_set_regset("BKPTS", get_num_brps(),
@@ -193,17 +193,17 @@ void kvm_arm_setup_debug(struct kvm_vcpu *vcpu)
 
 	/* Trap debug register access */
 	if (trap_debug)
-		vcpu->arch.mdcr_el2 |= MDCR_EL2_TDA;
+		vcpu_mdcr_el2(vcpu) |= MDCR_EL2_TDA;
 
 	/* If KDE or MDE are set, perform a full save/restore cycle. */
 	if (vcpu_read_sys_reg(vcpu, MDSCR_EL1) & (DBG_MDSCR_KDE | DBG_MDSCR_MDE))
-		vcpu->arch.flags |= KVM_ARM64_DEBUG_DIRTY;
+		vcpu_flags(vcpu) |= KVM_ARM64_DEBUG_DIRTY;
 
 	/* Write mdcr_el2 changes since vcpu_load on VHE systems */
-	if (has_vhe() && orig_mdcr_el2 != vcpu->arch.mdcr_el2)
-		write_sysreg(vcpu->arch.mdcr_el2, mdcr_el2);
+	if (has_vhe() && orig_mdcr_el2 != vcpu_mdcr_el2(vcpu))
+		write_sysreg(vcpu_mdcr_el2(vcpu), mdcr_el2);
 
-	trace_kvm_arm_set_dreg32("MDCR_EL2", vcpu->arch.mdcr_el2);
+	trace_kvm_arm_set_dreg32("MDCR_EL2", vcpu_mdcr_el2(vcpu));
 	trace_kvm_arm_set_dreg32("MDSCR_EL1", vcpu_read_sys_reg(vcpu, MDSCR_EL1));
 }
 

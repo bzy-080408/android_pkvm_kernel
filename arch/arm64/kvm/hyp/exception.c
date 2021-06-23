@@ -328,7 +328,7 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (vcpu_el1_is_32bit(vcpu)) {
-		switch (vcpu->arch.flags & KVM_ARM64_EXCEPT_MASK) {
+		switch (vcpu_flags(vcpu) & KVM_ARM64_EXCEPT_MASK) {
 		case KVM_ARM64_EXCEPT_AA32_UND:
 			enter_exception32(vcpu_ctxt, PSR_AA32_MODE_UND, 4);
 			break;
@@ -343,7 +343,7 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu)
 			break;
 		}
 	} else {
-		switch (vcpu->arch.flags & KVM_ARM64_EXCEPT_MASK) {
+		switch (vcpu_flags(vcpu) & KVM_ARM64_EXCEPT_MASK) {
 		case (KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
 		      KVM_ARM64_EXCEPT_AA64_EL1):
 			enter_exception64(vcpu_ctxt, PSR_MODE_EL1h,

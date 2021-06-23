@@ -20,7 +20,7 @@ static void inject_abt64(struct kvm_vcpu *vcpu, bool is_iabt, unsigned long addr
 	bool is_aarch32 = vcpu_mode_is_32bit(vcpu);
 	u32 esr = 0;
 
-	vcpu->arch.flags |= (KVM_ARM64_EXCEPT_AA64_EL1		|
+	vcpu_flags(vcpu) |= (KVM_ARM64_EXCEPT_AA64_EL1		|
 			     KVM_ARM64_EXCEPT_AA64_ELx_SYNC	|
 			     KVM_ARM64_PENDING_EXCEPTION);
 
@@ -52,7 +52,7 @@ static void inject_undef64(struct kvm_vcpu *vcpu)
 {
 	u32 esr = (ESR_ELx_EC_UNKNOWN << ESR_ELx_EC_SHIFT);
 
-	vcpu->arch.flags |= (KVM_ARM64_EXCEPT_AA64_EL1		|
+	vcpu_flags(vcpu) |= (KVM_ARM64_EXCEPT_AA64_EL1		|
 			     KVM_ARM64_EXCEPT_AA64_ELx_SYNC	|
 			     KVM_ARM64_PENDING_EXCEPTION);
 
@@ -73,7 +73,7 @@ static void inject_undef64(struct kvm_vcpu *vcpu)
 
 static void inject_undef32(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.flags |= (KVM_ARM64_EXCEPT_AA32_UND |
+	vcpu_flags(vcpu) |= (KVM_ARM64_EXCEPT_AA32_UND |
 			     KVM_ARM64_PENDING_EXCEPTION);
 }
 
@@ -97,13 +97,13 @@ static void inject_abt32(struct kvm_vcpu *vcpu, bool is_pabt, u32 addr)
 	far = vcpu_read_sys_reg(vcpu, FAR_EL1);
 
 	if (is_pabt) {
-		vcpu->arch.flags |= (KVM_ARM64_EXCEPT_AA32_IABT |
+		vcpu_flags(vcpu) |= (KVM_ARM64_EXCEPT_AA32_IABT |
 				     KVM_ARM64_PENDING_EXCEPTION);
 		far &= GENMASK(31, 0);
 		far |= (u64)addr << 32;
 		vcpu_write_sys_reg(vcpu, fsr, IFSR32_EL2);
 	} else { /* !iabt */
-		vcpu->arch.flags |= (KVM_ARM64_EXCEPT_AA32_DABT |
+		vcpu_flags(vcpu) |= (KVM_ARM64_EXCEPT_AA32_DABT |
 				     KVM_ARM64_PENDING_EXCEPTION);
 		far &= GENMASK(63, 32);
 		far |= addr;

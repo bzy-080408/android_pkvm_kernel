@@ -43,23 +43,23 @@ void kvm_inject_pabt(struct kvm_vcpu *vcpu, unsigned long addr);
 
 static __always_inline bool vcpu_el1_is_32bit(struct kvm_vcpu *vcpu)
 {
-	return !(vcpu->arch.hcr_el2 & HCR_RW);
+	return !(vcpu_hcr_el2(vcpu) & HCR_RW);
 }
 
 static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS;
+	vcpu_hcr_el2(vcpu) = HCR_GUEST_FLAGS;
 	if (is_kernel_in_hyp_mode())
-		vcpu->arch.hcr_el2 |= HCR_E2H;
+		vcpu_hcr_el2(vcpu) |= HCR_E2H;
 	if (cpus_have_const_cap(ARM64_HAS_RAS_EXTN)) {
 		/* route synchronous external abort exceptions to EL2 */
-		vcpu->arch.hcr_el2 |= HCR_TEA;
+		vcpu_hcr_el2(vcpu) |= HCR_TEA;
 		/* trap error record accesses */
-		vcpu->arch.hcr_el2 |= HCR_TERR;
+		vcpu_hcr_el2(vcpu) |= HCR_TERR;
 	}
 
 	if (cpus_have_const_cap(ARM64_HAS_STAGE2_FWB)) {
-		vcpu->arch.hcr_el2 |= HCR_FWB;
+		vcpu_hcr_el2(vcpu) |= HCR_FWB;
 	} else {
 		/*
 		 * For non-FWB CPUs, we trap VM ops (HCR_EL2.TVM) until M+C
@@ -67,11 +67,11 @@ static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 		 * MMU gets turned on and do the necessary cache maintenance
 		 * then.
 		 */
-		vcpu->arch.hcr_el2 |= HCR_TVM;
+		vcpu_hcr_el2(vcpu) |= HCR_TVM;
 	}
 
 	if (test_bit(KVM_ARM_VCPU_EL1_32BIT, vcpu->arch.features))
-		vcpu->arch.hcr_el2 &= ~HCR_RW;
+		vcpu_hcr_el2(vcpu) &= ~HCR_RW;
 
 	/*
 	 * TID3: trap feature register accesses that we virtualise.
@@ -79,52 +79,52 @@ static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 	 * are currently virtualised.
 	 */
 	if (!vcpu_el1_is_32bit(vcpu))
-		vcpu->arch.hcr_el2 |= HCR_TID3;
+		vcpu_hcr_el2(vcpu) |= HCR_TID3;
 
 	if (cpus_have_const_cap(ARM64_MISMATCHED_CACHE_TYPE) ||
 	    vcpu_el1_is_32bit(vcpu))
-		vcpu->arch.hcr_el2 |= HCR_TID2;
+		vcpu_hcr_el2(vcpu) |= HCR_TID2;
 }
 
 static inline unsigned long *vcpu_hcr(struct kvm_vcpu *vcpu)
 {
-	return (unsigned long *)&vcpu->arch.hcr_el2;
+	return (unsigned long *)&vcpu_hcr_el2(vcpu);
 }
 
 static inline void vcpu_clear_wfx_traps(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.hcr_el2 &= ~HCR_TWE;
+	vcpu_hcr_el2(vcpu) &= ~HCR_TWE;
 	if (atomic_read(&vcpu->arch.vgic_cpu.vgic_v3.its_vpe.vlpi_count) ||
 	    vcpu->kvm->arch.vgic.nassgireq)
-		vcpu->arch.hcr_el2 &= ~HCR_TWI;
-	else
-		vcpu->arch.hcr_el2 |= HCR_TWI;
+		vcpu_hcr_el2(vcpu) &= ~HCR_TWI;
+		else
+			vcpu_hcr_el2(vcpu) |= HCR_TWI;
 }
 
 static inline void vcpu_set_wfx_traps(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.hcr_el2 |= HCR_TWE;
-	vcpu->arch.hcr_el2 |= HCR_TWI;
+	vcpu_hcr_el2(vcpu) |= HCR_TWE;
+	vcpu_hcr_el2(vcpu) |= HCR_TWI;
 }
 
 static inline void vcpu_ptrauth_enable(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.hcr_el2 |= (HCR_API | HCR_APK);
+	vcpu_hcr_el2(vcpu) |= (HCR_API | HCR_APK);
 }
 
 static inline void vcpu_ptrauth_disable(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.hcr_el2 &= ~(HCR_API | HCR_APK);
+	vcpu_hcr_el2(vcpu) &= ~(HCR_API | HCR_APK);
 }
 
 static inline unsigned long vcpu_get_vsesr(struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.vsesr_el2;
+	return vcpu_vsesr_el2(vcpu);
 }
 
 static inline void vcpu_set_vsesr(struct kvm_vcpu *vcpu, u64 vsesr)
 {
-	vcpu->arch.vsesr_el2 = vsesr;
+	vcpu_vsesr_el2(vcpu) = vsesr;
 }
 
 static __always_inline unsigned long *ctxt_pc(const struct kvm_cpu_context *ctxt)
@@ -254,7 +254,7 @@ static inline bool vcpu_mode_priv(const struct kvm_vcpu *vcpu)
 
 static __always_inline u32 kvm_vcpu_get_esr(const struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.fault.esr_el2;
+	return vcpu_fault(vcpu).esr_el2;
 }
 
 static __always_inline int kvm_vcpu_get_condition(const struct kvm_vcpu *vcpu)
@@ -269,17 +269,17 @@ static __always_inline int kvm_vcpu_get_condition(const struct kvm_vcpu *vcpu)
 
 static __always_inline unsigned long kvm_vcpu_get_hfar(const struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.fault.far_el2;
+	return vcpu_fault(vcpu).far_el2;
 }
 
 static __always_inline phys_addr_t kvm_vcpu_get_fault_ipa(const struct kvm_vcpu *vcpu)
 {
-	return ((phys_addr_t)vcpu->arch.fault.hpfar_el2 & HPFAR_MASK) << 8;
+	return ((phys_addr_t) vcpu_fault(vcpu).hpfar_el2 & HPFAR_MASK) << 8;
 }
 
 static inline u64 kvm_vcpu_get_disr(const struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.fault.disr_el1;
+	return vcpu_fault(vcpu).disr_el1;
 }
 
 static inline u32 kvm_vcpu_hvc_get_imm(const struct kvm_vcpu *vcpu)
@@ -493,7 +493,7 @@ static inline unsigned long vcpu_data_host_to_guest(struct kvm_vcpu *vcpu,
 
 static __always_inline void kvm_incr_pc(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.flags |= KVM_ARM64_INCREMENT_PC;
+	vcpu_flags(vcpu) |= KVM_ARM64_INCREMENT_PC;
 }
 
 #endif /* __ARM64_KVM_EMULATE_H__ */
