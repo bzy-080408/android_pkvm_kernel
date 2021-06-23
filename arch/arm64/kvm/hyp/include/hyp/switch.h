@@ -39,6 +39,7 @@ extern struct exception_table_entry __stop___kvm_ex_table;
 static inline bool update_fp_enabled(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
+
 	/*
 	 * When the system doesn't support FP/SIMD, we cannot rely on
 	 * the _TIF_FOREIGN_FPSTATE flag. However, we always inject an
@@ -57,8 +58,8 @@ static inline bool update_fp_enabled(struct kvm_vcpu *vcpu)
 /* Save the 32-bit only FPSIMD system register state */
 static inline void __fpsimd_save_fpexc32(struct kvm_vcpu *vcpu)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
@@ -67,8 +68,6 @@ static inline void __fpsimd_save_fpexc32(struct kvm_vcpu *vcpu)
 
 static inline void __activate_traps_fpsimd32(struct kvm_vcpu *vcpu)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	/*
 	 * We are about to set CPTR_EL2.TFP to trap all floating point
 	 * register accesses to EL2, however, the ARM ARM clearly states that
@@ -222,8 +221,8 @@ static inline void __hyp_sve_save_host(struct kvm_vcpu *vcpu)
 
 static inline void __hyp_sve_restore_guest(struct kvm_vcpu *vcpu)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+
 	sve_cond_update_zcr_vq(vcpu_sve_max_vq(vcpu) - 1, SYS_ZCR_EL2);
 	__sve_restore_state(vcpu_sve_pffr(vcpu),
 			    &ctxt_fp_regs(vcpu_ctxt)->fpsr);
@@ -397,7 +396,6 @@ DECLARE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 static inline bool __hyp_handle_ptrauth(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	struct kvm_cpu_context *ctxt;
 	u64 val;
 
@@ -430,6 +428,7 @@ static inline bool fixup_guest_exit(struct kvm_vcpu *vcpu, struct vgic_dist *vgi
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+
 	if (ARM_EXCEPTION_CODE(*exit_code) != ARM_EXCEPTION_IRQ)
 		hyp_state_fault(vcpu_hyps).esr_el2 = read_sysreg_el2(SYS_ESR);
 

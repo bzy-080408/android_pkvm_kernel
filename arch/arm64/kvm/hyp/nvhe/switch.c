@@ -38,7 +38,6 @@ DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 static void __activate_traps(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
-	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u64 val;
 
 	___activate_traps(vcpu_hyps);
