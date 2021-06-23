@@ -17,15 +17,16 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu);
 
 static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
-	if (vcpu_mode_is_32bit(vcpu)) {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
 		kvm_skip_instr32(vcpu);
 	} else {
-		*vcpu_pc(vcpu) += 4;
-		*vcpu_cpsr(vcpu) &= ~PSR_BTYPE_MASK;
+		*ctxt_pc(vcpu_ctxt) += 4;
+		*ctxt_cpsr(vcpu_ctxt) &= ~PSR_BTYPE_MASK;
 	}
 
 	/* advance the singlestep state machine */
-	*vcpu_cpsr(vcpu) &= ~DBG_SPSR_SS;
+	*ctxt_cpsr(vcpu_ctxt) &= ~DBG_SPSR_SS;
 }
 
 /*
@@ -34,13 +35,14 @@ static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
  */
 static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
-	*vcpu_pc(vcpu) = read_sysreg_el2(SYS_ELR);
-	vcpu_gp_regs(vcpu)->pstate = read_sysreg_el2(SYS_SPSR);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	*ctxt_pc(vcpu_ctxt) = read_sysreg_el2(SYS_ELR);
+	ctxt_gp_regs(vcpu_ctxt)->pstate = read_sysreg_el2(SYS_SPSR);
 
 	kvm_skip_instr(vcpu);
 
-	write_sysreg_el2(vcpu_gp_regs(vcpu)->pstate, SYS_SPSR);
-	write_sysreg_el2(*vcpu_pc(vcpu), SYS_ELR);
+	write_sysreg_el2(ctxt_gp_regs(vcpu_ctxt)->pstate, SYS_SPSR);
+	write_sysreg_el2(*ctxt_pc(vcpu_ctxt), SYS_ELR);
 }
 
 /*
@@ -49,6 +51,7 @@ static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
  */
 static inline void __adjust_pc(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (vcpu->arch.flags & KVM_ARM64_PENDING_EXCEPTION) {
 		kvm_inject_exception(vcpu);
 		vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |

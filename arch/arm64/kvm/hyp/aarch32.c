@@ -46,6 +46,7 @@ static const unsigned short cc_map[16] = {
  */
 bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
 {
+	const struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	unsigned long cpsr;
 	u32 cpsr_cond;
 	int cond;
@@ -59,7 +60,7 @@ bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
 	if (cond == 0xE)
 		return true;
 
-	cpsr = *vcpu_cpsr(vcpu);
+	cpsr = *ctxt_cpsr(vcpu_ctxt);
 
 	if (cond < 0) {
 		/* This can happen in Thumb mode: examine IT state. */
@@ -93,10 +94,10 @@ bool kvm_condition_valid32(const struct kvm_vcpu *vcpu)
  *
  * IT[7:0] -> CPSR[26:25],CPSR[15:10]
  */
-static void kvm_adjust_itstate(struct kvm_vcpu *vcpu)
+static void kvm_adjust_itstate(struct kvm_cpu_context *vcpu_ctxt)
 {
 	unsigned long itbits, cond;
-	unsigned long cpsr = *vcpu_cpsr(vcpu);
+	unsigned long cpsr = *ctxt_cpsr(vcpu_ctxt);
 	bool is_arm = !(cpsr & PSR_AA32_T_BIT);
 
 	if (is_arm || !(cpsr & PSR_AA32_IT_MASK))
@@ -116,7 +117,7 @@ static void kvm_adjust_itstate(struct kvm_vcpu *vcpu)
 	cpsr |= cond << 13;
 	cpsr |= (itbits & 0x1c) << (10 - 2);
 	cpsr |= (itbits & 0x3) << 25;
-	*vcpu_cpsr(vcpu) = cpsr;
+	*ctxt_cpsr(vcpu_ctxt) = cpsr;
 }
 
 /**
@@ -125,16 +126,17 @@ static void kvm_adjust_itstate(struct kvm_vcpu *vcpu)
  */
 void kvm_skip_instr32(struct kvm_vcpu *vcpu)
 {
-	u32 pc = *vcpu_pc(vcpu);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u32 pc = *ctxt_pc(vcpu_ctxt);
 	bool is_thumb;
 
-	is_thumb = !!(*vcpu_cpsr(vcpu) & PSR_AA32_T_BIT);
+	is_thumb = !!(*ctxt_cpsr(vcpu_ctxt) & PSR_AA32_T_BIT);
 	if (is_thumb && !kvm_vcpu_trap_il_is32bit(vcpu))
 		pc += 2;
 	else
 		pc += 4;
 
-	*vcpu_pc(vcpu) = pc;
+	*ctxt_pc(vcpu_ctxt) = pc;
 
-	kvm_adjust_itstate(vcpu);
+	kvm_adjust_itstate(vcpu_ctxt);
 }

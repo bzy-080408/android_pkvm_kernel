@@ -99,13 +99,14 @@ static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
  * Here we manipulate the fields in order of the AArch64 SPSR_ELx layout, from
  * MSB to LSB.
  */
-static void enter_exception64(struct kvm_vcpu *vcpu, unsigned long target_mode,
+static void enter_exception64(struct kvm_cpu_context *vcpu_ctxt,
+			      unsigned long target_mode,
 			      enum exception_type type)
 {
 	unsigned long sctlr, vbar, old, new, mode;
 	u64 exc_offset;
 
-	mode = *vcpu_cpsr(vcpu) & (PSR_MODE_MASK | PSR_MODE32_BIT);
+	mode = *ctxt_cpsr(vcpu_ctxt) & (PSR_MODE_MASK | PSR_MODE32_BIT);
 
 	if      (mode == target_mode)
 		exc_offset = CURRENT_EL_SP_ELx_VECTOR;
@@ -118,18 +119,18 @@ static void enter_exception64(struct kvm_vcpu *vcpu, unsigned long target_mode,
 
 	switch (target_mode) {
 	case PSR_MODE_EL1h:
-		vbar = __vcpu_read_sys_reg(vcpu, VBAR_EL1);
-		sctlr = __vcpu_read_sys_reg(vcpu, SCTLR_EL1);
-		__vcpu_write_sys_reg(vcpu, *vcpu_pc(vcpu), ELR_EL1);
+		vbar = __ctxt_read_sys_reg(vcpu_ctxt, VBAR_EL1);
+		sctlr = __ctxt_read_sys_reg(vcpu_ctxt, SCTLR_EL1);
+		__ctxt_write_sys_reg(vcpu_ctxt, *ctxt_pc(vcpu_ctxt), ELR_EL1);
 		break;
 	default:
 		/* Don't do that */
 		BUG();
 	}
 
-	*vcpu_pc(vcpu) = vbar + exc_offset + type;
+	*ctxt_pc(vcpu_ctxt) = vbar + exc_offset + type;
 
-	old = *vcpu_cpsr(vcpu);
+	old = *ctxt_cpsr(vcpu_ctxt);
 	new = 0;
 
 	new |= (old & PSR_N_BIT);
@@ -172,8 +173,8 @@ static void enter_exception64(struct kvm_vcpu *vcpu, unsigned long target_mode,
 
 	new |= target_mode;
 
-	*vcpu_cpsr(vcpu) = new;
-	__vcpu_write_spsr(vcpu, old);
+	*ctxt_cpsr(vcpu_ctxt) = new;
+	__ctxt_write_spsr(vcpu_ctxt, old);
 }
 
 /*
@@ -194,12 +195,13 @@ static void enter_exception64(struct kvm_vcpu *vcpu, unsigned long target_mode,
  * Here we manipulate the fields in order of the AArch32 SPSR_ELx layout, from
  * MSB to LSB.
  */
-static unsigned long get_except32_cpsr(struct kvm_vcpu *vcpu, u32 mode)
+static unsigned long get_except32_cpsr(struct kvm_cpu_context *vcpu_ctxt,
+				       u32 mode)
 {
-	u32 sctlr = __vcpu_read_sys_reg(vcpu, SCTLR_EL1);
+	u32 sctlr = __ctxt_read_sys_reg(vcpu_ctxt, SCTLR_EL1);
 	unsigned long old, new;
 
-	old = *vcpu_cpsr(vcpu);
+	old = *ctxt_cpsr(vcpu_ctxt);
 	new = 0;
 
 	new |= (old & PSR_AA32_N_BIT);
@@ -288,27 +290,28 @@ static const u8 return_offsets[8][2] = {
 	[7] = { 4, 4 },		/* FIQ, unused */
 };
 
-static void enter_exception32(struct kvm_vcpu *vcpu, u32 mode, u32 vect_offset)
+static void enter_exception32(struct kvm_cpu_context *vcpu_ctxt, u32 mode,
+			      u32 vect_offset)
 {
-	unsigned long spsr = *vcpu_cpsr(vcpu);
+	unsigned long spsr = *ctxt_cpsr(vcpu_ctxt);
 	bool is_thumb = (spsr & PSR_AA32_T_BIT);
-	u32 sctlr = __vcpu_read_sys_reg(vcpu, SCTLR_EL1);
+	u32 sctlr = __ctxt_read_sys_reg(vcpu_ctxt, SCTLR_EL1);
 	u32 return_address;
 
-	*vcpu_cpsr(vcpu) = get_except32_cpsr(vcpu, mode);
-	return_address   = *vcpu_pc(vcpu);
+	*ctxt_cpsr(vcpu_ctxt) = get_except32_cpsr(vcpu_ctxt, mode);
+	return_address   = *ctxt_pc(vcpu_ctxt);
 	return_address  += return_offsets[vect_offset >> 2][is_thumb];
 
 	/* KVM only enters the ABT and UND modes, so only deal with those */
 	switch(mode) {
 	case PSR_AA32_MODE_ABT:
-		__vcpu_write_spsr_abt(vcpu, host_spsr_to_spsr32(spsr));
-		vcpu_gp_regs(vcpu)->compat_lr_abt = return_address;
+		__ctxt_write_spsr_abt(vcpu_ctxt, host_spsr_to_spsr32(spsr));
+		ctxt_gp_regs(vcpu_ctxt)->compat_lr_abt = return_address;
 		break;
 
 	case PSR_AA32_MODE_UND:
-		__vcpu_write_spsr_und(vcpu, host_spsr_to_spsr32(spsr));
-		vcpu_gp_regs(vcpu)->compat_lr_und = return_address;
+		__ctxt_write_spsr_und(vcpu_ctxt, host_spsr_to_spsr32(spsr));
+		ctxt_gp_regs(vcpu_ctxt)->compat_lr_und = return_address;
 		break;
 	}
 
@@ -316,23 +319,24 @@ static void enter_exception32(struct kvm_vcpu *vcpu, u32 mode, u32 vect_offset)
 	if (sctlr & (1 << 13))
 		vect_offset += 0xffff0000;
 	else /* always have security exceptions */
-		vect_offset += __vcpu_read_sys_reg(vcpu, VBAR_EL1);
+		vect_offset += __ctxt_read_sys_reg(vcpu_ctxt, VBAR_EL1);
 
-	*vcpu_pc(vcpu) = vect_offset;
+	*ctxt_pc(vcpu_ctxt) = vect_offset;
 }
 
 void kvm_inject_exception(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (vcpu_el1_is_32bit(vcpu)) {
 		switch (vcpu->arch.flags & KVM_ARM64_EXCEPT_MASK) {
 		case KVM_ARM64_EXCEPT_AA32_UND:
-			enter_exception32(vcpu, PSR_AA32_MODE_UND, 4);
+			enter_exception32(vcpu_ctxt, PSR_AA32_MODE_UND, 4);
 			break;
 		case KVM_ARM64_EXCEPT_AA32_IABT:
-			enter_exception32(vcpu, PSR_AA32_MODE_ABT, 12);
+			enter_exception32(vcpu_ctxt, PSR_AA32_MODE_ABT, 12);
 			break;
 		case KVM_ARM64_EXCEPT_AA32_DABT:
-			enter_exception32(vcpu, PSR_AA32_MODE_ABT, 16);
+			enter_exception32(vcpu_ctxt, PSR_AA32_MODE_ABT, 16);
 			break;
 		default:
 			/* Err... */
@@ -342,7 +346,8 @@ void kvm_inject_exception(struct kvm_vcpu *vcpu)
 		switch (vcpu->arch.flags & KVM_ARM64_EXCEPT_MASK) {
 		case (KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
 		      KVM_ARM64_EXCEPT_AA64_EL1):
-			enter_exception64(vcpu, PSR_MODE_EL1h, except_type_sync);
+			enter_exception64(vcpu_ctxt, PSR_MODE_EL1h,
+					  except_type_sync);
 			break;
 		default:
 			/*

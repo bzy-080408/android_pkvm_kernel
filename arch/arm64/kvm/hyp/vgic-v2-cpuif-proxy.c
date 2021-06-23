@@ -15,9 +15,9 @@
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 
-static bool __is_be(struct kvm_vcpu *vcpu)
+static bool __is_be(struct kvm_cpu_context *vcpu_ctxt)
 {
-	if (vcpu_mode_is_32bit(vcpu))
+	if (ctxt_mode_is_32bit(vcpu_ctxt))
 		return !!(read_sysreg_el2(SYS_SPSR) & PSR_AA32_E_BIT);
 
 	return !!(read_sysreg(SCTLR_EL1) & SCTLR_ELx_EE);
@@ -36,6 +36,7 @@ static bool __is_be(struct kvm_vcpu *vcpu)
  */
 int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct vgic_dist *vgic = &kvm->arch.vgic;
 	phys_addr_t fault_ipa;
@@ -68,19 +69,19 @@ int __vgic_v2_perform_cpuif_access(struct kvm_vcpu *vcpu)
 	addr += fault_ipa - vgic->vgic_cpu_base;
 
 	if (kvm_vcpu_dabt_iswrite(vcpu)) {
-		u32 data = vcpu_get_reg(vcpu, rd);
-		if (__is_be(vcpu)) {
+		u32 data = ctxt_get_reg(vcpu_ctxt, rd);
+		if (__is_be(vcpu_ctxt)) {
 			/* guest pre-swabbed data, undo this for writel() */
 			data = __kvm_swab32(data);
 		}
 		writel_relaxed(data, addr);
 	} else {
 		u32 data = readl_relaxed(addr);
-		if (__is_be(vcpu)) {
+		if (__is_be(vcpu_ctxt)) {
 			/* guest expects swabbed data */
 			data = __kvm_swab32(data);
 		}
-		vcpu_set_reg(vcpu, rd, data);
+		ctxt_set_reg(vcpu_ctxt, rd, data);
 	}
 
 	__kvm_skip_instr(vcpu);
