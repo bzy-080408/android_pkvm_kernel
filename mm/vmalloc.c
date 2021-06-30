@@ -37,6 +37,7 @@
 #include <trace/hooks/mm.h>
 
 #include <linux/uaccess.h>
+#include <linux/io.h>
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
 
@@ -2240,6 +2241,10 @@ static void vm_remove_mappings(struct vm_struct *area, int deallocate_pages)
 	set_area_direct_map(area, set_direct_map_default_noflush);
 }
 
+void __weak iounmap_page_range_hook(phys_addr_t phys_addr, size_t size)
+{
+}
+
 static void __vunmap(const void *addr, int deallocate_pages)
 {
 	struct vm_struct *area;
@@ -2262,6 +2267,9 @@ static void __vunmap(const void *addr, int deallocate_pages)
 	debug_check_no_obj_freed(area->addr, get_vm_area_size(area));
 
 	kasan_poison_vmalloc(area->addr, get_vm_area_size(area));
+
+	if (area->flags & VM_IOREMAP)
+		iounmap_page_range_hook(area->phys_addr, get_vm_area_size(area));
 
 	vm_remove_mappings(area, deallocate_pages);
 
