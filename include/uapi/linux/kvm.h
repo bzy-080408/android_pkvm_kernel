@@ -1072,6 +1072,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_EXIT_ON_EMULATION_FAILURE 204
 */
 #define KVM_CAP_ARM_MTE 205
+#define KVM_CAP_ARM_MMIO_GUARD 206
 
 #ifdef KVM_CAP_IRQ_ROUTING
 
