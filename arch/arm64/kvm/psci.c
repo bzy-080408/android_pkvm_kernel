@@ -12,6 +12,7 @@
 
 #include <asm/cputype.h>
 #include <asm/kvm_emulate.h>
+#include <asm/kvm_mmu.h>
 
 #include <kvm/arm_psci.h>
 #include <kvm/arm_hypercalls.h>
@@ -163,6 +164,13 @@ static void kvm_prepare_system_event(struct kvm_vcpu *vcpu, u32 type)
 	kvm_for_each_vcpu(i, tmp, vcpu->kvm)
 		tmp->arch.power_off = true;
 	kvm_make_all_cpus_request(vcpu->kvm, KVM_REQ_SLEEP);
+
+	/*
+	 * If the MMIO guard was enabled, we pay the price of a full
+	 * unmap to get back to a sane state (and clear the flag).
+	 */
+	if (test_and_clear_bit(KVM_ARCH_FLAG_MMIO_GUARD, &vcpu->kvm->arch.flags))
+		stage2_unmap_vm(vcpu->kvm);
 
 	memset(&vcpu->run->system_event, 0, sizeof(vcpu->run->system_event));
 	vcpu->run->system_event.type = type;
