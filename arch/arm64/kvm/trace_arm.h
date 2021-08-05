@@ -89,6 +89,40 @@ TRACE_EVENT(kvm_access_fault,
 	TP_printk("IPA: %lx", __entry->ipa)
 );
 
+TRACE_EVENT(kvm_mmio_map,
+	TP_PROTO(unsigned long vcpu_pc, unsigned long ipa),
+	TP_ARGS(vcpu_pc, ipa),
+
+	TP_STRUCT__entry(
+		__field(	unsigned long,	vcpu_pc		)
+		__field(	unsigned long,	ipa		)
+	),
+
+	TP_fast_assign(
+		__entry->vcpu_pc	= vcpu_pc;
+		__entry->ipa		= ipa;
+	),
+
+	TP_printk("PC: %lx IPA: %lx", __entry->vcpu_pc, __entry->ipa)
+);
+
+TRACE_EVENT(kvm_mmio_unmap,
+	TP_PROTO(unsigned long vcpu_pc, unsigned long ipa),
+	TP_ARGS(vcpu_pc, ipa),
+
+	TP_STRUCT__entry(
+		__field(	unsigned long,	vcpu_pc		)
+		__field(	unsigned long,	ipa		)
+	),
+
+	TP_fast_assign(
+		__entry->vcpu_pc	= vcpu_pc;
+		__entry->ipa		= ipa;
+	),
+
+	TP_printk("PC: %lx IPA: %lx", __entry->vcpu_pc, __entry->ipa)
+);
+
 TRACE_EVENT(kvm_failed_mmio_check,
 	TP_PROTO(unsigned long vcpu_pc, unsigned long ipa),
 	TP_ARGS(vcpu_pc, ipa),
