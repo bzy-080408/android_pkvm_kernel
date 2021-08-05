@@ -1162,6 +1162,8 @@ bool kvm_install_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
 					  ipa, PAGE_SIZE, memcache,
 					  MMIO_NOTE);
 	spin_unlock(&vcpu->kvm->mmu_lock);
+	if (!ret)
+		trace_kvm_mmio_map(*vcpu_pc(vcpu), ipa);
 
 	return ret == 0;
 }
@@ -1193,9 +1195,11 @@ bool kvm_remove_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
 	spin_lock(&vcpu->kvm->mmu_lock);
 
 	ret = __check_ioguard_page(vcpu, ipa);
-	if (ret)		/* Drop the annotation */
+	if (ret) {		/* Drop the annotation */
 		kvm_pgtable_stage2_unmap(vcpu->arch.hw_mmu->pgt,
 					 ALIGN_DOWN(ipa, PAGE_SIZE), PAGE_SIZE);
+		trace_kvm_mmio_unmap(*vcpu_pc(vcpu), ipa);
+	}
 
 	spin_unlock(&vcpu->kvm->mmu_lock);
 	return ret;
