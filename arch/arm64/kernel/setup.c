@@ -458,4 +458,5 @@ device_initcall(register_arm64_panic_block);
 void kvm_arm_init_hyp_services(void)
 {
 	kvm_init_ioremap_services();
+	kvm_init_memshare_services();
 }
