@@ -10,6 +10,8 @@
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
 
+#include "trace.h"
+
 static void kvm_ptp_get_time(struct kvm_vcpu *vcpu, u64 *val)
 {
 	struct system_time_snapshot systime_snapshot;
@@ -136,6 +138,8 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 			val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_ENROLL);
 			val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_MAP);
 			val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_UNMAP);
+			val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MEM_SHARE);
+			val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MEM_UNSHARE);
 		}
 		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_PTP_FUNC_ID:
@@ -160,6 +164,14 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		if (!vcpu_mode_is_32bit(vcpu) &&
 		    kvm_remove_ioguard_page(vcpu, vcpu_get_reg(vcpu, 1)))
 			val[0] = SMCCC_RET_SUCCESS;
+		break;
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
+		trace_kvm_mem_share(*vcpu_pc(vcpu), vcpu_get_reg(vcpu, 1));
+		val[0] = SMCCC_RET_SUCCESS;
+		break;
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
+		trace_kvm_mem_unshare(*vcpu_pc(vcpu), vcpu_get_reg(vcpu, 1));
+		val[0] = SMCCC_RET_SUCCESS;
 		break;
 	case ARM_SMCCC_TRNG_VERSION:
 	case ARM_SMCCC_TRNG_FEATURES:
