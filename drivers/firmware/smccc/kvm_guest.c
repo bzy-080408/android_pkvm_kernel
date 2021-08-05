@@ -37,6 +37,8 @@ void __init kvm_init_hyp_services(void)
 
 	bitmap_from_arr32(__kvm_arm_hyp_services, val, ARM_SMCCC_KVM_NUM_FUNCS);
 
+	kvm_init_memshare_services();
+
 	pr_info("hypervisor services detected (0x%08lx 0x%08lx 0x%08lx 0x%08lx)\n",
 		 res.a3, res.a2, res.a1, res.a0);
 }
