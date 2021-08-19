@@ -401,6 +401,11 @@ static bool kvm_hyp_handle_dabt_low(struct kvm_vcpu *vcpu, u64 *exit_code)
 	return false;
 }
 
+static bool kvm_hyp_handle_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	return false;
+}
+
 typedef bool (*exit_handler_fn)(struct kvm_vcpu *, u64 *);
 
 static const exit_handler_fn *kvm_get_exit_handler_array(void);
