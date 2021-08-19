@@ -16,6 +16,7 @@
 #include <linux/jump_label.h>
 #include <uapi/linux/psci.h>
 
+#include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
 
 #include <asm/barrier.h>
@@ -403,7 +404,36 @@ static bool kvm_hyp_handle_dabt_low(struct kvm_vcpu *vcpu, u64 *exit_code)
 
 static bool kvm_hyp_handle_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
-	return false;
+	u32 func_id;
+	unsigned long arg1 = 0;
+
+	if (!is_protected_kvm_enabled())
+		return false;
+
+	func_id = smccc_get_function(vcpu);
+	switch (func_id) {
+		struct arm_smccc_res res;
+
+	default:
+		return false;
+
+	/*
+	 * pKVM does not trust the host, and so it should not be
+	 * involved in serving entropy requests from protected guests.
+	 * Let's just patch the call through to the secure world directly.
+	 */
+	case ARM_SMCCC_TRNG_FEATURES:
+	case ARM_SMCCC_TRNG_RND32:
+	case ARM_SMCCC_TRNG_RND64:
+		arg1 = smccc_get_arg1(vcpu);
+		fallthrough;
+	case ARM_SMCCC_TRNG_VERSION:
+	case ARM_SMCCC_TRNG_GET_UUID:
+		arm_smccc_1_1_smc(func_id, arg1, &res);
+		smccc_set_retval(vcpu, res.a0, res.a1, res.a2, res.a3);
+		break;
+	}
+	return true;
 }
 
 typedef bool (*exit_handler_fn)(struct kvm_vcpu *, u64 *);
