@@ -48,14 +48,15 @@ assert_root() {
 }
 
 assert_have_module() {
-    if ! $modprobe -q -n $module; then
+    echo "Checking for $module"
+    if ! $modprobe -n $module; then
 	skip "module $module is not found"
     fi
 }
 
 run_module() {
-    if $modprobe -q $module $args; then
-	$modprobe -q -r $module
+    if $modprobe $module $args; then
+	$modprobe -r $module
 	say "ok"
     else
 	fail ""
