@@ -519,7 +519,66 @@ CPU_LE(	rev		w8, w8		)
 	bl		pmull_gcm_ghash_4x
 	.endif
 
-	bl		pmull_gcm_enc_4x
+	ld1		{KS0.16b}, [x5]			// load upper counter
+	sub		w10, w8, #4
+	sub		w11, w8, #3
+	sub		w12, w8, #2
+	sub		w13, w8, #1
+	rev		w10, w10
+	rev		w11, w11
+	rev		w12, w12
+	rev		w13, w13
+	mov		KS1.16b, KS0.16b
+	mov		KS2.16b, KS0.16b
+	mov		KS3.16b, KS0.16b
+	ins		KS0.s[3], w10			// set lower counter
+	ins		KS1.s[3], w11
+	ins		KS2.s[3], w12
+	ins		KS3.s[3], w13
+
+	add		x10, x6, #96			// round key pointer
+	ld1		{K6.4s-K7.4s}, [x10], #32
+	.irp		key, K0, K1, K2, K3, K4, K5
+	enc_qround	KS0, KS1, KS2, KS3, \key
+	.endr
+
+	tbnz		x7, #2, .Lnot128\@
+	.subsection	1
+.Lnot128\@:
+	ld1		{K8.4s-K9.4s}, [x10], #32
+	.irp		key, K6, K7
+	enc_qround	KS0, KS1, KS2, KS3, \key
+	.endr
+	ld1		{K6.4s-K7.4s}, [x10]
+	.irp		key, K8, K9
+	enc_qround	KS0, KS1, KS2, KS3, \key
+	.endr
+	tbz		x7, #1, .Lout192\@
+	b		.Lout256\@
+	.previous
+
+.Lout256\@:
+	.irp		key, K6, K7
+	enc_qround	KS0, KS1, KS2, KS3, \key
+	.endr
+
+.Lout192\@:
+	enc_qround	KS0, KS1, KS2, KS3, KK
+
+	aese		KS0.16b, KL.16b
+	aese		KS1.16b, KL.16b
+	aese		KS2.16b, KL.16b
+	aese		KS3.16b, KL.16b
+
+	eor		KS0.16b, KS0.16b, KM.16b
+	eor		KS1.16b, KS1.16b, KM.16b
+	eor		KS2.16b, KS2.16b, KM.16b
+	eor		KS3.16b, KS3.16b, KM.16b
+
+	eor		INP0.16b, INP0.16b, KS0.16b
+	eor		INP1.16b, INP1.16b, KS1.16b
+	eor		INP2.16b, INP2.16b, KS2.16b
+	eor		INP3.16b, INP3.16b, KS3.16b
 
 	tbnz		x0, #63, 6f
 	st1		{INP0.16b-INP3.16b}, [x1], #64
@@ -697,71 +756,6 @@ SYM_FUNC_START_LOCAL(pmull_gcm_ghash_4x)
 
 	ret
 SYM_FUNC_END(pmull_gcm_ghash_4x)
-
-SYM_FUNC_START_LOCAL(pmull_gcm_enc_4x)
-	ld1		{KS0.16b}, [x5]			// load upper counter
-	sub		w10, w8, #4
-	sub		w11, w8, #3
-	sub		w12, w8, #2
-	sub		w13, w8, #1
-	rev		w10, w10
-	rev		w11, w11
-	rev		w12, w12
-	rev		w13, w13
-	mov		KS1.16b, KS0.16b
-	mov		KS2.16b, KS0.16b
-	mov		KS3.16b, KS0.16b
-	ins		KS0.s[3], w10			// set lower counter
-	ins		KS1.s[3], w11
-	ins		KS2.s[3], w12
-	ins		KS3.s[3], w13
-
-	add		x10, x6, #96			// round key pointer
-	ld1		{K6.4s-K7.4s}, [x10], #32
-	.irp		key, K0, K1, K2, K3, K4, K5
-	enc_qround	KS0, KS1, KS2, KS3, \key
-	.endr
-
-	tbnz		x7, #2, .Lnot128
-	.subsection	1
-.Lnot128:
-	ld1		{K8.4s-K9.4s}, [x10], #32
-	.irp		key, K6, K7
-	enc_qround	KS0, KS1, KS2, KS3, \key
-	.endr
-	ld1		{K6.4s-K7.4s}, [x10]
-	.irp		key, K8, K9
-	enc_qround	KS0, KS1, KS2, KS3, \key
-	.endr
-	tbz		x7, #1, .Lout192
-	b		.Lout256
-	.previous
-
-.Lout256:
-	.irp		key, K6, K7
-	enc_qround	KS0, KS1, KS2, KS3, \key
-	.endr
-
-.Lout192:
-	enc_qround	KS0, KS1, KS2, KS3, KK
-
-	aese		KS0.16b, KL.16b
-	aese		KS1.16b, KL.16b
-	aese		KS2.16b, KL.16b
-	aese		KS3.16b, KL.16b
-
-	eor		KS0.16b, KS0.16b, KM.16b
-	eor		KS1.16b, KS1.16b, KM.16b
-	eor		KS2.16b, KS2.16b, KM.16b
-	eor		KS3.16b, KS3.16b, KM.16b
-
-	eor		INP0.16b, INP0.16b, KS0.16b
-	eor		INP1.16b, INP1.16b, KS1.16b
-	eor		INP2.16b, INP2.16b, KS2.16b
-	eor		INP3.16b, INP3.16b, KS3.16b
-
-	ret
-SYM_FUNC_END(pmull_gcm_enc_4x)
 
 	.section	".rodata", "a"
 	.align		6
