@@ -12,7 +12,9 @@
 
 	.macro switch_tls_v6k, base, tp, tpuser, tmp1, tmp2
 	mrc	p15, 0, \tmp2, c13, c0, 2	@ get the user r/w register
+#ifndef CONFIG_CURRENT_POINTER_IN_TPIDRURO
 	mcr	p15, 0, \tp, c13, c0, 3		@ set TLS register
+#endif
 	mcr	p15, 0, \tpuser, c13, c0, 2	@ and the user r/w register
 	str	\tmp2, [\base, #TI_TP_VALUE + 4] @ save it
 	.endm
@@ -77,7 +79,7 @@ static inline void set_tls(unsigned long val)
 	 */
 	barrier();
 
-	if (!tls_emu) {
+	if (!tls_emu && !IS_ENABLED(CONFIG_CURRENT_POINTER_IN_TPIDRURO)) {
 		if (has_tls_reg) {
 			asm("mcr p15, 0, %0, c13, c0, 3"
 			    : : "r" (val));

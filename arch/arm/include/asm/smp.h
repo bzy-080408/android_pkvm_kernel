@@ -69,6 +69,9 @@ struct secondary_data {
 	void *stack;
 #ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
 	unsigned long cpu;
+#ifdef CONFIG_CURRENT_POINTER_IN_TPIDRURO
+	struct task_struct *idle;
+#endif
 #endif
 };
 extern struct secondary_data secondary_data;

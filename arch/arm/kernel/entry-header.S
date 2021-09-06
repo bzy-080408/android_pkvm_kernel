@@ -292,6 +292,12 @@
 
 
 	.macro	restore_user_regs, fast = 0, offset = 0
+#ifdef CONFIG_CURRENT_POINTER_IN_TPIDRURO
+	get_thread_info r1
+	ldr	r1, [r1, #TI_TP_VALUE]
+	mcr	p15, 0, r1, c13, c0, 3		@ set TLS register
+#endif
+
 	uaccess_enable r1, isb=0
 #ifndef CONFIG_THUMB2_KERNEL
 	@ ARM mode restore

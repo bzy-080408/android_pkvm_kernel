@@ -199,6 +199,21 @@
 	.endm
 	.endr
 
+	.macro	get_current, rd
+#ifdef CONFIG_CURRENT_POINTER_IN_TPIDRURO
+	mrc	p15, 0, \rd, c13, c0, 3		@ get TPIDRURO register
+#else
+	get_thread_info \rd
+	ldr	\rd, [\rd, #TI_TASK]
+#endif
+	.endm
+
+	.macro	set_current, rn
+#ifdef CONFIG_CURRENT_POINTER_IN_TPIDRURO
+	mcr	p15, 0, \rn, c13, c0, 3		@ set TPIDRURO register
+#endif
+	.endm
+
 /*
  * Get current thread_info.
  */

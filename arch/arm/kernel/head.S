@@ -426,7 +426,8 @@ ENDPROC(secondary_startup_arm)
 ENTRY(__secondary_switched)
 	adr_l	r7, secondary_data + 12		@ get secondary_data.stack
 #ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
-	ldr	r8, [r7, #4]			@ get secondary_data.cpu
+	ldrd	r8, r9, [r7, #4]		@ get secondary_data.cpu and .idle
+	set_current r9				@ set 'current' pointer
 	adr_l	r9, __per_cpu_offset		@ index the per-CPU offset array
 	ldr	r8, [r9, r8, lsl #2]		@ using the CPU number
 	mcr	p15, 0, r8, c13, c0, 4		@ set TPIDRPRW

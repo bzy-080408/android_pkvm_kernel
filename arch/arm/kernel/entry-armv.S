@@ -385,6 +385,16 @@ ENDPROC(__fiq_abt)
  ATRAP( mcrne	p15, 0, r8, c1, c0, 0)
 
 	@
+	@ Reload the 'current' pointer into TPIDRURO if needed
+	@
+#ifdef CONFIG_CURRENT_POINTER_IN_TPIDRURO
+	adr_l	r7, __entry_task		@ get __entry_task base address
+	mrc	p15, 0, r8, c13, c0, 4		@ get per-CPU offset
+	ldr	r7, [r7, r8]			@ load variable
+	mcr	p15, 0, r7, c13, c0, 3		@ store in TPIDRURO
+#endif
+
+	@
 	@ Clear FP to mark the first stack frame
 	@
 	zero_fp
@@ -766,6 +776,7 @@ ENTRY(__switch_to)
 #ifdef CONFIG_CPU_USE_DOMAINS
 	mcr	p15, 0, r6, c3, c0, 0		@ Set domain register
 #endif
+	set_current r2
 	mov	r5, r0
 	add	r4, r2, #TI_CPU_SAVE
 	ldr	r0, =thread_notify_head

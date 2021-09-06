@@ -22,11 +22,14 @@
  * contains the memory barrier to tell GCC not to cache `current'.
  */
 extern struct task_struct *__switch_to(struct task_struct *, struct thread_info *, struct thread_info *);
+DECLARE_PER_CPU(struct task_struct *, __entry_task);
 
 #define switch_to(prev,next,last)					\
 do {									\
 	__complete_pending_tlbi();					\
 	last = __switch_to(prev,task_thread_info(prev), task_thread_info(next));	\
+	if (IS_ENABLED(CONFIG_CURRENT_POINTER_IN_TPIDRURO))		\
+		__this_cpu_write(__entry_task, next);			\
 } while (0)
 
 #endif /* __ASM_ARM_SWITCH_TO_H */

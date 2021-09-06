@@ -160,6 +160,9 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 #endif
 #ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
 	secondary_data.cpu = cpu;
+#ifdef CONFIG_CURRENT_POINTER_IN_TPIDRURO
+	secondary_data.idle = idle;
+#endif
 #endif
 	sync_cache_w(&secondary_data);
 

@@ -1164,6 +1164,10 @@ config PCPU_OFFSET_IN_TPIDRPRW
 	def_bool y
 	depends on SMP && (CPU_V6K || CPU_V7)
 
+config CURRENT_POINTER_IN_TPIDRURO
+	def_bool y
+	depends on PCPU_OFFSET_IN_TPIDRPRW
+
 config ARM_CPU_TOPOLOGY
 	bool "Support cpu topology definition"
 	depends on SMP && CPU_V7
