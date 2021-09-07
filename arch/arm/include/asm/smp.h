@@ -61,6 +61,9 @@ struct secondary_data {
 	};
 	unsigned long swapper_pg_dir;
 	void *stack;
+#ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
+	unsigned long cpu;
+#endif
 };
 extern struct secondary_data secondary_data;
 extern void secondary_startup(void);

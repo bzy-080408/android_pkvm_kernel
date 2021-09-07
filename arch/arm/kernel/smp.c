@@ -153,6 +153,9 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	secondary_data.pgdir = virt_to_phys(idmap_pgd);
 	secondary_data.swapper_pg_dir = get_arch_pgd(swapper_pg_dir);
 #endif
+#ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
+	secondary_data.cpu = cpu;
+#endif
 	sync_cache_w(&secondary_data);
 
 	/*
