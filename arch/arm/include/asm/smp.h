@@ -15,7 +15,13 @@
 # error "<asm/smp.h> included in non-SMP build"
 #endif
 
+DECLARE_PER_CPU_READ_MOSTLY(int, cpu_number);
+
+#ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
+#define raw_smp_processor_id() (*raw_cpu_ptr(&cpu_number))
+#else
 #define raw_smp_processor_id() (current_thread_info()->cpu)
+#endif
 
 struct seq_file;
 

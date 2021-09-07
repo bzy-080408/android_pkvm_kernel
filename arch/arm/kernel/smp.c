@@ -51,6 +51,11 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/ipi.h>
 
+#ifdef CONFIG_PCPU_OFFSET_IN_TPIDRPRW
+DEFINE_PER_CPU_READ_MOSTLY(int, cpu_number);
+EXPORT_PER_CPU_SYMBOL(cpu_number);
+#endif
+
 /*
  * as from 2.5, kernels no longer have an init_tasks structure
  * so we need some other way of telling a new secondary core
@@ -497,6 +502,13 @@ void __init smp_prepare_boot_cpu(void)
 void __init smp_prepare_cpus(unsigned int max_cpus)
 {
 	unsigned int ncores = num_possible_cpus();
+
+	if (IS_ENABLED(CONFIG_PCPU_OFFSET_IN_TPIDRPRW)) {
+		int cpu;
+
+		for_each_possible_cpu(cpu)
+			per_cpu(cpu_number, cpu) = cpu;
+	}
 
 	init_cpu_topology();
 
