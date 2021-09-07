@@ -169,7 +169,7 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		fpexc = fmrx(FPEXC);
 
 #ifdef CONFIG_SMP
-		cpu = thread->cpu;
+		cpu = smp_processor_id();
 
 		/*
 		 * On SMP, if VFP is enabled, save the old state in
@@ -449,6 +449,7 @@ void __init vfp_disable(void)
 static int vfp_pm_suspend(void)
 {
 	struct thread_info *ti = current_thread_info();
+	int cpu = smp_processor_id();
 	u32 fpexc = fmrx(FPEXC);
 
 	/* if vfp is on, then save state for resumption */
@@ -458,16 +459,16 @@ static int vfp_pm_suspend(void)
 
 		/* disable, just in case */
 		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
-	} else if (vfp_current_hw_state[ti->cpu]) {
+	} else if (vfp_current_hw_state[cpu]) {
 #ifndef CONFIG_SMP
 		fmxr(FPEXC, fpexc | FPEXC_EN);
-		vfp_save_state(vfp_current_hw_state[ti->cpu], fpexc);
+		vfp_save_state(vfp_current_hw_state[cpu], fpexc);
 		fmxr(FPEXC, fpexc);
 #endif
 	}
 
 	/* clear any information we had about last context state */
-	vfp_current_hw_state[ti->cpu] = NULL;
+	vfp_current_hw_state[cpu] = NULL;
 
 	return 0;
 }
