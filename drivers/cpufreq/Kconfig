@@ -218,6 +218,13 @@ config CPUFREQ_DT
 
 	  If in doubt, say N.
 
+config CPUFREQ_VIRT
+	tristate "Virtual cpufreq driver"
+	help
+	  Virtual cpu frequency driver to be used inside a VM.
+
+	  If in doubt, say N.
+
 config CPUFREQ_DT_PLATDEV
 	bool
 	help
