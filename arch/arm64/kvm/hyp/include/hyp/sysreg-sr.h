@@ -158,36 +158,39 @@ static inline void __sysreg_restore_el2_return_state(struct kvm_cpu_context *ctx
 
 static inline void __sysreg32_save_state(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
-	*vcpu_spsr_abt(vcpu) = read_sysreg(spsr_abt);
-	*vcpu_spsr_und(vcpu) = read_sysreg(spsr_und);
-	*vcpu_spsr_irq(vcpu) = read_sysreg(spsr_irq);
-	*vcpu_spsr_fiq(vcpu) = read_sysreg(spsr_fiq);
+	*ctxt_spsr_abt(vcpu_ctxt) = read_sysreg(spsr_abt);
+	*ctxt_spsr_und(vcpu_ctxt) = read_sysreg(spsr_und);
+	*ctxt_spsr_irq(vcpu_ctxt) = read_sysreg(spsr_irq);
+	*ctxt_spsr_fiq(vcpu_ctxt) = read_sysreg(spsr_fiq);
 
-	__vcpu_sys_reg(vcpu, DACR32_EL2) = read_sysreg(dacr32_el2);
-	__vcpu_sys_reg(vcpu, IFSR32_EL2) = read_sysreg(ifsr32_el2);
+	ctxt_sys_reg(vcpu_ctxt, DACR32_EL2) = read_sysreg(dacr32_el2);
+	ctxt_sys_reg(vcpu_ctxt, IFSR32_EL2) = read_sysreg(ifsr32_el2);
 
 	if (has_vhe() || vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY)
-		__vcpu_sys_reg(vcpu, DBGVCR32_EL2) = read_sysreg(dbgvcr32_el2);
+		ctxt_sys_reg(vcpu_ctxt, DBGVCR32_EL2) = read_sysreg(dbgvcr32_el2);
 }
 
 static inline void __sysreg32_restore_state(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
-	write_sysreg(*vcpu_spsr_abt(vcpu), spsr_abt);
-	write_sysreg(*vcpu_spsr_und(vcpu), spsr_und);
-	write_sysreg(*vcpu_spsr_irq(vcpu), spsr_irq);
-	write_sysreg(*vcpu_spsr_fiq(vcpu), spsr_fiq);
+	write_sysreg(*ctxt_spsr_abt(vcpu_ctxt), spsr_abt);
+	write_sysreg(*ctxt_spsr_und(vcpu_ctxt), spsr_und);
+	write_sysreg(*ctxt_spsr_irq(vcpu_ctxt), spsr_irq);
+	write_sysreg(*ctxt_spsr_fiq(vcpu_ctxt), spsr_fiq);
 
-	write_sysreg(__vcpu_sys_reg(vcpu, DACR32_EL2), dacr32_el2);
-	write_sysreg(__vcpu_sys_reg(vcpu, IFSR32_EL2), ifsr32_el2);
+	write_sysreg(ctxt_sys_reg(vcpu_ctxt, DACR32_EL2), dacr32_el2);
+	write_sysreg(ctxt_sys_reg(vcpu_ctxt, IFSR32_EL2), ifsr32_el2);
 
 	if (has_vhe() || vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY)
-		write_sysreg(__vcpu_sys_reg(vcpu, DBGVCR32_EL2), dbgvcr32_el2);
+		write_sysreg(ctxt_sys_reg(vcpu_ctxt, DBGVCR32_EL2),
+		             dbgvcr32_el2);
 }
 
 #endif /* __ARM64_KVM_HYP_SYSREG_SR_H__ */

@@ -473,6 +473,7 @@ static int __vgic_v3_bpr_min(void)
 
 static int __vgic_v3_get_group(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u32 esr = kvm_vcpu_get_esr(vcpu);
 	u8 crm = (esr & ESR_ELx_SYS64_ISS_CRM_MASK) >> ESR_ELx_SYS64_ISS_CRM_SHIFT;
 
@@ -673,6 +674,7 @@ static int __vgic_v3_clear_highest_active_priority(void)
 
 static void __vgic_v3_read_iar(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u64 lr_val;
 	u8 lr_prio, pmr;
 	int lr, grp;
@@ -700,11 +702,11 @@ static void __vgic_v3_read_iar(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 		lr_val |= ICH_LR_ACTIVE_BIT;
 	__gic_v3_set_lr(lr_val, lr);
 	__vgic_v3_set_active_priority(lr_prio, vmcr, grp);
-	vcpu_set_reg(vcpu, rt, lr_val & ICH_LR_VIRTUAL_ID_MASK);
+	ctxt_set_reg(vcpu_ctxt, rt, lr_val & ICH_LR_VIRTUAL_ID_MASK);
 	return;
 
 spurious:
-	vcpu_set_reg(vcpu, rt, ICC_IAR1_EL1_SPURIOUS);
+	ctxt_set_reg(vcpu_ctxt, rt, ICC_IAR1_EL1_SPURIOUS);
 }
 
 static void __vgic_v3_clear_active_lr(int lr, u64 lr_val)
@@ -731,7 +733,8 @@ static void __vgic_v3_bump_eoicount(void)
 
 static void __vgic_v3_write_dir(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u32 vid = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u32 vid = ctxt_get_reg(vcpu_ctxt, rt);
 	u64 lr_val;
 	int lr;
 
@@ -754,7 +757,8 @@ static void __vgic_v3_write_dir(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_write_eoir(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u32 vid = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u32 vid = ctxt_get_reg(vcpu_ctxt, rt);
 	u64 lr_val;
 	u8 lr_prio, act_prio;
 	int lr, grp;
@@ -791,17 +795,20 @@ static void __vgic_v3_write_eoir(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_read_igrpen0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	vcpu_set_reg(vcpu, rt, !!(vmcr & ICH_VMCR_ENG0_MASK));
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	ctxt_set_reg(vcpu_ctxt, rt, !!(vmcr & ICH_VMCR_ENG0_MASK));
 }
 
 static void __vgic_v3_read_igrpen1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	vcpu_set_reg(vcpu, rt, !!(vmcr & ICH_VMCR_ENG1_MASK));
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	ctxt_set_reg(vcpu_ctxt, rt, !!(vmcr & ICH_VMCR_ENG1_MASK));
 }
 
 static void __vgic_v3_write_igrpen0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u64 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u64 val = ctxt_get_reg(vcpu_ctxt, rt);
 
 	if (val & 1)
 		vmcr |= ICH_VMCR_ENG0_MASK;
@@ -813,7 +820,8 @@ static void __vgic_v3_write_igrpen0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_write_igrpen1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u64 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u64 val = ctxt_get_reg(vcpu_ctxt, rt);
 
 	if (val & 1)
 		vmcr |= ICH_VMCR_ENG1_MASK;
@@ -825,17 +833,20 @@ static void __vgic_v3_write_igrpen1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_read_bpr0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	vcpu_set_reg(vcpu, rt, __vgic_v3_get_bpr0(vmcr));
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	ctxt_set_reg(vcpu_ctxt, rt, __vgic_v3_get_bpr0(vmcr));
 }
 
 static void __vgic_v3_read_bpr1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	vcpu_set_reg(vcpu, rt, __vgic_v3_get_bpr1(vmcr));
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	ctxt_set_reg(vcpu_ctxt, rt, __vgic_v3_get_bpr1(vmcr));
 }
 
 static void __vgic_v3_write_bpr0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u64 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u64 val = ctxt_get_reg(vcpu_ctxt, rt);
 	u8 bpr_min = __vgic_v3_bpr_min() - 1;
 
 	/* Enforce BPR limiting */
@@ -852,7 +863,8 @@ static void __vgic_v3_write_bpr0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_write_bpr1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u64 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u64 val = ctxt_get_reg(vcpu_ctxt, rt);
 	u8 bpr_min = __vgic_v3_bpr_min();
 
 	if (vmcr & ICH_VMCR_CBPR_MASK)
@@ -872,6 +884,7 @@ static void __vgic_v3_write_bpr1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_read_apxrn(struct kvm_vcpu *vcpu, int rt, int n)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u32 val;
 
 	if (!__vgic_v3_get_group(vcpu))
@@ -879,12 +892,13 @@ static void __vgic_v3_read_apxrn(struct kvm_vcpu *vcpu, int rt, int n)
 	else
 		val = __vgic_v3_read_ap1rn(n);
 
-	vcpu_set_reg(vcpu, rt, val);
+	ctxt_set_reg(vcpu_ctxt, rt, val);
 }
 
 static void __vgic_v3_write_apxrn(struct kvm_vcpu *vcpu, int rt, int n)
 {
-	u32 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u32 val = ctxt_get_reg(vcpu_ctxt, rt);
 
 	if (!__vgic_v3_get_group(vcpu))
 		__vgic_v3_write_ap0rn(val, n);
@@ -895,47 +909,56 @@ static void __vgic_v3_write_apxrn(struct kvm_vcpu *vcpu, int rt, int n)
 static void __vgic_v3_read_apxr0(struct kvm_vcpu *vcpu,
 					    u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_read_apxrn(vcpu, rt, 0);
 }
 
 static void __vgic_v3_read_apxr1(struct kvm_vcpu *vcpu,
 					    u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_read_apxrn(vcpu, rt, 1);
 }
 
 static void __vgic_v3_read_apxr2(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_read_apxrn(vcpu, rt, 2);
 }
 
 static void __vgic_v3_read_apxr3(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_read_apxrn(vcpu, rt, 3);
 }
 
 static void __vgic_v3_write_apxr0(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_write_apxrn(vcpu, rt, 0);
 }
 
 static void __vgic_v3_write_apxr1(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_write_apxrn(vcpu, rt, 1);
 }
 
 static void __vgic_v3_write_apxr2(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_write_apxrn(vcpu, rt, 2);
 }
 
 static void __vgic_v3_write_apxr3(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	__vgic_v3_write_apxrn(vcpu, rt, 3);
 }
 
 static void __vgic_v3_read_hppir(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u64 lr_val;
 	int lr, lr_grp, grp;
 
@@ -950,19 +973,21 @@ static void __vgic_v3_read_hppir(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 		lr_val = ICC_IAR1_EL1_SPURIOUS;
 
 spurious:
-	vcpu_set_reg(vcpu, rt, lr_val & ICH_LR_VIRTUAL_ID_MASK);
+	ctxt_set_reg(vcpu_ctxt, rt, lr_val & ICH_LR_VIRTUAL_ID_MASK);
 }
 
 static void __vgic_v3_read_pmr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	vmcr &= ICH_VMCR_PMR_MASK;
 	vmcr >>= ICH_VMCR_PMR_SHIFT;
-	vcpu_set_reg(vcpu, rt, vmcr);
+	ctxt_set_reg(vcpu_ctxt, rt, vmcr);
 }
 
 static void __vgic_v3_write_pmr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u32 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u32 val = ctxt_get_reg(vcpu_ctxt, rt);
 
 	val <<= ICH_VMCR_PMR_SHIFT;
 	val &= ICH_VMCR_PMR_MASK;
@@ -974,12 +999,14 @@ static void __vgic_v3_write_pmr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 static void __vgic_v3_read_rpr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u32 val = __vgic_v3_get_highest_active_priority();
-	vcpu_set_reg(vcpu, rt, val);
+	ctxt_set_reg(vcpu_ctxt, rt, val);
 }
 
 static void __vgic_v3_read_ctlr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	u32 vtr, val;
 
 	vtr = read_gicreg(ICH_VTR_EL2);
@@ -996,12 +1023,13 @@ static void __vgic_v3_read_ctlr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 	/* CBPR */
 	val |= (vmcr & ICH_VMCR_CBPR_MASK) >> ICH_VMCR_CBPR_SHIFT;
 
-	vcpu_set_reg(vcpu, rt, val);
+	ctxt_set_reg(vcpu_ctxt, rt, val);
 }
 
 static void __vgic_v3_write_ctlr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 {
-	u32 val = vcpu_get_reg(vcpu, rt);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+	u32 val = ctxt_get_reg(vcpu_ctxt, rt);
 
 	if (val & ICC_CTLR_EL1_CBPR_MASK)
 		vmcr |= ICH_VMCR_CBPR_MASK;
@@ -1018,6 +1046,7 @@ static void __vgic_v3_write_ctlr(struct kvm_vcpu *vcpu, u32 vmcr, int rt)
 
 int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
 {
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	int rt;
 	u32 esr;
 	u32 vmcr;
@@ -1026,7 +1055,7 @@ int __vgic_v3_perform_cpuif_access(struct kvm_vcpu *vcpu)
 	u32 sysreg;
 
 	esr = kvm_vcpu_get_esr(vcpu);
-	if (vcpu_mode_is_32bit(vcpu)) {
+	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
 		if (!kvm_condition_valid(vcpu)) {
 			__kvm_skip_instr(vcpu);
 			return 1;
