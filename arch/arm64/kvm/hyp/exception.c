@@ -59,31 +59,26 @@ static void __ctxt_write_spsr_und(struct kvm_cpu_context *vcpu_ctxt, u64 val)
 
 static inline u64 __vcpu_read_sys_reg(const struct kvm_vcpu *vcpu, int reg)
 {
-	const struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	return __ctxt_read_sys_reg(&vcpu_ctxt(vcpu), reg);
 }
 
 static inline void __vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_sys_reg(&vcpu_ctxt(vcpu), val, reg);
 }
 
 static void __vcpu_write_spsr(struct kvm_vcpu *vcpu, u64 val)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_spsr(&vcpu_ctxt(vcpu), val);
 }
 
 static void __vcpu_write_spsr_abt(struct kvm_vcpu *vcpu, u64 val)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_spsr_abt(&vcpu_ctxt(vcpu), val);
 }
 
 static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	__ctxt_write_spsr_und(&vcpu_ctxt(vcpu), val);
 }
 

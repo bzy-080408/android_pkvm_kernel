@@ -160,6 +160,7 @@ static inline void __sysreg32_save_state(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
@@ -179,6 +180,7 @@ static inline void __sysreg32_restore_state(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
+
 	if (!vcpu_el1_is_32bit(vcpu))
 		return;
 
