@@ -67,21 +67,6 @@ static inline void __vcpu_write_sys_reg(struct kvm_vcpu *vcpu, u64 val, int reg)
 	__ctxt_write_sys_reg(&vcpu_ctxt(vcpu), val, reg);
 }
 
-static void __vcpu_write_spsr(struct kvm_vcpu *vcpu, u64 val)
-{
-	__ctxt_write_spsr(&vcpu_ctxt(vcpu), val);
-}
-
-static void __vcpu_write_spsr_abt(struct kvm_vcpu *vcpu, u64 val)
-{
-	__ctxt_write_spsr_abt(&vcpu_ctxt(vcpu), val);
-}
-
-static void __vcpu_write_spsr_und(struct kvm_vcpu *vcpu, u64 val)
-{
-	__ctxt_write_spsr_und(&vcpu_ctxt(vcpu), val);
-}
-
 /*
  * This performs the exception entry at a given EL (@target_mode), stashing PC
  * and PSTATE into ELR and SPSR respectively, and compute the new PC/PSTATE.
