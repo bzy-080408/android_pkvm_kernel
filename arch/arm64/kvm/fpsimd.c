@@ -74,16 +74,16 @@ void kvm_arch_vcpu_load_fp(struct kvm_vcpu *vcpu)
 {
 	BUG_ON(!current->mm);
 
-	vcpu->arch.flags &= ~(KVM_ARM64_FP_ENABLED |
-			      KVM_ARM64_HOST_SVE_IN_USE |
-			      KVM_ARM64_HOST_SVE_ENABLED);
-	vcpu->arch.flags |= KVM_ARM64_FP_HOST;
+	vcpu_flags(vcpu) &= ~(KVM_ARM64_FP_ENABLED |
+		              KVM_ARM64_HOST_SVE_IN_USE |
+		              KVM_ARM64_HOST_SVE_ENABLED);
+	vcpu_flags(vcpu) |= KVM_ARM64_FP_HOST;
 
 	if (test_thread_flag(TIF_SVE))
-		vcpu->arch.flags |= KVM_ARM64_HOST_SVE_IN_USE;
+		vcpu_flags(vcpu) |= KVM_ARM64_HOST_SVE_IN_USE;
 
 	if (read_sysreg(cpacr_el1) & CPACR_EL1_ZEN_EL0EN)
-		vcpu->arch.flags |= KVM_ARM64_HOST_SVE_ENABLED;
+		vcpu_flags(vcpu) |= KVM_ARM64_HOST_SVE_ENABLED;
 }
 
 /*
@@ -96,7 +96,7 @@ void kvm_arch_vcpu_ctxsync_fp(struct kvm_vcpu *vcpu)
 {
 	WARN_ON_ONCE(!irqs_disabled());
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED) {
+	if (vcpu_flags(vcpu) & KVM_ARM64_FP_ENABLED) {
 		fpsimd_bind_state_to_cpu(vcpu_fp_regs(vcpu),
 					 vcpu->arch.sve_state,
 					 vcpu->arch.sve_max_vl);
@@ -120,7 +120,7 @@ void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 
 	local_irq_save(flags);
 
-	if (vcpu->arch.flags & KVM_ARM64_FP_ENABLED) {
+	if (vcpu_flags(vcpu) & KVM_ARM64_FP_ENABLED) {
 		if (guest_has_sve) {
 			__vcpu_sys_reg(vcpu, ZCR_EL1) = read_sysreg_el1(SYS_ZCR);
 
@@ -139,14 +139,14 @@ void kvm_arch_vcpu_put_fp(struct kvm_vcpu *vcpu)
 		 * for EL0.  To avoid spurious traps, restore the trap state
 		 * seen by kvm_arch_vcpu_load_fp():
 		 */
-		if (vcpu->arch.flags & KVM_ARM64_HOST_SVE_ENABLED)
+		if (vcpu_flags(vcpu) & KVM_ARM64_HOST_SVE_ENABLED)
 			sysreg_clear_set(CPACR_EL1, 0, CPACR_EL1_ZEN_EL0EN);
 		else
 			sysreg_clear_set(CPACR_EL1, CPACR_EL1_ZEN_EL0EN, 0);
 	}
 
 	update_thread_flag(TIF_SVE,
-			   vcpu->arch.flags & KVM_ARM64_HOST_SVE_IN_USE);
+			   vcpu_flags(vcpu) & KVM_ARM64_HOST_SVE_IN_USE);
 
 	local_irq_restore(flags);
 }

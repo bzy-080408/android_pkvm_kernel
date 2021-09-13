@@ -907,7 +907,7 @@ out:
 	 * the vcpu state. Note that this relies on __kvm_adjust_pc()
 	 * being preempt-safe on VHE.
 	 */
-	if (unlikely(vcpu->arch.flags & (KVM_ARM64_PENDING_EXCEPTION |
+	if (unlikely(vcpu_flags(vcpu) & (KVM_ARM64_PENDING_EXCEPTION |
 					 KVM_ARM64_INCREMENT_PC)))
 		kvm_call_hyp(__kvm_adjust_pc, vcpu);
 

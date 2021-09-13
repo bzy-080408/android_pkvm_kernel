@@ -170,7 +170,7 @@ static inline void __sysreg32_save_state(struct kvm_vcpu *vcpu)
 	ctxt_sys_reg(vcpu_ctxt, DACR32_EL2) = read_sysreg(dacr32_el2);
 	ctxt_sys_reg(vcpu_ctxt, IFSR32_EL2) = read_sysreg(ifsr32_el2);
 
-	if (has_vhe() || vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY)
+	if (has_vhe() || vcpu_flags(vcpu) & KVM_ARM64_DEBUG_DIRTY)
 		ctxt_sys_reg(vcpu_ctxt, DBGVCR32_EL2) = read_sysreg(dbgvcr32_el2);
 }
 
@@ -188,7 +188,7 @@ static inline void __sysreg32_restore_state(struct kvm_vcpu *vcpu)
 	write_sysreg(ctxt_sys_reg(vcpu_ctxt, DACR32_EL2), dacr32_el2);
 	write_sysreg(ctxt_sys_reg(vcpu_ctxt, IFSR32_EL2), ifsr32_el2);
 
-	if (has_vhe() || vcpu->arch.flags & KVM_ARM64_DEBUG_DIRTY)
+	if (has_vhe() || vcpu_flags(vcpu) & KVM_ARM64_DEBUG_DIRTY)
 		write_sysreg(ctxt_sys_reg(vcpu_ctxt, DBGVCR32_EL2),
 		             dbgvcr32_el2);
 }
