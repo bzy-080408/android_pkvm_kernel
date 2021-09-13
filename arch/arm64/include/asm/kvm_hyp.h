@@ -94,7 +94,7 @@ void __sve_save_state(void *sve_pffr, u32 *fpsr);
 void __sve_restore_state(void *sve_pffr, u32 *fpsr);
 
 #ifndef __KVM_NVHE_HYPERVISOR__
-void activate_traps_vhe_load(struct kvm_vcpu *vcpu);
+void activate_traps_vhe_load(struct vcpu_hyp_state *vcpu_hyps);
 void deactivate_traps_vhe_put(void);
 #endif
 

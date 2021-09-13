@@ -15,6 +15,7 @@
 
 static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	if (ctxt_mode_is_32bit(vcpu_ctxt)) {
 		kvm_skip_instr32(vcpu);
@@ -33,6 +34,7 @@ static inline void kvm_skip_instr(struct kvm_vcpu *vcpu)
  */
 static inline void __kvm_skip_instr(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	*ctxt_pc(vcpu_ctxt) = read_sysreg_el2(SYS_ELR);
 	ctxt_gp_regs(vcpu_ctxt)->pstate = read_sysreg_el2(SYS_SPSR);

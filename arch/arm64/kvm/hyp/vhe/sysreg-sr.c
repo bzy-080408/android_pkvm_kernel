@@ -63,6 +63,7 @@ NOKPROBE_SYMBOL(sysreg_restore_guest_state_vhe);
  */
 void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.ctxt;
 	struct kvm_cpu_context *host_ctxt;
@@ -82,7 +83,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
 
 	vcpu->arch.sysregs_loaded_on_cpu = true;
 
-	activate_traps_vhe_load(vcpu);
+	activate_traps_vhe_load(vcpu_hyps);
 }
 
 /**
@@ -98,6 +99,7 @@ void kvm_vcpu_load_sysregs_vhe(struct kvm_vcpu *vcpu)
  */
 void kvm_vcpu_put_sysregs_vhe(struct kvm_vcpu *vcpu)
 {
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	struct kvm_cpu_context *vcpu_ctxt = &vcpu_ctxt(vcpu);
 	struct kvm_cpu_context *guest_ctxt = &vcpu->arch.ctxt;
 	struct kvm_cpu_context *host_ctxt;
