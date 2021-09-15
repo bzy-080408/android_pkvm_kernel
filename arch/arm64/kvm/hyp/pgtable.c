@@ -46,8 +46,7 @@
 					 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W | \
 					 KVM_PTE_LEAF_ATTR_HI_S2_XN)
 
-#define KVM_INVALID_PTE_OWNER_MASK	GENMASK(9, 2)
-#define KVM_MAX_OWNER_ID		1
+#define KVM_PTE_LEAF_ATTR_S2_IGNORED	GENMASK(58, 55)
 
 struct kvm_pgtable_walk_data {
 	struct kvm_pgtable		*pgt;
@@ -165,11 +164,6 @@ static kvm_pte_t kvm_init_valid_leaf_pte(u64 pa, kvm_pte_t attr, u32 level)
 	pte |= KVM_PTE_VALID;
 
 	return pte;
-}
-
-static kvm_pte_t kvm_init_invalid_leaf_owner(u8 owner_id)
-{
-	return FIELD_PREP(KVM_INVALID_PTE_OWNER_MASK, owner_id);
 }
 
 static int kvm_pgtable_visitor_cb(struct kvm_pgtable_walk_data *data, u64 addr,
@@ -503,7 +497,7 @@ void kvm_pgtable_hyp_destroy(struct kvm_pgtable *pgt)
 struct stage2_map_data {
 	u64				phys;
 	kvm_pte_t			attr;
-	u8				owner_id;
+	u64				annotation;
 
 	kvm_pte_t			*anchor;
 	kvm_pte_t			*childp;
@@ -670,7 +664,7 @@ static int stage2_map_walker_try_leaf(u64 addr, u64 end, u32 level,
 	if (kvm_phys_is_valid(phys))
 		new = kvm_init_valid_leaf_pte(phys, data->attr, level);
 	else
-		new = kvm_init_invalid_leaf_owner(data->owner_id);
+		new = data->annotation;
 
 	if (stage2_pte_is_counted(old)) {
 		/*
@@ -686,12 +680,16 @@ static int stage2_map_walker_try_leaf(u64 addr, u64 end, u32 level,
 	}
 
 	/* Perform CMOs before installation of the guest stage-2 PTE */
-	if (mm_ops->dcache_clean_inval_poc && stage2_pte_cacheable(pgt, new))
-		mm_ops->dcache_clean_inval_poc(kvm_pte_follow(new, mm_ops),
-						granule);
-
-	if (mm_ops->icache_inval_pou && stage2_pte_executable(new))
-		mm_ops->icache_inval_pou(kvm_pte_follow(new, mm_ops), granule);
+	if (kvm_phys_is_valid(phys)) {
+		if (mm_ops->dcache_clean_inval_poc &&
+		    stage2_pte_cacheable(pgt, new))
+			mm_ops->dcache_clean_inval_poc(kvm_pte_follow(new,
+								      mm_ops),
+						       granule);
+		if (mm_ops->icache_inval_pou && stage2_pte_executable(new))
+			mm_ops->icache_inval_pou(kvm_pte_follow(new, mm_ops),
+						 granule);
+	}
 
 	smp_store_release(ptep, new);
 	if (stage2_pte_is_counted(new))
@@ -860,8 +858,8 @@ int kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 	return ret;
 }
 
-int kvm_pgtable_stage2_set_owner(struct kvm_pgtable *pgt, u64 addr, u64 size,
-				 void *mc, u8 owner_id)
+int kvm_pgtable_stage2_annotate(struct kvm_pgtable *pgt, u64 addr, u64 size,
+				void *mc, kvm_pte_t annotation)
 {
 	int ret;
 	struct stage2_map_data map_data = {
@@ -869,7 +867,7 @@ int kvm_pgtable_stage2_set_owner(struct kvm_pgtable *pgt, u64 addr, u64 size,
 		.mmu		= pgt->mmu,
 		.memcache	= mc,
 		.mm_ops		= pgt->mm_ops,
-		.owner_id	= owner_id,
+		.annotation	= annotation,
 		.force_pte	= true,
 	};
 	struct kvm_pgtable_walker walker = {
@@ -880,7 +878,7 @@ int kvm_pgtable_stage2_set_owner(struct kvm_pgtable *pgt, u64 addr, u64 size,
 		.arg		= &map_data,
 	};
 
-	if (owner_id > KVM_MAX_OWNER_ID)
+	if (annotation & PTE_VALID)
 		return -EINVAL;
 
 	ret = kvm_pgtable_walk(pgt, addr, size, &walker);
