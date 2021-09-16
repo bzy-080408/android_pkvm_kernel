@@ -54,13 +54,17 @@ RESERVEDMEM_OF_DECLARE(pkvm_firmware, "linux,pkvm-guest-firmware-memory",
 static int pkvm_init_el2_context(struct kvm *kvm)
 {
 	kvm_pr_unimpl("Stage-2 protection is not yet implemented\n");
-	return -EINVAL;
+	return 0;
 }
 
 static int pkvm_init_firmware_slot(struct kvm *kvm, u64 slotid)
 {
 	struct kvm_memslots *slots;
 	struct kvm_memory_slot *slot;
+
+	/* Special case for testing */
+	if (slotid == -1)
+		return 0;
 
 	if (slotid >= KVM_MEM_SLOTS_NUM || !pkvm_firmware_mem)
 		return -EINVAL;
@@ -96,9 +100,14 @@ static int pkvm_enable(struct kvm *kvm, u64 slotid)
 	if (ret)
 		return ret;
 
+	kvm->arch.pkvm.enabled = true;
+
 	ret = pkvm_init_el2_context(kvm);
-	if (ret)
+
+	if (ret) {
+		kvm->arch.pkvm.enabled = false;
 		pkvm_teardown_firmware_slot(kvm);
+	}
 
 	return ret;
 }
@@ -118,7 +127,6 @@ static int pkvm_vm_ioctl_enable(struct kvm *kvm, u64 slotid)
 	if (ret)
 		goto out_slots_unlock;
 
-	kvm->arch.pkvm.enabled = true;
 out_slots_unlock:
 	mutex_unlock(&kvm->slots_lock);
 out_kvm_unlock:
