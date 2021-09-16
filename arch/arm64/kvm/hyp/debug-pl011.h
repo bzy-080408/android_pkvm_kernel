@@ -224,4 +224,12 @@ static inline void hyp_putx64(unsigned long x) { }
 #endif
 
 #endif	/* CONFIG_KVM_ARM_HYP_DEBUG_UART */
+
+void __noreturn hyp_panic(void);
+
+#define STRH(s) #s
+#define STR(s) STRH(s)
+
+#define HYP_HERE() do { hyp_puts("HYP_DEBUG " __FILE__ ":" STR(__LINE__)); } while(0)
+
 #endif	/* __ARM64_KVM_HYP_DEBUG_PL011_H__ */

@@ -30,6 +30,10 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/pkvm.h>
 
+#include "../debug-pl011.h"
+#define HYP_PANIC(x) do { hyp_puts("HYP_PANIC!!! " __FILE__ ":" STR(__LINE__)); hyp_panic(); } while(0)
+#define HYP_ASSERT(x) do { if (unlikely(!(x))) HYP_PANIC(); } while (0)
+
 /* Non-VHE specific context */
 DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
@@ -352,6 +356,8 @@ static void __process_pvm_vcpu_run_entry_state(const struct kvm_vcpu *vcpu, stru
 
 	entry_handler = pvm_entry_handlers[esr_ec];
 
+	HYP_ASSERT(entry_handler);
+
 	entry_handler(vcpu, vcpu_ctxt, vcpu_hyps);
 
 	hyp_state_host_request_pending(vcpu_hyps) = false;
@@ -482,6 +488,24 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	if (!hyp_get_shadow_vcpu_state(vcpu, &vm, &vcpu_ctxt, &vcpu_hyps))
 		return ARM_EXCEPTION_IL;
+
+	// TODO: Sanity checking for testing only. To be removed.
+	{
+		HYP_ASSERT(vm);
+
+		HYP_ASSERT(vcpu_ctxt);
+		HYP_ASSERT(vcpu_ctxt != &vcpu_ctxt(vcpu));
+
+		HYP_ASSERT(vcpu_hyps);
+		HYP_ASSERT(vcpu_hyps != &hyp_state(vcpu));
+
+		HYP_ASSERT(vm->created_vcpus == kvm->created_vcpus);
+		HYP_ASSERT(vm->shadow_handle > 0);
+		HYP_ASSERT(vm->shadow_handle ==
+			   kvm->arch.pkvm.shadow_handle);
+		HYP_ASSERT(vm->shadow_handle ==
+			   vcpu_hyps->pkvm.shadow_handle);
+	}
 
 	__process_pvm_vcpu_run_entry_state(vcpu, vcpu_ctxt, vcpu_hyps);
 
