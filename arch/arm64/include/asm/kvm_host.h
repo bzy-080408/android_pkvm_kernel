@@ -157,6 +157,13 @@ struct kvm_shadow_vm {
 struct kvm_protected_vcpu {
 	/* The handle id to the core struct in the hyp shadow area. */
 	int shadow_handle;
+
+	/*
+	 * Guest has a request pending for the host to handle on its behalf.
+	 *
+	 * Information about the request is communicated through host's vcpu.
+	 */
+	bool host_request_pending;
 };
 
 struct kvm_vcpu_fault_info {
@@ -256,16 +263,19 @@ struct kvm_cpu_context {
 	struct vcpu_hyp_state *__hyp_running_hyps;
 };
 
+#define set_hyp_running_state(host_ctxt, vcpu_ctxt, vcpu_hyps) do { \
+	(host_ctxt)->__hyp_running_ctxt = vcpu_ctxt; \
+	(host_ctxt)->__hyp_running_hyps = vcpu_hyps; \
+} while(0)
+
 #define set_hyp_running_vcpu(host_ctxt, vcpu) do { \
 	struct kvm_vcpu *v = (vcpu); \
-	if (vcpu) { \
-		(host_ctxt)->__hyp_running_ctxt = &v->arch.ctxt; \
-		(host_ctxt)->__hyp_running_hyps = &v->arch.hyp_state; \
-	} else { \
-		(host_ctxt)->__hyp_running_ctxt = NULL; \
-		(host_ctxt)->__hyp_running_hyps = NULL;	\
-	}\
+	if (vcpu) \
+		set_hyp_running_state(host_ctxt, &v->arch.ctxt, &v->arch.hyp_state); \
+	else \
+		set_hyp_running_state(host_ctxt, NULL, NULL); \
 } while(0)
+
 
 #define is_hyp_running_vcpu(ctxt) (ctxt)->__hyp_running_ctxt
 
@@ -432,6 +442,7 @@ struct kvm_vcpu_arch {
 #define hyp_state_fault(hyps) (hyps)->fault
 #define hyp_state_flags(hyps) (hyps)->flags
 #define hyp_state_shadow_handle(hyps) (hyps)->pkvm.shadow_handle
+#define hyp_state_host_request_pending(hyps) (hyps)->pkvm.host_request_pending
 
 /* Accessors for vcpu parameters related to the hypervistor state. */
 #define vcpu_hcr_el2(vcpu) hyp_state_hcr_el2(&hyp_state(vcpu))

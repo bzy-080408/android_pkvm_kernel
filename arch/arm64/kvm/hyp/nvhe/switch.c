@@ -178,6 +178,49 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 		write_sysreg(pmu->events_host, pmcntenset_el0);
 }
 
+typedef void (*pvm_entry_handle_fn)(const struct kvm_vcpu *, struct kvm_cpu_context *, struct vcpu_hyp_state *);
+typedef void (*pvm_exit_handler_fn)(struct kvm_vcpu *, const struct kvm_cpu_context *, const struct vcpu_hyp_state *);
+
+static const pvm_entry_handle_fn pvm_entry_handlers[] = {
+	[0 ... ESR_ELx_EC_MAX]		= NULL,
+};
+
+static const pvm_exit_handler_fn pvm_exit_handlers[] = {
+	[0 ... ESR_ELx_EC_MAX]		= NULL,
+};
+
+static void __process_pvm_vcpu_run_entry_state(const struct kvm_vcpu *vcpu, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
+{
+	pvm_entry_handle_fn entry_handler;
+	u8 esr_ec;
+
+	if (!hyp_state_host_request_pending(vcpu_hyps))
+		return;
+
+	esr_ec = ESR_ELx_EC(kvm_hyp_state_get_esr(vcpu_hyps));
+
+	entry_handler = pvm_entry_handlers[esr_ec];
+
+	HYP_ASSERT(entry_handler);
+
+	entry_handler(vcpu, vcpu_ctxt, vcpu_hyps);
+
+	hyp_state_host_request_pending(vcpu_hyps) = false;
+}
+
+static void __process_pvm_vcpu_run_exit_state(struct kvm_vcpu *vcpu, const struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
+{
+	u8 esr_ec = ESR_ELx_EC(kvm_hyp_state_get_esr(vcpu_hyps));
+	pvm_exit_handler_fn exit_handler = pvm_exit_handlers[esr_ec];
+
+	if (!exit_handler)
+		return;
+
+	exit_handler(vcpu, vcpu_ctxt, vcpu_hyps);
+
+	hyp_state_host_request_pending(vcpu_hyps) = true;
+}
+
 /* Switch to the non-protected guest */
 static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 {
@@ -286,7 +329,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	struct kvm_cpu_context *vcpu_ctxt;
 	struct kvm *kvm = kern_hyp_va(vcpu->kvm);
 	struct kvm_cpu_context *host_ctxt;
-	struct kvm_cpu_context *guest_ctxt;
 	u64 exit_code;
 
 	if (!hyp_get_shadow_vcpu_state(vcpu, &vm, &vcpu_ctxt, &vcpu_hyps))
@@ -300,6 +342,8 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	vcpu_hyps = &hyp_state(vcpu);
 	vcpu_ctxt = &vcpu_ctxt(vcpu);
 
+	__process_pvm_vcpu_run_entry_state(vcpu, vcpu_ctxt, vcpu_hyps);
+
 	/*
 	 * Having IRQs masked via PMR when entering the guest means the GIC
 	 * will not signal the CPU of interrupts of lower priority, and the
@@ -312,14 +356,13 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	}
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
-	set_hyp_running_vcpu(host_ctxt, vcpu);
-	guest_ctxt = &vcpu->arch.ctxt;
+	set_hyp_running_state(host_ctxt, vcpu_ctxt, vcpu_hyps);
 
 	__sysreg_save_state_nvhe(host_ctxt);
 
 	kvm_adjust_pc(vcpu_ctxt, vcpu_hyps);
 
-	__sysreg_restore_state_nvhe(guest_ctxt);
+	__sysreg_restore_state_nvhe(vcpu_ctxt);
 
 	__load_guest_stage2(vm->mmu);
 	__activate_traps_pvm(vcpu_ctxt, vcpu_hyps);
@@ -329,15 +372,15 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	do {
 		struct kvm_cpu_context *hyp_ctxt = this_cpu_ptr(&kvm_hyp_ctxt);
-		set_hyp_running_vcpu(hyp_ctxt, vcpu);
+		set_hyp_running_state(hyp_ctxt, vcpu_ctxt, vcpu_hyps);
 
 		/* Jump in the fire! */
-		exit_code = __guest_enter(guest_ctxt);
+		exit_code = __guest_enter(vcpu_ctxt);
 
 		/* And we're baaack! */
 	} while (fixup_pvm_guest_exit(vcpu, &kvm->arch.vgic, vcpu_ctxt, vcpu_hyps, &exit_code));
 
-	__sysreg_save_state_nvhe(guest_ctxt);
+	__sysreg_save_state_nvhe(vcpu_ctxt);
 	__timer_disable_traps();
 	__hyp_vgic_save_state(vcpu);
 
@@ -350,7 +393,10 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	if (system_uses_irq_prio_masking())
 		gic_write_pmr(GIC_PRIO_IRQOFF);
 
-	set_hyp_running_vcpu(host_ctxt, NULL);
+
+	set_hyp_running_state(host_ctxt, NULL, NULL);
+
+	__process_pvm_vcpu_run_exit_state(vcpu, vcpu_ctxt, vcpu_hyps);
 
 	return exit_code;
 }
