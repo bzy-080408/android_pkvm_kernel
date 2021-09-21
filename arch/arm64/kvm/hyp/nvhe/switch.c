@@ -34,9 +34,10 @@ DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
 DEFINE_PER_CPU(struct kvm_cpu_context, kvm_hyp_ctxt);
 DEFINE_PER_CPU(unsigned long, kvm_hyp_vector);
 
-static void __activate_traps(struct kvm_vcpu *vcpu)
+/* Activate traps for protected guests */
+static void __activate_traps_pvm(struct kvm_cpu_context *vcpu_ctxt,
+				 struct vcpu_hyp_state *vcpu_hyps)
 {
-	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
 	u64 val;
 
 	___activate_traps(vcpu_hyps);
@@ -44,26 +45,36 @@ static void __activate_traps(struct kvm_vcpu *vcpu)
 
 	val = CPTR_EL2_DEFAULT;
 	val |= CPTR_EL2_TTA | CPTR_EL2_TAM;
-	if (!update_fp_enabled(vcpu)) {
-		val |= CPTR_EL2_TFP | CPTR_EL2_TZ;
-		__activate_traps_fpsimd32(vcpu);
-	}
 
 	write_sysreg(val, cptr_el2);
 	write_sysreg(__this_cpu_read(kvm_hyp_vector), vbar_el2);
 
 	if (cpus_have_final_cap(ARM64_WORKAROUND_SPECULATIVE_AT)) {
-		struct kvm_cpu_context *ctxt = &vcpu->arch.ctxt;
-
 		isb();
 		/*
 		 * At this stage, and thanks to the above isb(), S2 is
 		 * configured and enabled. We can now restore the guest's S1
 		 * configuration: SCTLR, and only then TCR.
 		 */
-		write_sysreg_el1(ctxt_sys_reg(ctxt, SCTLR_EL1),	SYS_SCTLR);
+		write_sysreg_el1(ctxt_sys_reg(vcpu_ctxt, SCTLR_EL1), SYS_SCTLR);
 		isb();
-		write_sysreg_el1(ctxt_sys_reg(ctxt, TCR_EL1),	SYS_TCR);
+		write_sysreg_el1(ctxt_sys_reg(vcpu_ctxt, TCR_EL1), SYS_TCR);
+	}
+}
+
+/* Activate traps for non-protected guests in nVHE */
+static void __activate_traps_nvhe(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_hyp_state *vcpu_hyps = &hyp_state(vcpu);
+	struct kvm_cpu_context *vcpu_ctxt = &vcpu->arch.ctxt;
+
+	__activate_traps_pvm(vcpu_ctxt, vcpu_hyps);
+
+	if (!update_fp_enabled(vcpu)) {
+		u64 val = CPTR_EL2_DEFAULT | CPTR_EL2_TTA | CPTR_EL2_TAM |
+			  CPTR_EL2_TFP | CPTR_EL2_TZ;
+		__activate_traps_fpsimd32(vcpu);
+		write_sysreg(val, cptr_el2);
 	}
 }
 
@@ -219,7 +230,7 @@ static int __kvm_vcpu_run_nvhe(struct kvm_vcpu *vcpu)
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
 	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
-	__activate_traps(vcpu);
+	__activate_traps_nvhe(vcpu);
 
 	__hyp_vgic_restore_state(vcpu);
 	__timer_enable_traps();
@@ -321,7 +332,7 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
 	__load_guest_stage2(kern_hyp_va(vcpu->arch.hw_mmu));
-	__activate_traps(vcpu);
+	__activate_traps_pvm(vcpu_ctxt, vcpu_hyps);
 
 	__hyp_vgic_restore_state(vcpu);
 	__timer_enable_traps();
