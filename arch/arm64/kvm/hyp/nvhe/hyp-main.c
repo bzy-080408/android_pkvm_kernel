@@ -33,7 +33,19 @@ static void handle___kvm_adjust_pc(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(struct kvm_vcpu *, vcpu, host_ctxt, 1);
 
-	__kvm_adjust_pc(kern_hyp_va(vcpu));
+	vcpu = kern_hyp_va(vcpu);
+
+	if (unlikely(kvm_vm_is_protected(kern_hyp_va(vcpu->kvm)))) {
+		struct vcpu_hyp_state *vcpu_hyps;
+		struct kvm_cpu_context *vcpu_ctxt;
+
+		if (!hyp_get_shadow_vcpu_state(vcpu, NULL, &vcpu_ctxt, &vcpu_hyps))
+			return; // TODO: handle this unlikely event.
+
+		kvm_adjust_pc(vcpu_ctxt, vcpu_hyps);
+	} else {
+		__kvm_adjust_pc(vcpu);
+	}
 }
 
 static void handle___kvm_flush_vm_context(struct kvm_cpu_context *host_ctxt)

@@ -181,12 +181,163 @@ static void __pmu_switch_to_host(struct kvm_cpu_context *host_ctxt)
 typedef void (*pvm_entry_handle_fn)(const struct kvm_vcpu *, struct kvm_cpu_context *, struct vcpu_hyp_state *);
 typedef void (*pvm_exit_handler_fn)(struct kvm_vcpu *, const struct kvm_cpu_context *, const struct vcpu_hyp_state *);
 
+static void handle_pvm_entry_wfx(const struct kvm_vcpu *vcpu, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
+{
+	/* TODO: Don't copy verbatim. Sanitize. */
+	hyp_state_flags(vcpu_hyps) = vcpu_flags(vcpu);
+}
+
+static void handle_pvm_entry_hvc(const struct kvm_vcpu *vcpu, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
+{
+	ctxt_set_reg(vcpu_ctxt, 0, vcpu_get_reg(vcpu, 0));
+	ctxt_set_reg(vcpu_ctxt, 1, vcpu_get_reg(vcpu, 1));
+	ctxt_set_reg(vcpu_ctxt, 2, vcpu_get_reg(vcpu, 2));
+	ctxt_set_reg(vcpu_ctxt, 3, vcpu_get_reg(vcpu, 3));
+
+	/*
+	 * TODO: Handle potential changes from PSCI calls.
+	 */
+}
+
+static void handle_pvm_entry_sys64(const struct kvm_vcpu *vcpu, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr_el2 = hyp_state_fault(vcpu_hyps).esr_el2;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	hyp_state_flags(vcpu_hyps) = vcpu_flags(vcpu);
+
+	if (hyp_state_flags(vcpu_hyps) & KVM_ARM64_PENDING_EXCEPTION) {
+		/* All exceptions caused by this should be undef exceptions. */
+		u32 esr_el1 = (ESR_ELx_EC_UNKNOWN << ESR_ELx_EC_SHIFT);
+
+		ctxt_sys_reg(vcpu_ctxt, ESR_EL1) = esr_el1;
+	} else if (esr_el2 & ESR_ELx_SYS64_ISS_DIR_READ) {
+		u64 rt_val = vcpu_get_reg(vcpu, 0);
+		int rt = kvm_hyp_state_sys_get_rt(vcpu_hyps);
+
+		ctxt_set_reg(vcpu_ctxt, rt, rt_val);
+	}
+}
+
+static void handle_pvm_entry_abt(const struct kvm_vcpu *vcpu, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
+{
+	// TODO: deal with kvm_set_sei_esr(), which might be called in RAS. Would it?
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	hyp_state_flags(vcpu_hyps) = vcpu_flags(vcpu);
+
+	if (hyp_state_flags(vcpu_hyps) & KVM_ARM64_PENDING_EXCEPTION) {
+		/* If the host wants to inject an exception, get syndrom and fault address. */
+		u32 far_el1 = kvm_hyp_state_get_hfar(vcpu_hyps);
+		u32 esr_el1;
+
+		if (kvm_hyp_state_trap_is_iabt(vcpu_hyps))
+			esr_el1 = ESR_ELx_EC_IABT_CUR << ESR_ELx_EC_SHIFT;
+		else
+			esr_el1 = ESR_ELx_EC_DABT_LOW << ESR_ELx_EC_SHIFT;
+
+		esr_el1 |= ESR_ELx_FSC_EXTABT;
+
+		ctxt_sys_reg(vcpu_ctxt, ESR_EL1) = esr_el1;
+		ctxt_sys_reg(vcpu_ctxt, FAR_EL1) = far_el1;
+	} else if (!kvm_hyp_state_dabt_iswrite(vcpu_hyps)) {
+		/* r0 is used for communicating between guest and host. */
+		u64 rd_val = vcpu_get_reg(vcpu, 0);
+		int rd = kvm_hyp_state_dabt_get_rd(vcpu_hyps);
+
+		ctxt_set_reg(vcpu_ctxt, rd, rd_val);
+	}
+}
+
+static void handle_pvm_exit_wfx(struct kvm_vcpu *vcpu, const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr_el2 = hyp_state_fault(vcpu_hyps).esr_el2;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	vcpu_flags(vcpu) = hyp_state_flags(vcpu_hyps);
+	vcpu_fault(vcpu).esr_el2 = esr_el2;
+}
+
+static void handle_pvm_exit_sys64(struct kvm_vcpu *vcpu, const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr_el2 = hyp_state_fault(vcpu_hyps).esr_el2;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	vcpu_flags(vcpu) = hyp_state_flags(vcpu_hyps);
+
+	/* Host should not know the value of Rt. Set it to r0. */
+	vcpu_fault(vcpu).esr_el2 = esr_el2 & ~ESR_ELx_SYS64_ISS_RT_MASK;
+
+	/* For writes, pass the value to the host in its r0. */
+	if (esr_el2 & ESR_ELx_SYS64_ISS_DIR_WRITE) {
+		int rt = kvm_hyp_state_sys_get_rt(vcpu_hyps);
+		u64 rt_val = ctxt_get_reg(vcpu_ctxt, rt);
+
+		vcpu_set_reg(vcpu, 0, rt_val);
+	}
+}
+
+static void handle_pvm_exit_hvc(struct kvm_vcpu *vcpu, const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr_el2 = hyp_state_fault(vcpu_hyps).esr_el2;
+
+	vcpu_fault(vcpu).esr_el2 = esr_el2;
+
+	/* SMCC in linux handles only four registers. */
+	vcpu_set_reg(vcpu, 0, ctxt_get_reg(vcpu_ctxt, 0));
+	vcpu_set_reg(vcpu, 1, ctxt_get_reg(vcpu_ctxt, 1));
+	vcpu_set_reg(vcpu, 2, ctxt_get_reg(vcpu_ctxt, 2));
+	vcpu_set_reg(vcpu, 3, ctxt_get_reg(vcpu_ctxt, 3));
+}
+
+static void handle_pvm_exit_abt(struct kvm_vcpu *vcpu, const struct kvm_cpu_context *vcpu_ctxt, const struct vcpu_hyp_state *vcpu_hyps)
+{
+	u32 esr_el2 = hyp_state_fault(vcpu_hyps).esr_el2;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	vcpu_flags(vcpu) = hyp_state_flags(vcpu_hyps);
+
+	/*
+	 * Host should not know what Rt is. All data exchange is done
+	 * though r0 in hyp_run using r0 in the host's vcpu as a proxy.
+	 */
+	if (esr_is_data_abort(esr_el2))
+		esr_el2 &= ~ESR_ELx_SRT_MASK;
+
+	/* TODO: Don't copy verbatim. Sanitize. */
+	vcpu_fault(vcpu).esr_el2 = esr_el2;
+	vcpu_fault(vcpu).far_el2 = hyp_state_fault(vcpu_hyps).far_el2;
+	vcpu_fault(vcpu).hpfar_el2 = hyp_state_fault(vcpu_hyps).hpfar_el2;
+	vcpu_fault(vcpu).disr_el1 = hyp_state_fault(vcpu_hyps).disr_el1;
+
+	if (kvm_hyp_state_dabt_iswrite(vcpu_hyps)) {
+		int rt = kvm_hyp_state_dabt_get_rd(vcpu_hyps);
+		u64 rt_val = ctxt_get_reg(vcpu_ctxt, rt);
+
+		vcpu_set_reg(vcpu, 0, rt_val);
+	}
+
+	/* TODO: not quite sure why this is needed. Investigate. */
+	if (kvm_hyp_state_trap_is_iabt(vcpu_hyps))
+		vcpu_set_reg(vcpu, 0, ctxt_get_reg(vcpu_ctxt, 0));
+}
+
 static const pvm_entry_handle_fn pvm_entry_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
+	[ESR_ELx_EC_WFx]		= handle_pvm_entry_wfx,
+	[ESR_ELx_EC_HVC64]		= handle_pvm_entry_hvc,
+	[ESR_ELx_EC_SYS64]		= handle_pvm_entry_sys64,
+	[ESR_ELx_EC_IABT_LOW]		= handle_pvm_entry_abt,
+	[ESR_ELx_EC_DABT_LOW]		= handle_pvm_entry_abt,
 };
 
 static const pvm_exit_handler_fn pvm_exit_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
+	[ESR_ELx_EC_WFx]		= handle_pvm_exit_wfx,
+	[ESR_ELx_EC_HVC64]		= handle_pvm_exit_hvc,
+	[ESR_ELx_EC_SYS64]		= handle_pvm_exit_sys64,
+	[ESR_ELx_EC_IABT_LOW]		= handle_pvm_exit_abt,
+	[ESR_ELx_EC_DABT_LOW]		= handle_pvm_exit_abt,
 };
 
 static void __process_pvm_vcpu_run_entry_state(const struct kvm_vcpu *vcpu, struct kvm_cpu_context *vcpu_ctxt, struct vcpu_hyp_state *vcpu_hyps)
@@ -200,8 +351,6 @@ static void __process_pvm_vcpu_run_entry_state(const struct kvm_vcpu *vcpu, stru
 	esr_ec = ESR_ELx_EC(kvm_hyp_state_get_esr(vcpu_hyps));
 
 	entry_handler = pvm_entry_handlers[esr_ec];
-
-	HYP_ASSERT(entry_handler);
 
 	entry_handler(vcpu, vcpu_ctxt, vcpu_hyps);
 
@@ -333,14 +482,6 @@ static int __kvm_vcpu_run_pvm(struct kvm_vcpu *vcpu)
 
 	if (!hyp_get_shadow_vcpu_state(vcpu, &vm, &vcpu_ctxt, &vcpu_hyps))
 		return ARM_EXCEPTION_IL;
-
-	/*
-	 * TODO: The rest of the code to only depend on the shadow state isn't
-	 * in place. Continue using the host's for now. This will be fixed later
-	 * in this patch series.
-	 */
-	vcpu_hyps = &hyp_state(vcpu);
-	vcpu_ctxt = &vcpu_ctxt(vcpu);
 
 	__process_pvm_vcpu_run_entry_state(vcpu, vcpu_ctxt, vcpu_hyps);
 
