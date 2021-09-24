@@ -12,6 +12,8 @@
  * It's slow and racy, but you'll be fine. Patches unwelcome.
  */
 
+#include <asm/kvm_mmu.h>
+
 #ifndef __ARM64_KVM_HYP_DEBUG_PL011_H__
 #define __ARM64_KVM_HYP_DEBUG_PL011_H__
 
