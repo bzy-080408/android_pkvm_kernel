@@ -2063,6 +2063,7 @@ config TEST_BITMAP
 
 config TEST_FFA
 	tristate "Test FF-A interface at runtime"
+	depends on KVM_ARM_HYP_DEBUG_UART
 	help
 	  Enable this option to build the kselftest module for the FF-A
 	  interface.
