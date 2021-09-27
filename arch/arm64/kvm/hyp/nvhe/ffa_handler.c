@@ -9,6 +9,7 @@
 #include <linux/arm-smccc.h>
 #include <linux/arm_ffa.h>
 #include <linux/kvm_types.h>
+#include <linux/printk.h>
 #include <nvhe/ffa.h>
 #include <nvhe/ffa_handler.h>
 #include <nvhe/mem_protect.h>
@@ -90,9 +91,12 @@ int ffa_init(void *descriptor_pool_base)
 	arm_smccc_1_2_smc(&args, &ret);
 
 	if (ret.a0 == SMCCC_RET_NOT_SUPPORTED) {
-		/* TODO: Log a warning. */
-	} else if (ret.a0 != FFA_SUCCESS)
+		pr_warn("Unknown function setting up EL3 message buffers. "
+			"Memory sharing with secure world will not work.");
+	} else if (ret.a0 != FFA_SUCCESS) {
+		pr_warn("Error or unexpected function returned setting up EL3 message buffers.");
 		BUG();
+	}
 
 	return 0;
 }
@@ -110,6 +114,8 @@ static struct arm_smccc_1_2_regs ffa_rxtx_map(hpa_t tx_address,
 					      hpa_t rx_address, u32 page_count)
 {
 	struct arm_smccc_1_2_regs ret;
+
+	pr_info("RXTX_MAP");
 
 	/* We only support a fixed size of RX/TX buffers. */
 	if (page_count != MAILBOX_SIZE / FFA_PAGE_SIZE)
@@ -131,6 +137,7 @@ static struct arm_smccc_1_2_regs ffa_rxtx_map(hpa_t tx_address,
 
 	/* Ensure that buffers are not already setup. */
 	if (host_kvm.tx_buffer != NULL || host_kvm.rx_buffer != NULL) {
+		pr_warn("Buffers already set up");
 		ret = ffa_error(FFA_RET_DENIED);
 		goto out;
 	}
@@ -142,11 +149,13 @@ static struct arm_smccc_1_2_regs ffa_rxtx_map(hpa_t tx_address,
 	 */
 	if (__pkvm_host_check_share_hyp_prot(tx_address, MAILBOX_SIZE,
 					     PAGE_HYP_RO) != 0) {
+		pr_warn("TX buffer permissions are wrong");
 		ret = ffa_error(FFA_RET_DENIED);
 		goto out;
 	}
 	if (__pkvm_host_check_share_hyp_prot(rx_address, MAILBOX_SIZE,
 					     PAGE_HYP) != 0) {
+		pr_warn("RX buffer permissions are wrong");
 		ret = ffa_error(FFA_RET_DENIED);
 		goto out;
 	}
@@ -157,11 +166,13 @@ static struct arm_smccc_1_2_regs ffa_rxtx_map(hpa_t tx_address,
 	 */
 	if (__pkvm_host_share_hyp_prot(tx_address, MAILBOX_SIZE, PAGE_HYP_RO,
 				       &host_kvm.tx_buffer) != 0) {
+		pr_warn("Failed to share TX buffer");
 		ret = ffa_error(FFA_RET_NO_MEMORY);
 		goto out;
 	}
 	if (__pkvm_host_share_hyp_prot(rx_address, MAILBOX_SIZE, PAGE_HYP,
 				       &host_kvm.rx_buffer) != 0) {
+		pr_warn("Failed to share RX buffer");
 		ret = ffa_error(FFA_RET_NO_MEMORY);
 		goto out;
 	}
