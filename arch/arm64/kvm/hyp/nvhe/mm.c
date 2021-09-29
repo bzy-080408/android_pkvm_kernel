@@ -13,6 +13,7 @@
 #include <nvhe/early_alloc.h>
 #include <nvhe/gfp.h>
 #include <nvhe/memory.h>
+#include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
 
@@ -207,4 +208,50 @@ int hyp_create_idmap(u32 hyp_va_bits)
 	__hyp_vmemmap = __io_map_base | BIT(hyp_va_bits - 3);
 
 	return __pkvm_create_mappings(start, end - start, start, PAGE_HYP_EXEC);
+}
+
+void *hyp_admit_host_page(struct kvm_hyp_memcache *cache)
+{
+	phys_addr_t phys = ALIGN_DOWN(cache->head, PAGE_SIZE);
+	u64 pfn = hyp_phys_to_pfn(phys);
+	struct hyp_page *p;
+	phys_addr_t *ptr;
+	int ret;
+
+	if (!phys || !cache->nr_pages)
+		return NULL;
+
+	hyp_assert_lock_held(&host_kvm.lock);
+	/*
+	 * Try to transfer ownership of the current head to the hypervisor.
+	 * This will take care of races -- only the winner of the race can
+	 * succeed.
+	 */
+	ret = __pkvm_host_donate_hyp(pfn, pfn + 1, true);
+	if (ret)
+		return NULL;
+
+	ptr = hyp_phys_to_virt(phys);
+	cache->head = *ptr;
+	cache->nr_pages--;
+
+	/* Clean the hyp_vmemmap entry */
+	p = hyp_virt_to_page(ptr);
+	memset(p, 0, sizeof(*p));
+
+	return ptr;
+}
+
+void hyp_return_host_page(struct kvm_hyp_memcache *cache, void *addr)
+{
+	phys_addr_t phys = hyp_virt_to_phys(addr);
+	phys_addr_t *ptr = addr;
+
+	hyp_assert_lock_held(&host_kvm.lock);
+	BUG_ON(host_stage2_set_owner_locked(phys, PAGE_SIZE, 0));
+	*ptr = cache->head;
+	cache->head = phys;
+	cache->nr_pages++;
+
+	/* XXX - unmap from hyp s1 */
 }

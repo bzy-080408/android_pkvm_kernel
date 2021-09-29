@@ -457,6 +457,47 @@ int __pkvm_host_share_hyp(u64 pfn)
 	return ret;
 }
 
+int __pkvm_host_donate_hyp(u64 start_pfn, u64 end_pfn, bool host_locked)
+{
+	phys_addr_t start = hyp_pfn_to_phys(start_pfn);
+	phys_addr_t end = hyp_pfn_to_phys(end_pfn);
+	enum kvm_pgtable_prot prot;
+	phys_addr_t addr;
+	void * virt;
+	int ret;
+	if (host_locked)
+		hyp_assert_lock_held(&host_kvm.lock);
+	else
+		hyp_spin_lock(&host_kvm.lock);
+	hyp_spin_lock(&pkvm_pgd_lock);
+	/* Check the permissions upfront */
+	for (addr = start; addr < end; addr += PAGE_SIZE) {
+		virt = __hyp_va(addr);
+		ret = check_host_mem_transition(addr, &pkvm_pgtable, (u64)virt,
+						PAGE_HYP, kvm_pgtable_hyp_pte_prot,
+						&pkvm_pgd_lock);
+		/* XXX - OK to allow shared pages ? */
+		if (ret != MEM_TRANS_OK && ret != MEM_TRANS_SHARED) {
+			ret = -EPERM;
+			goto unlock;
+		}
+	}
+	/* Annotate both page-tables */
+	for (addr = start; addr < end; addr += PAGE_SIZE) {
+		virt = __hyp_va(addr);
+		prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_OWNED);
+		ret = pkvm_create_mappings_locked(virt, virt + PAGE_SIZE, prot);
+		BUG_ON(ret);
+		ret = host_stage2_set_owner_locked(addr, PAGE_SIZE, pkvm_hyp_id);
+		BUG_ON(ret);
+	}
+unlock:
+	hyp_spin_unlock(&pkvm_pgd_lock);
+	if (!host_locked)
+		hyp_spin_unlock(&host_kvm.lock);
+	return ret;
+}
+
 void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 {
 	struct kvm_vcpu_fault_info fault;

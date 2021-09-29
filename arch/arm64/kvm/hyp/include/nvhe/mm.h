@@ -27,6 +27,9 @@ int pkvm_create_mappings_locked(void *from, void *to, enum kvm_pgtable_prot prot
 unsigned long __pkvm_create_private_mapping(phys_addr_t phys, size_t size,
 					    enum kvm_pgtable_prot prot);
 
+void *hyp_admit_host_page(struct kvm_hyp_memcache *cache);
+void hyp_return_host_page(struct kvm_hyp_memcache *cache, void *addr);
+
 static inline unsigned long hyp_vmemmap_memblock_size(struct memblock_region *reg)
 {
 	unsigned long nr_pages = reg->size >> PAGE_SHIFT;
