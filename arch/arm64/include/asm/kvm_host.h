@@ -278,6 +278,11 @@ struct vcpu_reset_state {
 	bool		reset;
 };
 
+struct kvm_hyp_memcache {
+	phys_addr_t head;
+	unsigned long nr_pages;
+};
+
 struct kvm_vcpu_arch {
 	struct kvm_cpu_context ctxt;
 	void *sve_state;

@@ -692,6 +692,39 @@ void kvm_free_stage2_pgd(struct kvm_s2_mmu *mmu)
 	}
 }
 
+static void free_hyp_memcache(struct kvm_hyp_memcache *cache)
+{
+	phys_addr_t *p;
+
+	while (cache->nr_pages) {
+		p = (phys_addr_t *)phys_to_virt(cache->head);
+		cache->head = *p;
+		cache->nr_pages--;
+		free_page((unsigned long) p);
+	}
+}
+
+static int topup_hyp_memcache(struct kvm_hyp_memcache *cache,
+			      unsigned long min_pages)
+{
+	phys_addr_t *p;
+
+	if (!static_branch_likely(&kvm_protected_mode_initialized))
+		return 0;
+
+	while (cache->nr_pages < min_pages) {
+		p = (phys_addr_t *)__get_free_page(GFP_KERNEL_ACCOUNT);
+		if (!p)
+			return -ENOMEM;
+
+		*p = cache->head;
+		cache->head = __pa(p);
+		cache->nr_pages++;
+	}
+
+	return 0;
+}
+
 /**
  * kvm_phys_addr_ioremap - map a device range to guest IPA
  *
