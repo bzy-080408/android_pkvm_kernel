@@ -353,81 +353,104 @@ static inline bool check_prot(enum kvm_pgtable_prot prot,
 	return (prot & (required | denied)) == required;
 }
 
-int __pkvm_host_share_hyp(u64 pfn)
+typedef enum kvm_pgtable_prot (*pte_prot_fn_t)(kvm_pte_t pte);
+
+#define MEM_TRANS_OK		0
+#define MEM_TRANS_SHARED	1
+#define MEM_TRANS_INVAL		2
+
+static int check_host_mem_transition(phys_addr_t phys,
+				     struct kvm_pgtable *dst_pgt,
+				     u64 dst_addr,
+				     enum kvm_pgtable_prot dst_prot,
+				     pte_prot_fn_t dst_pte_prot_fn,
+				     hyp_spinlock_t *dst_lock)
 {
-	phys_addr_t addr = hyp_pfn_to_phys(pfn);
+
 	enum kvm_pgtable_prot prot, cur;
-	void *virt = __hyp_va(addr);
 	enum pkvm_page_state state;
 	kvm_pte_t pte;
 	int ret;
 
-	if (!addr_is_memory(addr))
-		return -EINVAL;
+	if (!addr_is_memory(phys))
+		return MEM_TRANS_INVAL;
 
-	hyp_spin_lock(&host_kvm.lock);
-	hyp_spin_lock(&pkvm_pgd_lock);
+	hyp_assert_lock_held(&host_kvm.lock);
+	hyp_assert_lock_held(dst_lock);
 
-	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, addr, &pte, NULL);
+	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, phys, &pte, NULL);
 	if (ret)
-		goto unlock;
+		return MEM_TRANS_INVAL;
 	if (!pte)
-		goto map_shared;
+		return MEM_TRANS_OK;
 
 	/*
 	 * Check attributes in the host stage-2 PTE. We need the page to be:
-	 *  - mapped RWX as we're sharing memory;
+	 *  - mapped RWX;
 	 *  - not borrowed, as that implies absence of ownership.
 	 * Otherwise, we can't let it got through
 	 */
 	cur = kvm_pgtable_stage2_pte_prot(pte);
 	prot = pkvm_mkstate(0, PKVM_PAGE_SHARED_BORROWED);
-	if (!check_prot(cur, PKVM_HOST_MEM_PROT, prot)) {
-		ret = -EPERM;
-		goto unlock;
-	}
+	if (!check_prot(cur, PKVM_HOST_MEM_PROT, prot))
+		return MEM_TRANS_INVAL;
 
 	state = pkvm_getstate(cur);
 	if (state == PKVM_PAGE_OWNED)
-		goto map_shared;
+		return MEM_TRANS_OK;
 
 	/*
-	 * Tolerate double-sharing the same page, but this requires
-	 * cross-checking the hypervisor stage-1.
+	 * If the host is not sole owner, then we expect the page to already
+	 * be shared with the destination entity.
 	 */
-	if (state != PKVM_PAGE_SHARED_OWNED) {
+	if (state != PKVM_PAGE_SHARED_OWNED)
+		return MEM_TRANS_INVAL;
+
+	ret = kvm_pgtable_get_leaf(dst_pgt, dst_addr, &pte, NULL);
+	if (ret)
+		return MEM_TRANS_INVAL;
+
+	/*
+	 * If the page has been shared with the destination entity, it must be
+	 * already mapped as SHARED_BORROWED in its page-table.
+	 */
+	cur = dst_pte_prot_fn(pte);
+	prot = pkvm_mkstate(dst_prot, PKVM_PAGE_SHARED_BORROWED);
+	if (!check_prot(cur, prot, ~prot))
+		return MEM_TRANS_INVAL;
+
+	return MEM_TRANS_SHARED;
+}
+
+int __pkvm_host_share_hyp(u64 pfn)
+{
+	phys_addr_t addr = hyp_pfn_to_phys(pfn);
+	void * virt = __hyp_va(addr);
+	enum kvm_pgtable_prot prot;
+	int ret;
+
+	hyp_spin_lock(&host_kvm.lock);
+	hyp_spin_lock(&pkvm_pgd_lock);
+
+	ret = check_host_mem_transition(addr, &pkvm_pgtable, (u64)virt, PAGE_HYP,
+					kvm_pgtable_hyp_pte_prot, &pkvm_pgd_lock);
+	switch (ret) {
+	case MEM_TRANS_SHARED:
+		ret = 0;
+		break;
+	case MEM_TRANS_OK:
+		prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_SHARED_BORROWED);
+		ret = pkvm_create_mappings_locked(virt, virt + PAGE_SIZE, prot);
+		BUG_ON(ret);
+
+		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
+		ret = host_stage2_idmap_locked(addr, PAGE_SIZE, prot);
+		BUG_ON(ret);
+		break;
+	default:
 		ret = -EPERM;
-		goto unlock;
 	}
 
-	ret = kvm_pgtable_get_leaf(&pkvm_pgtable, (u64)virt, &pte, NULL);
-	if (ret)
-		goto unlock;
-
-	/*
-	 * If the page has been shared with the hypervisor, it must be
-	 * already mapped as SHARED_BORROWED in its stage-1.
-	 */
-	cur = kvm_pgtable_hyp_pte_prot(pte);
-	prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_SHARED_BORROWED);
-	if (!check_prot(cur, prot, ~prot))
-		ret = -EPERM;
-	goto unlock;
-
-map_shared:
-	/*
-	 * If the page is not yet shared, adjust mappings in both page-tables
-	 * while both locks are held.
-	 */
-	prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_SHARED_BORROWED);
-	ret = pkvm_create_mappings_locked(virt, virt + PAGE_SIZE, prot);
-	BUG_ON(ret);
-
-	prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
-	ret = host_stage2_idmap_locked(addr, PAGE_SIZE, prot);
-	BUG_ON(ret);
-
-unlock:
 	hyp_spin_unlock(&pkvm_pgd_lock);
 	hyp_spin_unlock(&host_kvm.lock);
 
