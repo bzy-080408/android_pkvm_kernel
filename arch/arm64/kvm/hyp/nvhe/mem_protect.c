@@ -21,9 +21,7 @@
 #define KVM_HOST_S2_FLAGS (KVM_PGTABLE_S2_NOFWB | KVM_PGTABLE_S2_IDMAP)
 
 extern unsigned long hyp_nr_cpus;
-struct host_kvm host_kvm;
-
-static struct hyp_pool host_s2_pool;
+struct pkvm_vm host_kvm;
 
 /*
  * Copies of the host's CPU features registers holding sanitized values.
@@ -33,9 +31,11 @@ u64 id_aa64mmfr1_el1_sys_val;
 
 const u8 pkvm_hyp_id = 1;
 
+u32 max_phys_shift;
+
 static void *host_s2_zalloc_pages_exact(size_t size)
 {
-	void *addr = hyp_alloc_pages(&host_s2_pool, get_order(size));
+	void *addr = hyp_alloc_pages(&host_kvm.pool, get_order(size));
 
 	hyp_split_page(hyp_virt_to_page(addr));
 
@@ -49,12 +49,12 @@ static void *host_s2_zalloc_page(void *pool)
 
 static void host_s2_get_page(void *addr)
 {
-	hyp_get_page(&host_s2_pool, addr);
+	hyp_get_page(&host_kvm.pool, addr);
 }
 
 static void host_s2_put_page(void *addr)
 {
-	hyp_put_page(&host_s2_pool, addr);
+	hyp_put_page(&host_kvm.pool, addr);
 }
 
 static int prepare_s2_pool(void *pgt_pool_base)
@@ -64,7 +64,7 @@ static int prepare_s2_pool(void *pgt_pool_base)
 
 	pfn = hyp_virt_to_pfn(pgt_pool_base);
 	nr_pages = host_s2_pgtable_pages();
-	ret = hyp_pool_init(&host_s2_pool, pfn, nr_pages, 0);
+	ret = hyp_pool_init(&host_kvm.pool, pfn, nr_pages, 0);
 	if (ret)
 		return ret;
 
@@ -83,14 +83,15 @@ static int prepare_s2_pool(void *pgt_pool_base)
 
 static void prepare_host_vtcr(void)
 {
-	u32 parange, phys_shift;
+	u32 parange;
 
 	/* The host stage 2 is id-mapped, so use parange for T0SZ */
 	parange = kvm_get_parange(id_aa64mmfr0_el1_sys_val);
-	phys_shift = id_aa64mmfr0_parange_to_phys_shift(parange);
+	max_phys_shift = id_aa64mmfr0_parange_to_phys_shift(parange);
 
 	host_kvm.arch.vtcr = kvm_get_vtcr(id_aa64mmfr0_el1_sys_val,
-					  id_aa64mmfr1_el1_sys_val, phys_shift);
+					  id_aa64mmfr1_el1_sys_val,
+					  max_phys_shift);
 }
 
 static bool host_stage2_force_pte_cb(u64 addr, u64 end, enum kvm_pgtable_prot prot);
@@ -113,6 +114,7 @@ int kvm_host_prepare_stage2(void *pgt_pool_base)
 	if (ret)
 		return ret;
 
+	host_kvm.arch.pkvm_vm = &host_kvm;
 	mmu->pgd_phys = __hyp_pa(host_kvm.pgt.pgd);
 	mmu->arch = &host_kvm.arch;
 	mmu->pgt = &host_kvm.pgt;
@@ -227,7 +229,7 @@ static inline int __host_stage2_idmap(u64 start, u64 end,
 				      enum kvm_pgtable_prot prot)
 {
 	return kvm_pgtable_stage2_map(&host_kvm.pgt, start, end - start, start,
-				      prot, &host_s2_pool);
+				      prot, &host_kvm.pool);
 }
 
 /*
@@ -300,7 +302,7 @@ int host_stage2_set_owner_locked(phys_addr_t addr, u64 size, u8 owner_id)
 	hyp_assert_lock_held(&host_kvm.lock);
 
 	return host_stage2_try(kvm_pgtable_stage2_set_owner, &host_kvm.pgt,
-			       addr, size, &host_s2_pool, owner_id);
+			       addr, size, &host_kvm.pool, owner_id);
 }
 
 static bool host_stage2_force_pte_cb(u64 addr, u64 end, enum kvm_pgtable_prot prot)
@@ -495,6 +497,48 @@ unlock:
 	hyp_spin_unlock(&pkvm_pgd_lock);
 	if (!host_locked)
 		hyp_spin_unlock(&host_kvm.lock);
+	return ret;
+}
+
+int __pkvm_host_share_guest(u64 pfn, u64 ipa, struct kvm *kvm,
+			    phys_addr_t *mc_head, u64 *mc_nr_pages)
+{
+	phys_addr_t addr = hyp_pfn_to_phys(pfn);
+	struct kvm_hyp_memcache mc;
+	enum kvm_pgtable_prot prot;
+	struct pkvm_vm *vm;
+	int ret;
+	hyp_spin_lock(&host_kvm.lock);
+	vm = get_guest_vm(&kern_hyp_va(kvm)->arch);
+	if (!vm) {
+		ret = -EINVAL;
+		goto host_unlock;
+	}
+	ret = check_host_mem_transition(addr, &vm->pgt, ipa, KVM_PGTABLE_PROT_RWX,
+					kvm_pgtable_stage2_pte_prot, &vm->lock);
+	switch (ret) {
+	case MEM_TRANS_SHARED:
+		ret = 0;
+		break;
+	case MEM_TRANS_OK:
+		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
+		ret = host_stage2_idmap_locked(addr, PAGE_SIZE, prot);
+		BUG_ON(ret);
+		mc.head = *mc_head;
+		mc.nr_pages = *mc_nr_pages;
+		prot = pkvm_mkstate(KVM_PGTABLE_PROT_RWX, PKVM_PAGE_SHARED_BORROWED);
+		ret = kvm_pgtable_stage2_map(&vm->pgt, ipa, PAGE_SIZE, addr,
+					     prot, &mc);
+		BUG_ON(ret);
+		*mc_head = mc.head;
+		*mc_nr_pages = mc.nr_pages;
+		break;
+	default:
+		ret = -EPERM;
+	}
+	put_guest_vm(vm);
+host_unlock:
+	hyp_spin_unlock(&host_kvm.lock);
 	return ret;
 }
 

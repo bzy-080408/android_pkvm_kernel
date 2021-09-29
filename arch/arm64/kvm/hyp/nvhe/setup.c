@@ -276,6 +276,7 @@ void __noreturn __pkvm_init_finalise(void)
 	if (ret)
 		goto out;
 
+	pkvm_prepare_guests();
 out:
 	/*
 	 * We tail-called to here from handle___pkvm_init() and will not return,

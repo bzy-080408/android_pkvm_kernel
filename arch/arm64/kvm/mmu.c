@@ -531,6 +531,46 @@ static struct kvm_pgtable_mm_ops kvm_s2_mm_ops = {
 	.icache_inval_pou	= invalidate_icache_guest_page,
 };
 
+static int pkvm_init_stage2(struct kvm *kvm, u32 phys_shift)
+{
+	size_t pgd_sz = kvm_pgtable_stage2_pgd_size(&kvm->arch);
+	unsigned int order = get_order(pgd_sz);
+	unsigned long pool;
+
+	/*
+	 * The EL2 buddy allocator allocates a full order-aligned page for
+	 * the mm_ops->zalloc_pages_exact() page-table callback, so make sure
+	 * to construct a full order-aligned memory pool.
+	 */
+	pool = __get_free_pages(GFP_KERNEL_ACCOUNT, order);
+	if (!pool)
+		return -ENOMEM;
+
+	return kvm_call_hyp_nvhe(__pkvm_init_guest, kvm, phys_shift,
+				 virt_to_pfn(pool), 1 << order);
+}
+
+static void free_hyp_memcache(struct kvm_hyp_memcache *cache);
+static int pkvm_teardown_stage2(struct kvm *kvm)
+{
+	struct kvm_hyp_memcache mc;
+	struct arm_smccc_res res;
+
+	if (!static_branch_likely(&kvm_protected_mode_initialized))
+		return 0;
+
+	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_teardown_guest),
+			  kvm, &res);
+	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+
+	mc.head = res.a2;
+	mc.nr_pages = res.a3;
+
+	free_hyp_memcache(&mc);
+
+	return res.a1;
+}
+
 /**
  * kvm_init_stage2_mmu - Initialise a S2 MMU strucrure
  * @kvm:	The pointer to the KVM structure
@@ -568,6 +608,10 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
+	mmu->arch = &kvm->arch;
+
+	if (static_branch_likely(&kvm_protected_mode_initialized))
+		return pkvm_init_stage2(kvm, phys_shift);
 
 	if (mmu->pgt != NULL) {
 		kvm_err("kvm_arch already initialized?\n");
@@ -591,7 +635,6 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	for_each_possible_cpu(cpu)
 		*per_cpu_ptr(mmu->last_vcpu_ran, cpu) = -1;
 
-	mmu->arch = &kvm->arch;
 	mmu->pgt = pgt;
 	mmu->pgd_phys = __pa(pgt->pgd);
 	WRITE_ONCE(mmu->vmid.vmid_gen, 0);
@@ -677,6 +720,7 @@ void kvm_free_stage2_pgd(struct kvm_s2_mmu *mmu)
 	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
 	struct kvm_pgtable *pgt = NULL;
 
+	WARN_ON(pkvm_teardown_stage2(kvm));
 	spin_lock(&kvm->mmu_lock);
 	pgt = mmu->pgt;
 	if (pgt) {
@@ -1034,6 +1078,24 @@ static int sanitise_mte_tags(struct kvm *kvm, kvm_pfn_t pfn,
 	return 0;
 }
 
+static int pkvm_host_share_guest(u64 pfn, u64 ipa, struct kvm *kvm,
+				 struct kvm_hyp_memcache *mc)
+{
+	struct arm_smccc_res res;
+
+	if (!static_branch_likely(&kvm_protected_mode_initialized))
+		return 0;
+
+	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_host_share_guest),
+			  pfn, ipa, kvm, mc->head, mc->nr_pages, &res);
+	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+
+	mc->head = res.a2;
+	mc->nr_pages = res.a3;
+
+	return res.a1;
+}
+
 static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  struct kvm_memory_slot *memslot, unsigned long hva,
 			  unsigned long fault_status)
@@ -1055,6 +1117,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	unsigned long vma_pagesize, fault_granule;
 	enum kvm_pgtable_prot prot = KVM_PGTABLE_PROT_R;
 	struct kvm_pgtable *pgt;
+	struct kvm_hyp_memcache *hyp_mc = &vcpu->arch.hyp_memcache;
 
 	fault_granule = 1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
 	write_fault = kvm_is_write_fault(vcpu);
@@ -1082,7 +1145,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * logging_active is guaranteed to never be true for VM_PFNMAP
 	 * memslots.
 	 */
-	if (logging_active) {
+	if (logging_active || static_branch_likely(&kvm_protected_mode_initialized)) {
 		force_pte = true;
 		vma_shift = PAGE_SHIFT;
 	} else {
@@ -1131,6 +1194,10 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (fault_status != FSC_PERM || (logging_active && write_fault)) {
 		ret = kvm_mmu_topup_memory_cache(memcache,
 						 kvm_mmu_cache_min_pages(kvm));
+		if (ret)
+			return ret;
+
+		ret = topup_hyp_memcache(hyp_mc, kvm_mmu_cache_min_pages(kvm));
 		if (ret)
 			return ret;
 	}
@@ -1228,7 +1295,17 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * kvm_pgtable_stage2_map() should be called to change block size.
 	 */
 	if (fault_status == FSC_PERM && vma_pagesize == fault_granule) {
+		/*
+		 * XXX - really shouldn't happen for now, we map everything
+		 * RWX
+		 */
+		BUG_ON(static_branch_likely(&kvm_protected_mode_initialized));
 		ret = kvm_pgtable_stage2_relax_perms(pgt, fault_ipa, prot);
+	} else if (static_branch_likely(&kvm_protected_mode_initialized)) {
+		ret = pkvm_host_share_guest(pfn, fault_ipa, kvm, hyp_mc);
+		/* XXX */
+		if (ret)
+			goto out_unlock;
 	} else {
 		ret = kvm_pgtable_stage2_map(pgt, fault_ipa, vma_pagesize,
 					     __pfn_to_phys(pfn), prot,

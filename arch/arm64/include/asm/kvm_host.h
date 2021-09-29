@@ -101,6 +101,8 @@ struct kvm_s2_mmu {
 struct kvm_arch_memory_slot {
 };
 
+struct pkvm_vm;
+
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
 
@@ -136,6 +138,9 @@ struct kvm_arch {
 
 	/* Memory Tagging Extension enabled for the guest */
 	bool mte_enabled;
+
+	/* XXX -  this should not be here, replace with tabba@'s EL2 state */
+	struct pkvm_vm *pkvm_vm;
 };
 
 struct kvm_vcpu_fault_info {
@@ -366,6 +371,9 @@ struct kvm_vcpu_arch {
 
 	/* Cache some mmu pages needed inside spinlock regions */
 	struct kvm_mmu_memory_cache mmu_page_cache;
+
+	/* Memory cache passed to EL2 in nVHE */
+	struct kvm_hyp_memcache hyp_memcache;
 
 	/* Target CPU and feature flags */
 	int target;

@@ -163,7 +163,6 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpu_context *host_ctxt;
 	struct kvm_cpu_context *guest_ctxt;
-	struct kvm_s2_mmu *mmu;
 	bool pmu_switch_needed;
 	u64 exit_code;
 
@@ -207,8 +206,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__sysreg32_restore_state(vcpu);
 	__sysreg_restore_state_nvhe(guest_ctxt);
 
-	mmu = kern_hyp_va(vcpu->arch.hw_mmu);
-	__load_stage2(mmu, kern_hyp_va(mmu->arch));
+	__load_guest_mmu(&kern_hyp_va(vcpu->kvm)->arch);
 	__activate_traps(vcpu);
 
 	__hyp_vgic_restore_state(vcpu);

@@ -46,12 +46,16 @@ static void handle___kvm_tlb_flush_vmid_ipa(struct kvm_cpu_context *host_ctxt)
 	DECLARE_REG(phys_addr_t, ipa, host_ctxt, 2);
 	DECLARE_REG(int, level, host_ctxt, 3);
 
+	/* TODO -- assert not used in protected mode */
+
 	__kvm_tlb_flush_vmid_ipa(kern_hyp_va(mmu), ipa, level);
 }
 
 static void handle___kvm_tlb_flush_vmid(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(struct kvm_s2_mmu *, mmu, host_ctxt, 1);
+
+	/* TODO -- understand usage from core virt_main.c */
 
 	__kvm_tlb_flush_vmid(kern_hyp_va(mmu));
 }
@@ -160,6 +164,42 @@ static void handle___pkvm_prot_finalize(struct kvm_cpu_context *host_ctxt)
 {
 	cpu_reg(host_ctxt, 1) = __pkvm_prot_finalize();
 }
+
+static void handle___pkvm_init_guest(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(struct kvm *, kvm, host_ctxt, 1);
+	DECLARE_REG(u32, phys_shift, host_ctxt, 2);
+	DECLARE_REG(u64, pool_pfn, host_ctxt, 3);
+	DECLARE_REG(u64, nr_pages, host_ctxt, 4);
+
+	cpu_reg(host_ctxt, 1) = pkvm_init_guest(kvm, phys_shift, pool_pfn,
+						nr_pages);
+}
+
+static void handle___pkvm_teardown_guest(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(struct kvm *, kvm, host_ctxt, 1);
+	struct kvm_hyp_memcache mc = { 0 };
+
+	cpu_reg(host_ctxt, 1) = pkvm_teardown_guest(kvm, &mc);
+	cpu_reg(host_ctxt, 2) = mc.head;
+	cpu_reg(host_ctxt, 3) = mc.nr_pages;
+}
+
+static void handle___pkvm_host_share_guest(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(u64, pfn, host_ctxt, 1);
+	DECLARE_REG(u64, ipa, host_ctxt, 2);
+	DECLARE_REG(struct kvm *, kvm, host_ctxt, 3);
+	DECLARE_REG(phys_addr_t, mc_head, host_ctxt, 4);
+	DECLARE_REG(u64, mc_nr_pages, host_ctxt, 5);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_host_share_guest(pfn, ipa, kvm, &mc_head,
+							&mc_nr_pages);
+	cpu_reg(host_ctxt, 2) = mc_head;
+	cpu_reg(host_ctxt, 3) = mc_nr_pages;
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -185,6 +225,9 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_host_share_hyp),
 	HANDLE_FUNC(__pkvm_create_private_mapping),
 	HANDLE_FUNC(__pkvm_prot_finalize),
+	HANDLE_FUNC(__pkvm_init_guest),
+	HANDLE_FUNC(__pkvm_teardown_guest),
+	HANDLE_FUNC(__pkvm_host_share_guest),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)

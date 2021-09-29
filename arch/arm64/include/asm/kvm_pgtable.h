@@ -318,6 +318,11 @@ int __kvm_pgtable_stage2_init(struct kvm_pgtable *pgt, struct kvm_arch *arch,
 void kvm_pgtable_stage2_destroy(struct kvm_pgtable *pgt);
 
 /**
+ * TODO
+ */
+size_t kvm_pgtable_stage2_pgd_size(struct kvm_arch *arch);
+
+/**
  * kvm_pgtable_stage2_map() - Install a mapping in a guest stage-2 page-table.
  * @pgt:	Page-table structure initialised by kvm_pgtable_stage2_init*().
  * @addr:	Intermediate physical address at which to place the mapping.

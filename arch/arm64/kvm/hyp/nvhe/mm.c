@@ -246,12 +246,17 @@ void hyp_return_host_page(struct kvm_hyp_memcache *cache, void *addr)
 {
 	phys_addr_t phys = hyp_virt_to_phys(addr);
 	phys_addr_t *ptr = addr;
+	u64 ret;
+
 
 	hyp_assert_lock_held(&host_kvm.lock);
+	hyp_spin_lock(&pkvm_pgd_lock);
 	BUG_ON(host_stage2_set_owner_locked(phys, PAGE_SIZE, 0));
 	*ptr = cache->head;
 	cache->head = phys;
 	cache->nr_pages++;
 
-	/* XXX - unmap from hyp s1 */
+	ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, (u64)addr, PAGE_SIZE);
+	hyp_spin_unlock(&pkvm_pgd_lock);
+	BUG_ON(!ret);
 }

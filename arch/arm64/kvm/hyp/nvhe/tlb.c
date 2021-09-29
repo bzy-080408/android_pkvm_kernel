@@ -14,6 +14,7 @@ struct tlb_inv_context {
 	u64		tcr;
 };
 
+void __load_guest_mmu(struct kvm_arch *arch);
 static void __tlb_switch_to_guest(struct kvm_s2_mmu *mmu,
 				  struct tlb_inv_context *cxt)
 {
@@ -39,7 +40,7 @@ static void __tlb_switch_to_guest(struct kvm_s2_mmu *mmu,
 	 * ensuring that we always have an ISB, but not two ISBs back
 	 * to back.
 	 */
-	__load_stage2(mmu, kern_hyp_va(mmu->arch));
+	__load_guest_mmu(kern_hyp_va(mmu->arch));
 	asm(ALTERNATIVE("isb", "nop", ARM64_WORKAROUND_SPECULATIVE_AT));
 }
 
