@@ -36,6 +36,10 @@ On x86:
   cannot be taken without already holding kvm->arch.mmu_lock (typically with
   ``read_lock`` for the TDP MMU, thus the need for additional spinlocks).
 
+On aarch64:
+
+- host_kvm.lock is taken outside pkvm_pgd_lock.
+
 Everything else is a leaf: no other lock is taken inside the critical
 sections.
 
@@ -257,3 +261,17 @@ time it will be set using the Dirty tracking mechanism described above.
 		wakeup notification event since external interrupts from the
 		assigned devices happens, we will find the vCPU on the list to
 		wakeup.
+
+:Name:		pkvm_pgd_lock
+:Type:		hyp_spinlock_t
+:Arch:		aarch64
+:Protects:	pkvm_pgtable
+:Comment:	This lock must be held whenever the hypervisor accesses its own page
+		table.
+
+:Name:		host_kvm.lock
+:Type:		hyp_spinlock_t
+:Arch:		aarch64
+:Protects:	host_kvm.pgt, host_kvm.tx_buffer, host_kvm.rx_buffer
+:Comment:	This lock must be held whenever the hypervisor accesses the host
+		stage-2 page table or FF-A mailbox buffers.
