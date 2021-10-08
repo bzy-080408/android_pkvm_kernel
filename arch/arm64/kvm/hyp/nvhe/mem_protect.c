@@ -348,197 +348,595 @@ unlock:
 	return ret;
 }
 
-static inline bool check_prot(enum kvm_pgtable_prot prot,
-			      enum kvm_pgtable_prot required,
-			      enum kvm_pgtable_prot denied)
+/*
+ * Valid page transitions are:
+ *
+ *	Name		Initiator			Recipient
+ * 	----    	---------			---------
+ *	DONATE		OWNED => FAULT			FAULT => OWNED
+ *	SHARE		OWNED => SHARED_OWNED		FAULT => SHARED_BORROWED
+ *	UNSHARE		SHARED_OWNED => OWNED		SHARED_BORROWED => FAULT
+ *
+ * VM teardown is a special case; pages are effectively wiped and donated back
+ * to the host (we may do this lazily).
+ *
+ * FF-A introduces the following additional operations and states, which we
+ * don't yet support:
+ *
+ *	LEND		OWNED => LENT_FAULT		FAULT => LENT_BORROWED
+ *	RELINQUISH	LENT_BORROWED => FAULT		LENT_FAULT => LENT_OWNED
+ *	RECLAIM		LENT_OWNED => OWNED		N/A
+ */
+enum pkvm_page_transition {
+	PKVM_PAGE_DONATE,
+	PKVM_PAGE_SHARE,
+	PKVM_PAGE_UNSHARE,
+};
+
+/* This corresponds to locking order */
+enum pkvm_component_id {
+	PKVM_ID_HOST,
+	PKVM_ID_HYP,
+	PKVM_ID_GUEST,
+};
+
+struct pkvm_page_info {
+	struct {
+		enum pkvm_page_state			state;
+		u64					addr;
+	} requester;
+
+	struct {
+		enum pkvm_page_state			state;
+		u64					addr;
+	} receiver;
+
+	phys_addr_t					phys;
+};
+
+struct pkvm_mem_req {
+	u64						nr_pages;
+
+	struct {
+		enum pkvm_component_id			id;
+		u64					addr;
+
+		union {
+			struct {
+				u64			receiver_addr;
+			} host;
+		};
+	} requester;
+
+	struct {
+		enum pkvm_component_id			id;
+
+		struct {
+			struct kvm			*kvm;
+			struct kvm_hyp_memcache		*mc;
+		} guest;
+	} receiver;
+};
+
+struct pkvm_mem_donation {
+	struct pkvm_mem_req	req;
+};
+
+struct pkvm_mem_share {
+	struct pkvm_mem_req	req;
+	enum kvm_pgtable_prot	prot;
+};
+
+/* Host */
+static void host_lock_component(void)
 {
-	return (prot & (required | denied)) == required;
+	hyp_spin_lock(&host_kvm.lock);
 }
 
-typedef enum kvm_pgtable_prot (*pte_prot_fn_t)(kvm_pte_t pte);
-
-#define MEM_TRANS_OK		0
-#define MEM_TRANS_SHARED	1
-#define MEM_TRANS_INVAL		2
-
-static int check_host_mem_transition(phys_addr_t phys,
-				     struct kvm_pgtable *dst_pgt,
-				     u64 dst_addr,
-				     enum kvm_pgtable_prot dst_prot,
-				     pte_prot_fn_t dst_pte_prot_fn,
-				     hyp_spinlock_t *dst_lock)
+static void host_unlock_component(void)
 {
+	hyp_spin_unlock(&host_kvm.lock);
+}
 
-	enum kvm_pgtable_prot prot, cur;
-	enum pkvm_page_state state;
+static int host_get_page_state(enum pkvm_page_state *state, u64 addr)
+{
+	enum kvm_pgtable_prot prot;
 	kvm_pte_t pte;
-	int ret;
-
-	if (!addr_is_memory(phys))
-		return MEM_TRANS_INVAL;
+	int err;
 
 	hyp_assert_lock_held(&host_kvm.lock);
-	hyp_assert_lock_held(dst_lock);
 
-	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, phys, &pte, NULL);
-	if (ret)
-		return MEM_TRANS_INVAL;
-	if (!pte)
-		return MEM_TRANS_OK;
+	if (!addr_is_memory(addr))
+		return -EFAULT;
 
-	/*
-	 * Check attributes in the host stage-2 PTE. We need the page to be:
-	 *  - mapped RWX;
-	 *  - not borrowed, as that implies absence of ownership.
-	 * Otherwise, we can't let it got through
-	 */
-	cur = kvm_pgtable_stage2_pte_prot(pte);
-	prot = pkvm_mkstate(0, PKVM_PAGE_SHARED_BORROWED);
-	if (!check_prot(cur, PKVM_HOST_MEM_PROT, prot))
-		return MEM_TRANS_INVAL;
+	err = kvm_pgtable_get_leaf(&host_kvm.pgt, addr, &pte, NULL);
+	if (err)
+		return err;
 
-	state = pkvm_getstate(cur);
-	if (state == PKVM_PAGE_OWNED)
-		return MEM_TRANS_OK;
-
-	/*
-	 * If the host is not sole owner, then we expect the page to already
-	 * be shared with the destination entity.
-	 */
-	if (state != PKVM_PAGE_SHARED_OWNED)
-		return MEM_TRANS_INVAL;
-
-	ret = kvm_pgtable_get_leaf(dst_pgt, dst_addr, &pte, NULL);
-	if (ret)
-		return MEM_TRANS_INVAL;
-
-	/*
-	 * If the page has been shared with the destination entity, it must be
-	 * already mapped as SHARED_BORROWED in its page-table.
-	 */
-	cur = dst_pte_prot_fn(pte);
-	prot = pkvm_mkstate(dst_prot, PKVM_PAGE_SHARED_BORROWED);
-	if (!check_prot(cur, prot, ~prot))
-		return MEM_TRANS_INVAL;
-
-	return MEM_TRANS_SHARED;
+	prot = kvm_pgtable_stage2_pte_prot(pte);
+	*state = pkvm_getstate(prot);
+	return 0;
 }
 
-int __pkvm_host_share_hyp(u64 pfn)
+
+static int __get_host_request_info(struct pkvm_page_info *info,
+				   struct pkvm_mem_req *req,
+				   u64 idx)
 {
-	phys_addr_t addr = hyp_pfn_to_phys(pfn);
-	void * virt = __hyp_va(addr);
+	u64 offset = idx * PAGE_SIZE;
+	u64 host_addr = req->requester.addr + offset;
+	u64 recv_addr = req->requester.host.receiver_addr + offset;
+
+	*info = (struct pkvm_page_info) {
+		.requester = {
+			.addr = host_addr,
+		},
+		.receiver = {
+			.addr = recv_addr,
+		},
+		.phys = host_addr,
+	};
+
+	return host_get_page_state(&info->requester.state, host_addr);
+}
+
+static int host_request_donation(struct pkvm_page_info *info,
+				 struct pkvm_mem_donation *donation,
+				 u64 idx)
+{
+	return __get_host_request_info(info, &donation->req, idx);
+}
+
+static int host_request_share(struct pkvm_page_info *info,
+			      struct pkvm_mem_share *share,
+			      u64 idx)
+{
+	return __get_host_request_info(info, &share->req, idx);
+}
+
+static int host_send_donation(struct pkvm_page_info *info,
+			      enum pkvm_component_id receiver_id)
+{
+	return host_stage2_set_owner_locked(info->requester.addr, PAGE_SIZE,
+					    receiver_id);
+}
+
+static int host_send_share(struct pkvm_page_info *info)
+{
 	enum kvm_pgtable_prot prot;
-	int ret;
 
-	hyp_spin_lock(&host_kvm.lock);
+	prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
+	return host_stage2_idmap_locked(info->requester.addr, PAGE_SIZE, prot);
+}
+
+/* Hyp */
+static void hyp_lock_component(void)
+{
 	hyp_spin_lock(&pkvm_pgd_lock);
+}
 
-	ret = check_host_mem_transition(addr, &pkvm_pgtable, (u64)virt, PAGE_HYP,
-					kvm_pgtable_hyp_pte_prot, &pkvm_pgd_lock);
-	switch (ret) {
-	case MEM_TRANS_SHARED:
-		ret = 0;
-		break;
-	case MEM_TRANS_OK:
-		prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_SHARED_BORROWED);
-		ret = pkvm_create_mappings_locked(virt, virt + PAGE_SIZE, prot);
-		BUG_ON(ret);
+static void hyp_unlock_component(void)
+{
+	hyp_spin_unlock(&pkvm_pgd_lock);
+}
 
-		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
-		ret = host_stage2_idmap_locked(addr, PAGE_SIZE, prot);
-		BUG_ON(ret);
-		break;
+static int hyp_get_page_state(enum pkvm_page_state *state, u64 addr)
+{
+	enum kvm_pgtable_prot prot;
+	kvm_pte_t pte;
+	int err;
+
+	hyp_assert_lock_held(&pkvm_pgd_lock);
+	err = kvm_pgtable_get_leaf(&pkvm_pgtable, addr, &pte, NULL);
+	if (err)
+		return err;
+
+	prot = kvm_pgtable_hyp_pte_prot(pte);
+	*state = pkvm_getstate(prot);
+	return 0;
+}
+
+static int hyp_ack_donation(struct pkvm_page_info *info)
+{
+	return hyp_get_page_state(&info->receiver.state, info->receiver.addr);
+}
+
+static int hyp_ack_share(struct pkvm_page_info *info,
+			 enum kvm_pgtable_prot perms)
+{
+	if (perms != PAGE_HYP)
+		return -EPERM;
+
+	return hyp_get_page_state(&info->receiver.state, info->receiver.addr);
+}
+
+static int hyp_recv_donation(struct pkvm_page_info *info,
+			     enum pkvm_component_id requester_id)
+{
+	void *start = (void *)info->receiver.addr, *end = start + PAGE_SIZE;
+	enum kvm_pgtable_prot prot;
+
+	prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_OWNED_OR_INVALID);
+	return pkvm_create_mappings_locked(start, end, prot);
+}
+
+static int hyp_recv_share(struct pkvm_page_info *info,
+			  enum kvm_pgtable_prot perms)
+{
+	void *start = (void *)info->receiver.addr, *end = start + PAGE_SIZE;
+	enum kvm_pgtable_prot prot;
+
+	prot = pkvm_mkstate(perms, PKVM_PAGE_SHARED_BORROWED);
+	return pkvm_create_mappings_locked(start, end, prot);
+}
+
+/* Guest */
+static void guest_lock_component(struct kvm *kvm)
+{
+	get_guest_vm(&kvm->arch);
+}
+
+static void guest_unlock_component(struct kvm *kvm)
+{
+	put_guest_vm(kvm->arch.pkvm_vm);
+}
+
+static int guest_get_page_state(enum pkvm_page_state *state, u64 addr,
+				struct kvm *kvm)
+{
+	struct pkvm_vm *vm = kvm->arch.pkvm_vm;
+	enum kvm_pgtable_prot prot;
+	kvm_pte_t pte;
+	int err;
+
+	hyp_assert_lock_held(&vm->lock);
+	err = kvm_pgtable_get_leaf(&vm->pgt, addr, &pte, NULL);
+	if (err)
+		return err;
+
+	prot = kvm_pgtable_stage2_pte_prot(pte);
+	*state = pkvm_getstate(prot);
+	return 0;
+}
+
+static int guest_ack_share(struct pkvm_page_info *info,
+			   enum kvm_pgtable_prot perms,
+			   struct kvm *kvm)
+{
+	if (perms != KVM_PGTABLE_PROT_RWX)
+		return -EPERM;
+
+	return guest_get_page_state(&info->receiver.state, info->receiver.addr,
+				    kvm);
+}
+
+static int guest_recv_share(struct pkvm_page_info *info,
+			    enum kvm_pgtable_prot perms,
+			    struct kvm *kvm,
+			    struct kvm_hyp_memcache *mc)
+{
+	struct pkvm_vm *vm = kvm->arch.pkvm_vm;
+	enum kvm_pgtable_prot prot;
+
+	prot = pkvm_mkstate(perms, PKVM_PAGE_SHARED_BORROWED);
+	return kvm_pgtable_stage2_map(&vm->pgt, info->receiver.addr, PAGE_SIZE,
+				      info->phys, prot, mc);
+}
+
+static int request_donation(struct pkvm_page_info *info,
+			    struct pkvm_mem_donation *donation,
+			    u64 idx)
+{
+	struct pkvm_mem_req *req = &donation->req;
+
+	switch (req->requester.id) {
+	case PKVM_ID_HOST:
+		return host_request_donation(info, donation, idx);
 	default:
+		return -EINVAL;
+	}
+}
+
+static int ack_donation(struct pkvm_page_info *info,
+			struct pkvm_mem_donation *donation)
+{
+	struct pkvm_mem_req *req = &donation->req;
+
+	switch (req->receiver.id) {
+	case PKVM_ID_HYP:
+		return hyp_ack_donation(info);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int send_donation(struct pkvm_page_info *info,
+			 struct pkvm_mem_donation *donation)
+{
+	struct pkvm_mem_req *req = &donation->req;
+
+	switch (req->requester.id) {
+	case PKVM_ID_HOST:
+		return host_send_donation(info, req->receiver.id);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int recv_donation(struct pkvm_page_info *info,
+			 struct pkvm_mem_donation *donation)
+{
+	struct pkvm_mem_req *req = &donation->req;
+
+	switch (req->receiver.id) {
+	case PKVM_ID_HYP:
+		return hyp_recv_donation(info, req->requester.id);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int do_donate(struct pkvm_mem_donation *donation)
+{
+	struct pkvm_page_info info;
+	int ret = 0;
+	u64 idx;
+
+	for (idx = 0; idx < donation->req.nr_pages; ++idx) {
+		ret = request_donation(&info, donation, idx);
+		if (ret)
+			goto out;
+
+		ret = ack_donation(&info, donation);
+		if (ret)
+			goto out;
+
+		if (info.requester.state == PKVM_PAGE_OWNED_OR_INVALID &&
+		    info.receiver.state == PKVM_PAGE_OWNED_OR_INVALID)
+			continue;
+
+		// XXX: We should get rid of this case as soon as we
+		// unshare pages on guest termination
+		if (info.requester.state == PKVM_PAGE_SHARED_OWNED &&
+		    info.receiver.state == PKVM_PAGE_OWNED_OR_INVALID)
+			continue;
+
 		ret = -EPERM;
+		goto out;
 	}
 
-	hyp_spin_unlock(&pkvm_pgd_lock);
-	hyp_spin_unlock(&host_kvm.lock);
+	for (idx = 0; idx < donation->req.nr_pages; ++idx) {
+		ret = request_donation(&info, donation, idx);
+		if (ret)
+			goto out_warn;
 
+		ret = send_donation(&info, donation);
+		if (ret)
+			goto out_warn;
+
+		ret = recv_donation(&info, donation);
+		if (ret)
+			goto out_warn;
+	}
+
+out_warn:
+	WARN_ON(ret);
+out:
+	return ret;
+}
+
+static int request_share(struct pkvm_page_info *info,
+			 struct pkvm_mem_share *share,
+			 u64 idx)
+{
+	struct pkvm_mem_req *req = &share->req;
+
+	switch (req->requester.id) {
+	case PKVM_ID_HOST:
+		return host_request_share(info, share, idx);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int ack_share(struct pkvm_page_info *info, struct pkvm_mem_share *share)
+{
+	struct pkvm_mem_req *req = &share->req;
+
+	switch (req->receiver.id) {
+	case PKVM_ID_HYP:
+		return hyp_ack_share(info, share->prot);
+	case PKVM_ID_GUEST:
+		return guest_ack_share(info, share->prot,
+				       req->receiver.guest.kvm);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int send_share(struct pkvm_page_info *info, struct pkvm_mem_share *share)
+{
+	struct pkvm_mem_req *req = &share->req;
+
+	switch (req->requester.id) {
+	case PKVM_ID_HOST:
+		return host_send_share(info);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int recv_share(struct pkvm_page_info *info, struct pkvm_mem_share *share)
+{
+	struct pkvm_mem_req *req = &share->req;
+
+	switch (req->receiver.id) {
+	case PKVM_ID_HYP:
+		return hyp_recv_share(info, share->prot);
+	case PKVM_ID_GUEST:
+		return guest_recv_share(info, share->prot,
+					req->receiver.guest.kvm,
+					req->receiver.guest.mc);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int do_share(struct pkvm_mem_share *share)
+{
+	struct pkvm_page_info info;
+	int ret = 0;
+	u64 idx;
+
+	for (idx = 0; idx < share->req.nr_pages; ++idx) {
+		ret = request_share(&info, share, idx);
+		if (ret)
+			goto out;
+
+		ret = ack_share(&info, share);
+		if (ret)
+			goto out;
+
+		if (info.requester.state == PKVM_PAGE_OWNED_OR_INVALID &&
+		    info.receiver.state == PKVM_PAGE_OWNED_OR_INVALID)
+			continue;
+
+		if (info.requester.state == PKVM_PAGE_SHARED_OWNED &&
+		    info.receiver.state == PKVM_PAGE_SHARED_BORROWED)
+			continue;
+
+		ret = -EPERM;
+		goto out;
+	}
+
+	for (idx = 0; idx < share->req.nr_pages; ++idx) {
+		ret = request_share(&info, share, idx);
+		if (ret)
+			goto out_warn;
+
+		ret = ack_share(&info, share);
+		if (ret)
+			goto out;
+
+		if (info.requester.state == PKVM_PAGE_SHARED_OWNED &&
+		    info.receiver.state == PKVM_PAGE_SHARED_BORROWED)
+			continue;
+
+		ret = send_share(&info, share);
+		if (ret)
+			goto out_warn;
+
+		ret = recv_share(&info, share);
+		if (ret)
+			goto out_warn;
+	}
+
+out_warn:
+	WARN_ON(ret);
+out:
 	return ret;
 }
 
 int __pkvm_host_donate_hyp(u64 start_pfn, u64 end_pfn, bool host_locked)
 {
-	phys_addr_t start = hyp_pfn_to_phys(start_pfn);
-	phys_addr_t end = hyp_pfn_to_phys(end_pfn);
-	enum kvm_pgtable_prot prot;
-	phys_addr_t addr;
-	void * virt;
 	int ret;
-	if (host_locked)
-		hyp_assert_lock_held(&host_kvm.lock);
-	else
-		hyp_spin_lock(&host_kvm.lock);
-	hyp_spin_lock(&pkvm_pgd_lock);
-	/* Check the permissions upfront */
-	for (addr = start; addr < end; addr += PAGE_SIZE) {
-		virt = __hyp_va(addr);
-		ret = check_host_mem_transition(addr, &pkvm_pgtable, (u64)virt,
-						PAGE_HYP, kvm_pgtable_hyp_pte_prot,
-						&pkvm_pgd_lock);
-		/* XXX - OK to allow shared pages ? */
-		if (ret != MEM_TRANS_OK && ret != MEM_TRANS_SHARED) {
-			ret = -EPERM;
-			goto unlock;
-		}
-	}
-	/* Annotate both page-tables */
-	for (addr = start; addr < end; addr += PAGE_SIZE) {
-		virt = __hyp_va(addr);
-		prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_OWNED);
-		ret = pkvm_create_mappings_locked(virt, virt + PAGE_SIZE, prot);
-		BUG_ON(ret);
-		ret = host_stage2_set_owner_locked(addr, PAGE_SIZE, pkvm_hyp_id);
-		BUG_ON(ret);
-	}
-unlock:
-	hyp_spin_unlock(&pkvm_pgd_lock);
+	u64 host_addr = hyp_pfn_to_phys(start_pfn);
+	u64 hyp_addr = (u64)__hyp_va(host_addr);
+	struct pkvm_mem_donation donation = {
+		.req = {
+			.nr_pages	= end_pfn - start_pfn,
+			.requester	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.receiver_addr = hyp_addr,
+				},
+			},
+			.receiver	= {
+				.id	= PKVM_ID_HYP,
+			},
+		},
+	};
+
 	if (!host_locked)
-		hyp_spin_unlock(&host_kvm.lock);
+		host_lock_component();
+	hyp_lock_component();
+
+	ret = do_donate(&donation);
+
+	hyp_unlock_component();
+	if (!host_locked)
+		host_unlock_component();
+
+	return ret;
+}
+
+int __pkvm_host_share_hyp(u64 pfn)
+{
+	int ret;
+	u64 host_addr = hyp_pfn_to_phys(pfn);
+	u64 hyp_addr = (u64)__hyp_va(host_addr);
+	struct pkvm_mem_share share = {
+		.req	= {
+			.nr_pages	= 1,
+			.requester	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.receiver_addr = hyp_addr,
+				},
+			},
+			.receiver	= {
+				.id	= PKVM_ID_HYP,
+			},
+		},
+		.prot	= PAGE_HYP,
+	};
+
+	host_lock_component();
+	hyp_lock_component();
+
+	ret = do_share(&share);
+
+	hyp_unlock_component();
+	host_unlock_component();
+
 	return ret;
 }
 
 int __pkvm_host_share_guest(u64 pfn, u64 ipa, struct kvm *kvm,
-			    phys_addr_t *mc_head, u64 *mc_nr_pages)
+			    struct kvm_hyp_memcache *mc)
 {
-	phys_addr_t addr = hyp_pfn_to_phys(pfn);
-	struct kvm_hyp_memcache mc;
-	enum kvm_pgtable_prot prot;
-	struct pkvm_vm *vm;
 	int ret;
-	hyp_spin_lock(&host_kvm.lock);
-	vm = get_guest_vm(&kern_hyp_va(kvm)->arch);
-	if (!vm) {
-		ret = -EINVAL;
-		goto host_unlock;
-	}
-	ret = check_host_mem_transition(addr, &vm->pgt, ipa, KVM_PGTABLE_PROT_RWX,
-					kvm_pgtable_stage2_pte_prot, &vm->lock);
-	switch (ret) {
-	case MEM_TRANS_SHARED:
-		ret = 0;
-		break;
-	case MEM_TRANS_OK:
-		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
-		ret = host_stage2_idmap_locked(addr, PAGE_SIZE, prot);
-		BUG_ON(ret);
-		mc.head = *mc_head;
-		mc.nr_pages = *mc_nr_pages;
-		prot = pkvm_mkstate(KVM_PGTABLE_PROT_RWX, PKVM_PAGE_SHARED_BORROWED);
-		ret = kvm_pgtable_stage2_map(&vm->pgt, ipa, PAGE_SIZE, addr,
-					     prot, &mc);
-		BUG_ON(ret);
-		*mc_head = mc.head;
-		*mc_nr_pages = mc.nr_pages;
-		break;
-	default:
-		ret = -EPERM;
-	}
-	put_guest_vm(vm);
-host_unlock:
-	hyp_spin_unlock(&host_kvm.lock);
+	struct pkvm_mem_share share = {
+		.req	= {
+			.nr_pages	= 1,
+			.requester	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= hyp_pfn_to_phys(pfn),
+				.host	= {
+					.receiver_addr = ipa,
+				},
+			},
+			.receiver	= {
+				.id	= PKVM_ID_GUEST,
+				.guest	= {
+					.kvm	= kvm,
+					.mc	= mc,
+				},
+			},
+		},
+		.prot	= KVM_PGTABLE_PROT_RWX,
+	};
+
+	host_lock_component();
+	guest_lock_component(kvm);
+
+	ret = do_share(&share);
+
+	guest_unlock_component(kvm);
+	host_unlock_component();
+
 	return ret;
 }
 

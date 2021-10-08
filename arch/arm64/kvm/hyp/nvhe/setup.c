@@ -217,7 +217,7 @@ static int finalize_host_mappings_walker(u64 addr, u64 end, u32 level,
 	 */
 	state = pkvm_getstate(kvm_pgtable_hyp_pte_prot(pte));
 	switch (state) {
-	case PKVM_PAGE_OWNED:
+	case PKVM_PAGE_OWNED_OR_INVALID:
 		return host_stage2_set_owner_locked(phys, PAGE_SIZE, pkvm_hyp_id);
 	case PKVM_PAGE_SHARED_OWNED:
 		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_BORROWED);

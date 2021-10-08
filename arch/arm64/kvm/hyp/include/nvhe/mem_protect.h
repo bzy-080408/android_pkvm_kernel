@@ -15,14 +15,14 @@
 
 /*
  * SW bits 0-1 are reserved to track the memory ownership state of each page:
- *   00: The page is owned exclusively by the page-table owner.
+ *   00: The page is invalid or owned exclusively by the page-table owner.
  *   01: The page is owned by the page-table owner, but is shared
  *       with another entity.
  *   10: The page is shared with, but not owned by the page-table owner.
  *   11: Reserved for future use (lending).
  */
 enum pkvm_page_state {
-	PKVM_PAGE_OWNED			= 0ULL,
+	PKVM_PAGE_OWNED_OR_INVALID	= 0ULL,
 	PKVM_PAGE_SHARED_OWNED		= KVM_PGTABLE_PROT_SW0,
 	PKVM_PAGE_SHARED_BORROWED	= KVM_PGTABLE_PROT_SW1,
 };
@@ -55,7 +55,7 @@ int __pkvm_prot_finalize(void);
 int __pkvm_host_share_hyp(u64 pfn);
 int __pkvm_host_donate_hyp(u64 start_pfn, u64 end_pfn, bool host_locked);
 int __pkvm_host_share_guest(u64 pfn, u64 ipa, struct kvm *kvm,
-			    phys_addr_t *mc_head, u64 *mc_nr_pages);
+			    struct kvm_hyp_memcache *mc);
 
 bool addr_is_memory(phys_addr_t phys);
 int host_stage2_idmap_locked(phys_addr_t addr, u64 size, enum kvm_pgtable_prot prot);

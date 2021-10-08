@@ -193,11 +193,15 @@ static void handle___pkvm_host_share_guest(struct kvm_cpu_context *host_ctxt)
 	DECLARE_REG(struct kvm *, kvm, host_ctxt, 3);
 	DECLARE_REG(phys_addr_t, mc_head, host_ctxt, 4);
 	DECLARE_REG(u64, mc_nr_pages, host_ctxt, 5);
+	struct kvm_hyp_memcache mc = {
+		.head		= mc_head,
+		.nr_pages	= mc_nr_pages,
+	};
 
-	cpu_reg(host_ctxt, 1) = __pkvm_host_share_guest(pfn, ipa, kvm, &mc_head,
-							&mc_nr_pages);
-	cpu_reg(host_ctxt, 2) = mc_head;
-	cpu_reg(host_ctxt, 3) = mc_nr_pages;
+	kvm = kern_hyp_va(kvm);
+	cpu_reg(host_ctxt, 1) = __pkvm_host_share_guest(pfn, ipa, kvm, &mc);
+	cpu_reg(host_ctxt, 2) = mc.head;
+	cpu_reg(host_ctxt, 3) = mc.nr_pages;
 }
 
 typedef void (*hcall_t)(struct kvm_cpu_context *);
