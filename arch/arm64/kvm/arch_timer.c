@@ -88,7 +88,9 @@ static u64 timer_get_offset(struct arch_timer_context *ctxt)
 
 	switch(arch_timer_ctx_index(ctxt)) {
 	case TIMER_VTIMER:
-		return __vcpu_sys_reg(vcpu, CNTVOFF_EL2);
+		if (likely(!kvm_vm_is_protected(vcpu->kvm)))
+			return __vcpu_sys_reg(vcpu, CNTVOFF_EL2);
+		fallthrough;
 	default:
 		return 0;
 	}
