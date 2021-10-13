@@ -166,22 +166,6 @@ struct kvm_vcpu *hyp_get_shadow_vcpu(const struct kvm_vcpu *vcpu)
 }
 
 /*
- * Unmap the physical address range from the host's stage 2 mmu.
- *
- * Return 0 on success, negative error code on failure.
- */
-static int stage2_unmap_host(unsigned long pa, size_t size)
-{
-	int ret;
-
-	hyp_spin_lock(&host_kvm.lock);
-	ret = kvm_pgtable_stage2_unmap(&host_kvm.pgt, pa, size);
-	hyp_spin_unlock(&host_kvm.lock);
-
-	return ret;
-}
-
-/*
  * Initialize and check the values of the shadow state donated by the host.
  *
  * Ensures that all pointers are either mapped to a valid hyp address, or set to
@@ -320,51 +304,26 @@ int __pkvm_init_shadow(struct kvm *kvm,
 		       size_t shadow_size)
 {
 	void *shadow_addr = kern_hyp_va(shadow_va);
-	void *shadow_end = (void *)((unsigned long)shadow_addr) + shadow_size;
-	unsigned long shadow_pa = __pa((unsigned long)shadow_va);
+	unsigned long shadow_pa = __hyp_pa((unsigned long)shadow_addr);
+	u64 pfn = hyp_phys_to_pfn(shadow_pa);
+	u64 nr_pages = shadow_size >> PAGE_SHIFT;
 	int shadow_handle;
 	int ret = 0;
 
-	/* Don't automatically trust host-provided memory. */
-	ret = check_host_memory_addr((u64)kvm, sizeof(*kvm));
-	if (ret)
-		goto err;
-
-	ret = check_host_memory_addr((u64)shadow_va, shadow_size);
-	if (ret)
-		goto err;
-
-	kvm = kern_hyp_va(kvm);
-
-	/* Only use shadows for protected VMs. */
-	if (!kvm_vm_is_protected(kvm))
-		return -EINVAL;
-
 	/* Ensure the host has donated enough memory for the shadow structs. */
+	kvm = kern_hyp_va(kvm);
 	ret = check_shadow_size(kvm->created_vcpus, shadow_size);
 	if (ret)
 		goto err;
 
-	/* Unmap the donated shadow memory from the host's stage 2. */
-	ret = stage2_unmap_host(shadow_pa, shadow_size);
-	if (ret < 0)
+	ret = __pkvm_host_donate_hyp(pfn, nr_pages);
+	if (ret)
 		goto err;
-
-	/* Shadow memory should be owned exclusively by hyp. */
-	// TODO
-	//ret = __pkvm_mark_hyp(shadow_pa, shadow_pa + shadow_size);
-	if (ret < 0)
-		goto err;
-
-	/* Create hyp mappings for the donated area. */
-	ret = pkvm_create_mappings(shadow_addr, shadow_end, PAGE_HYP);
-	if (ret < 0)
-		goto err_mark_host;
 
 	/* Add the entry to the shadow table. */
 	ret = insert_shadow_table(shadow_addr, kvm->created_vcpus, shadow_size);
 	if (ret < 0)
-		goto err_remove_hyp_mappings;
+		goto err_remove_mappings;
 
 	shadow_handle = ret;
 
@@ -380,13 +339,8 @@ err_clear_shadow:
 	memset(shadow_addr, 0, shadow_size);
 	remove_shadow_table(get_shadow_memory(shadow_handle));
 
-err_remove_hyp_mappings:
-	/* TODO: Remove hyp mappings for the shadow area. */
-
-err_mark_host:
-	/* Return shadow memory ownership to the host. */
-	// TODO
-	//__pkvm_mark_host(shadow_pa, shadow_pa + shadow_size);
+err_remove_mappings:
+	WARN_ON(__pkvm_hyp_donate_host(pfn, nr_pages));
 
 err:
 	return ret;
@@ -396,13 +350,9 @@ void __pkvm_teardown_shadow(struct kvm *kvm)
 {
 	struct shadow_memory_area *shadow_memory_area;
 	size_t shadow_size;
-	phys_addr_t shadow_kvm_pa;
 	int shadow_handle;
 	void *shadow_addr;
-
-	/* Don't automatically trust host-provided memory. */
-	if (unlikely(check_host_memory_addr((u64)kvm, sizeof(*kvm))))
-		return;
+	u64 pfn, nr_pages;
 
 	kvm = kern_hyp_va(kvm);
 
@@ -417,9 +367,7 @@ void __pkvm_teardown_shadow(struct kvm *kvm)
 	/* Clear the shadow memory since hyp is releasing it back to host. */
 	memset(shadow_addr, 0, shadow_size);
 
-	/* TODO: Remove hyp mappings for the donated shadow area. */
-
-	/* Return shadow memory ownership to the host. */
-	// TODO
-	//__pkvm_mark_host(shadow_kvm_pa, shadow_kvm_pa + shadow_size);
+	pfn = hyp_phys_to_pfn(__hyp_pa(shadow_addr));
+	nr_pages = shadow_size >> PAGE_SHIFT;
+	WARN_ON(__pkvm_hyp_donate_host(pfn, nr_pages));
 }
