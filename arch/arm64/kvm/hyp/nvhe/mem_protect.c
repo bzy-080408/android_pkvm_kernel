@@ -590,8 +590,11 @@ static int hyp_complete_share(u64 addr, const struct pkvm_mem_transition *tx,
 static int hyp_complete_unshare(u64 addr, const struct pkvm_mem_transition *tx)
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
+	int ret;
 
-	return kvm_pgtable_hyp_unmap(&pkvm_pgtable, addr, size);
+	ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, addr, size);
+
+	return (ret == size) ? 0 : ret;
 }
 
 static int __do_share(struct pkvm_mem_share *share)
