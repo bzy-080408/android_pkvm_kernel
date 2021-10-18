@@ -71,6 +71,9 @@ extern const pkvm_id pkvm_host_id;
 /** The ID of the hypervisor itself. */
 extern const pkvm_id pkvm_hyp_id;
 
+/** The ID of the secure world. */
+extern const pkvm_id pkvm_secure_world_id;
+
 extern unsigned long hyp_nr_cpus;
 
 int __pkvm_prot_finalize(void);

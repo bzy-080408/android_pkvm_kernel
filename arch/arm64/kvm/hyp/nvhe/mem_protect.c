@@ -30,6 +30,7 @@ static struct hyp_pool host_s2_pool;
 
 const pkvm_id pkvm_host_id	= 0;
 const pkvm_id pkvm_hyp_id	= (1 << 16);
+const pkvm_id pkvm_secure_world_id = 1;
 const pkvm_id pkvm_host_poison	= pkvm_hyp_id + 1;
 
 static pkvm_id pkvm_guest_id(struct kvm_vcpu *vcpu)
@@ -649,6 +650,7 @@ enum pkvm_component_id {
 	PKVM_ID_HOST,
 	PKVM_ID_HYP,
 	PKVM_ID_GUEST,
+	PKVM_ID_SECURE_WORLD,
 };
 
 struct pkvm_mem_transition {
@@ -702,6 +704,8 @@ static pkvm_id initiator_owner_id(const struct pkvm_mem_transition *tx)
 		return pkvm_host_id;
 	case PKVM_ID_HYP:
 		return pkvm_hyp_id;
+	case PKVM_ID_SECURE_WORLD:
+		return pkvm_secure_world_id;
 	case PKVM_ID_GUEST:
 		return pkvm_guest_id(tx->initiator.guest.vcpu);
 	default:
@@ -717,6 +721,8 @@ static pkvm_id completer_owner_id(const struct pkvm_mem_transition *tx)
 		return pkvm_host_id;
 	case PKVM_ID_HYP:
 		return pkvm_hyp_id;
+	case PKVM_ID_SECURE_WORLD:
+		return pkvm_secure_world_id;
 	case PKVM_ID_GUEST:
 		return pkvm_guest_id(tx->completer.guest.vcpu);
 	default:
@@ -1225,6 +1231,10 @@ static int check_share(struct pkvm_mem_share *share)
 	case PKVM_ID_GUEST:
 		ret = guest_ack_share(completer_addr, tx, share->prot);
 		break;
+	case PKVM_ID_SECURE_WORLD:
+		/* Nothing to check, always succeeds. */
+		ret = 0;
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -1261,6 +1271,10 @@ static int __do_share(struct pkvm_mem_share *share)
 		break;
 	case PKVM_ID_GUEST:
 		ret = guest_complete_share(completer_addr, tx, share->prot);
+		break;
+	case PKVM_ID_SECURE_WORLD:
+		/* Nothing to do, we don't maintain any page tables for the secure world. */
+		ret = 0;
 		break;
 	default:
 		ret = -EINVAL;
@@ -1407,6 +1421,10 @@ static int check_donation(struct pkvm_mem_donation *donation)
 	case PKVM_ID_GUEST:
 		ret = guest_ack_donation(completer_addr, tx);
 		break;
+	case PKVM_ID_SECURE_WORLD:
+		/* Nothing to check, always succeeds. */
+		ret = 0;
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -1443,6 +1461,10 @@ static int __do_donate(struct pkvm_mem_donation *donation)
 		break;
 	case PKVM_ID_GUEST:
 		ret = guest_complete_donation(completer_addr, tx);
+		break;
+	case PKVM_ID_SECURE_WORLD:
+		/* Nothing to do, we don't maintain any page tables for the secure world. */
+		ret = 0;
 		break;
 	default:
 		ret = -EINVAL;
