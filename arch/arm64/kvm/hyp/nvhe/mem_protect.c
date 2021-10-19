@@ -1432,6 +1432,52 @@ static int do_donate(struct pkvm_mem_donation *donation)
 	return WARN_ON(__do_donate(donation));
 }
 
+int __pkvm_host_check_share_secure_world(hpa_t host_addr, size_t size,
+					 enum kvm_pgtable_prot mode)
+{
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator = {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = 0,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+		.prot	= mode,
+	};
+
+	return check_share(&share);
+}
+
+int __pkvm_host_share_secure_world(hpa_t host_addr, size_t size,
+				   enum kvm_pgtable_prot mode)
+{
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator = {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = 0,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+		.prot	= mode,
+	};
+
+	return do_share(&share);
+}
+
 /**
  * __pkvm_host_check_share_hyp_prot() - Checks whether the host is allowed to
  *                                      share the given range of pages with the
@@ -1646,6 +1692,48 @@ int __pkvm_host_unshare_hyp(u64 pfn)
 	host_unlock_component();
 
 	return ret;
+}
+
+int __pkvm_host_check_donate_secure_world(hpa_t host_addr, size_t size)
+{
+	struct pkvm_mem_donation donation = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator = {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = 0,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+	};
+
+	return check_donation(&donation);
+}
+
+int __pkvm_host_donate_secure_world(hpa_t host_addr, size_t size)
+{
+	struct pkvm_mem_donation donation = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator = {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = 0,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+	};
+
+	return do_donate(&donation);
 }
 
 int __pkvm_host_donate_hyp(u64 pfn, u64 nr_pages)
