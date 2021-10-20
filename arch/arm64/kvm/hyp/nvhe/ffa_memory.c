@@ -213,6 +213,158 @@ allocate_share_state(struct share_states_locked share_states,
 	return false;
 }
 
+/**
+ * get_share_state() - Gets the share state for the given handle.
+ * @share_states: A locked reference to the share states.
+ * @handle: The memory region handle to look up.
+ * @share_state_ret: A pointer to initialise to the share state if it is found.
+ *
+ * If the given @handle is a valid handle for an allocated share state then
+ * initialises @share_state_ret to point to the share state and returns true.
+ * Otherwise returns false.
+ *
+ * Return: whether a share state with the given handle was found.
+ */
+static bool get_share_state(struct share_states_locked share_states,
+			    ffa_memory_handle_t handle,
+			    struct ffa_memory_share_state **share_state_ret)
+{
+	struct ffa_memory_share_state *share_state;
+	uint32_t index;
+
+	BUG_ON(share_states.share_states == NULL);
+	BUG_ON(share_state_ret == NULL);
+
+	/*
+	 * First look for a share_state allocated by us, in which case the
+	 * handle is based on the index.
+	 */
+	if ((handle & FFA_MEMORY_HANDLE_ALLOCATOR_MASK) ==
+	    FFA_MEMORY_HANDLE_ALLOCATOR_HYPERVISOR) {
+		index = handle & ~FFA_MEMORY_HANDLE_ALLOCATOR_MASK;
+		if (index < MAX_MEM_SHARES) {
+			share_state = &share_states.share_states[index];
+			if (share_state->share_func != 0) {
+				*share_state_ret = share_state;
+				return true;
+			}
+		}
+	}
+
+	/* Fall back to a linear scan. */
+	for (index = 0; index < MAX_MEM_SHARES; ++index) {
+		share_state = &share_states.share_states[index];
+		if (share_state->handle == handle &&
+		    share_state->share_func != 0) {
+			*share_state_ret = share_state;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * share_state_free() - Marks a share state as unallocated.
+ * @share_states: A locked reference to the share states.
+ * @share_state: The share state to mark as unallocated.
+ * @page_pool:
+ *   The page pool into which to put pages freed from the memory region
+ *   descriptor.
+ */
+static void share_state_free(struct share_states_locked share_states,
+			     struct ffa_memory_share_state *share_state,
+			     struct hyp_pool *page_pool)
+{
+	uint32_t i;
+
+	BUG_ON(share_states.share_states == NULL);
+	share_state->share_func = 0;
+	share_state->sending_complete = false;
+	hyp_put_page(page_pool, share_state->memory_region);
+	/*
+	 * First fragment is part of the same page as the `memory_region`, so it
+	 * doesn't need to be freed separately.
+	 */
+	share_state->fragments[0] = NULL;
+	share_state->fragment_constituent_counts[0] = 0;
+	for (i = 1; i < share_state->fragment_count; ++i) {
+		hyp_put_page(page_pool, share_state->fragments[i]);
+		share_state->fragments[i] = NULL;
+		share_state->fragment_constituent_counts[i] = 0;
+	}
+	share_state->fragment_count = 0;
+	share_state->memory_region = NULL;
+}
+
+/**
+ * share_state_sending_complete() - Checks whether the given share state has
+ *                                  been fully sent.
+ * @share_states: A locked reference to the share states.
+ * @share_state: The share state to check.
+ *
+ * Return: whether the given share state has been fully sent.
+ */
+static bool
+share_state_sending_complete(struct share_states_locked share_states,
+			     struct ffa_memory_share_state *share_state)
+{
+	struct ffa_composite_mem_region *composite;
+	uint32_t expected_constituent_count;
+	uint32_t fragment_constituent_count_total = 0;
+	uint32_t i;
+
+	/* Lock must be held. */
+	BUG_ON(share_states.share_states == NULL);
+
+	/*
+	 * Share state must already be valid, or it's not possible to get hold
+	 * of it.
+	 */
+	BUG_ON(share_state->memory_region == NULL);
+	BUG_ON(share_state->share_func == 0);
+
+	composite =
+		ffa_memory_region_get_composite(share_state->memory_region, 0);
+	expected_constituent_count = composite->addr_range_cnt;
+	for (i = 0; i < share_state->fragment_count; ++i) {
+		fragment_constituent_count_total +=
+			share_state->fragment_constituent_counts[i];
+	}
+
+	return fragment_constituent_count_total == expected_constituent_count;
+}
+
+/**
+ * share_state_next_fragment_offset() - Calculates the offset of the next
+ *                                      fragment expected for the given share
+ *                                      state.
+ * @share_states: A locked reference to the share states.
+ * @share_state: The share state to check.
+ *
+ * Return: the offset in bytes.
+ */
+static uint32_t
+share_state_next_fragment_offset(struct share_states_locked share_states,
+				 struct ffa_memory_share_state *share_state)
+{
+	uint32_t next_fragment_offset;
+	uint32_t i;
+
+	/* Lock must be held. */
+	BUG_ON(share_states.share_states == NULL);
+
+	next_fragment_offset =
+		ffa_composite_constituent_offset(share_state->memory_region, 0);
+	for (i = 0; i < share_state->fragment_count; ++i) {
+		next_fragment_offset +=
+			share_state->fragment_constituent_counts[i] *
+			sizeof(struct ffa_mem_region_addr_range);
+	}
+
+	return next_fragment_offset;
+}
+
 /* TODO: Add device attributes: GRE, cacheability, shareability. */
 static inline enum kvm_pgtable_prot
 ffa_memory_permissions_to_mode(ffa_memory_access_permissions_t permissions)
@@ -749,6 +901,58 @@ out:
 }
 
 /**
+ * ffa_memory_send_complete() - Completes a memory sending operation.
+ * @from_pgt: The page table of the sender, i.e. the host.
+ * @share_states: A locked reference to the share states.
+ * @share_state: The share state for the operation.
+ * @page_pool:
+ *   The page pool into which to put pages freed from the memory region
+ *   descriptor, if the operation fails.
+ * @orig_from_mode_ret:
+ *   A pointer through which to store the permissions with which the sender had
+ *   the memory region mapped before this operation, in case it needs to be
+ *   rolled back.
+ *
+ * Completes a memory sending operation by checking that it is valid, updating
+ * the sender page table, and then either marking the share state as having
+ * completed sending (on success) or freeing it (on failure).
+ *
+ * Return: FFA_SUCCESS with the handle encoded, or the relevant FFA_ERROR.
+ */
+static struct arm_smccc_1_2_regs ffa_memory_send_complete(
+	struct kvm_pgtable *from_pgt, struct share_states_locked share_states,
+	struct ffa_memory_share_state *share_state, struct hyp_pool *page_pool,
+	enum kvm_pgtable_prot *orig_from_mode_ret)
+{
+	struct ffa_mem_region *memory_region = share_state->memory_region;
+	struct arm_smccc_1_2_regs ret;
+
+	/* Lock must be held. */
+	BUG_ON(share_states.share_states == NULL);
+
+	/* Check that state is valid in sender page table and update. */
+	ret = ffa_send_check_update(
+		from_pgt, share_state->fragments,
+		share_state->fragment_constituent_counts,
+		share_state->fragment_count, share_state->share_func,
+		memory_region->ep_mem_access[0].attrs,
+		memory_region->flags & FFA_MEMORY_REGION_FLAG_CLEAR,
+		orig_from_mode_ret);
+	if (ret.a0 != FFA_SUCCESS) {
+		/*
+		 * Free share state, it failed to send so it can't be retrieved.
+		 */
+		pr_warn("Complete failed, freeing share state.");
+		share_state_free(share_states, share_state, page_pool);
+		return ret;
+	}
+
+	share_state->sending_complete = true;
+
+	return ffa_mem_success(share_state->handle);
+}
+
+/**
  * ffa_memory_send_validate() - Validate the given memory region for a memory
  *                              send request.
  * @memory_region: The first fragment of the memory region descriptor.
@@ -904,6 +1108,99 @@ memory_send_tee_forward(ffa_vm_id_t sender_vm_id, uint32_t share_func,
 }
 
 /**
+ * ffa_memory_send_continue_validate() - Gets the share state for continuing an
+ *                                       operation to donate, lend or share
+ *                                       memory, and checks that it is a valid
+ *                                       request.
+ * @share_states: A locked reference to the share states.
+ * @handle: The memory region handle for the operation.
+ * @share_state_ret: A pointer to initialise to the share state if it is found.
+ * @from_vm_id: The FF-A ID of the sender.
+ * @page_pool:
+ *   The page pool into which to put pages freed from the memory region
+ *   descriptor, if the operation fails.
+ *
+ * Return: FFA_SUCCESS if the request was valid, or the relevant FFA_ERROR if
+ * not.
+ */
+static struct arm_smccc_1_2_regs ffa_memory_send_continue_validate(
+	struct share_states_locked share_states, ffa_memory_handle_t handle,
+	struct ffa_memory_share_state **share_state_ret, ffa_vm_id_t from_vm_id,
+	struct hyp_pool *page_pool)
+{
+	struct ffa_memory_share_state *share_state;
+	struct ffa_mem_region *memory_region;
+
+	BUG_ON(share_state_ret == NULL);
+
+	/*
+	 * Look up the share state by handle and make sure that the VM ID
+	 * matches.
+	 */
+	if (!get_share_state(share_states, handle, &share_state)) {
+		pr_warn("Invalid handle for memory send continuation.");
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+	memory_region = share_state->memory_region;
+
+	if (memory_region->sender_id != from_vm_id) {
+		pr_warn("Invalid sender.");
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	if (share_state->sending_complete) {
+		pr_warn("Sending of memory handle is already complete.");
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	if (share_state->fragment_count == MAX_FRAGMENTS) {
+		/*
+		 * Log a warning as this is a sign that MAX_FRAGMENTS should
+		 * probably be increased.
+		 */
+		pr_warn("Too many fragments for memory share with handle.");
+		/* Free share state, as it's not possible to complete it. */
+		share_state_free(share_states, share_state, page_pool);
+		return ffa_error(FFA_RET_NO_MEMORY);
+	}
+
+	*share_state_ret = share_state;
+
+	return (struct arm_smccc_1_2_regs){ .a0 = FFA_SUCCESS };
+}
+
+/**
+ * memory_send_continue_tee_forward() - Forwards a memory send continuation
+ *                                      message on to the TEE.
+ * @sender_vm_id: The FF-A ID of the sender.
+ * @fragment: A fragment of a memory region descriptor.
+ * @fragment_length:
+ *   The length of this fragment of the memory region descriptor.
+ * @handle: The handle assigned to the memory region.
+ *
+ * Context: The TEE lock must be held while calling this function.
+ *
+ * Return: The result returned by the SPMD in EL3.
+ */
+static struct arm_smccc_1_2_regs
+memory_send_continue_tee_forward(ffa_vm_id_t sender_vm_id, void *fragment,
+				 uint32_t fragment_length,
+				 ffa_memory_handle_t handle)
+{
+	struct arm_smccc_1_2_regs args = { .a0 = FFA_MEM_FRAG_TX,
+					   .a1 = (uint32_t)handle,
+					   .a2 = (uint32_t)(handle >> 32),
+					   .a3 = fragment_length,
+					   .a4 = (uint64_t)sender_vm_id << 16 };
+	struct arm_smccc_1_2_regs ret;
+
+	memcpy(spmd_rx_buffer, fragment, fragment_length);
+	arm_smccc_1_2_smc(&args, &ret);
+
+	return ret;
+}
+
+/**
  * ffa_memory_tee_send() - Validates a call to donate, lend or share memory to
  *                         the TEE and then updates the stage-2 page tables.
  * @from_pgt: The page table of the sender, i.e. the host.
@@ -1048,5 +1345,163 @@ out:
 		hyp_put_page(page_pool, memory_region);
 	}
 
+	return ret;
+}
+
+/**
+ * ffa_memory_tee_send_continue() - Continues an operation to donate, lend or
+ *                                  share memory to the TEE VM.
+ * @from_pgt: The page table of the sender, i.e. the host.
+ * @fragment: A fragment of a memory region descriptor.
+ * @fragment_length:
+ *   The length of this fragment of the memory region descriptor.
+ * @handle: The handle assigned to the memory region.
+ * @page_pool:
+ *   The page pool in which to put pages freed from the memory region
+ *   descriptor.
+ *
+ * If this is the last fragment then checks that the transition is valid for the
+ * type of memory sending operation and updates the stage-2 page tables of the
+ * sender.
+ *
+ * Assumes that the caller has already found and locked the sender VM and copied
+ * the memory region descriptor from the sender's TX buffer to a freshly
+ * allocated page from the hypervisor's internal pool.
+ *
+ * This function takes ownership of the `memory_region` passed in and will free
+ * it when necessary; it must not be freed by the caller.
+ *
+ * Return:
+ *  * ``FFA_SUCCESS`` if this was the last fragment and the memory send
+ *    operation has completed successfully.
+ *  * ``FFA_MEM_FRAG_RX`` with the handle and next fragment offset if there are
+ *    more fragments to come.
+ *  * ``FFA_ERROR`` with an appropriate error code if the memory send operation
+ *    failed.
+ */
+struct arm_smccc_1_2_regs ffa_memory_tee_send_continue(
+	struct kvm_pgtable *from_pgt, void *fragment, uint32_t fragment_length,
+	ffa_memory_handle_t handle, struct hyp_pool *page_pool)
+{
+	struct share_states_locked share_states = share_states_lock();
+	struct ffa_memory_share_state *share_state;
+	struct arm_smccc_1_2_regs ret;
+	struct ffa_mem_region *memory_region;
+
+	hyp_assert_lock_held(&host_kvm.lock);
+
+	ret = ffa_memory_send_continue_validate(
+		share_states, handle, &share_state, HOST_VM_ID, page_pool);
+	if (ret.a0 != FFA_SUCCESS)
+		goto out_free_fragment;
+	memory_region = share_state->memory_region;
+
+	if (memory_region->ep_mem_access[0].receiver != TEE_VM_ID) {
+		pr_err("Got SPM-allocated handle for memory send to non-TEE "
+		       "VM. This should never happen, and indicates a bug.");
+		ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+		goto out_free_fragment;
+	}
+
+	/* Add this fragment. */
+	share_state->fragments[share_state->fragment_count] = fragment;
+	share_state->fragment_constituent_counts[share_state->fragment_count] =
+		fragment_length / sizeof(struct ffa_mem_region_addr_range);
+	share_state->fragment_count++;
+
+	/* Check whether the memory send operation is now ready to complete. */
+	if (share_state_sending_complete(share_states, share_state)) {
+		enum kvm_pgtable_prot orig_from_mode;
+
+		ret = ffa_memory_send_complete(from_pgt, share_states,
+					       share_state, page_pool,
+					       &orig_from_mode);
+
+		if (ret.a0 == FFA_SUCCESS) {
+			/*
+			 * Forward final fragment on to the TEE so that
+			 * it can complete the memory sending operation.
+			 */
+			ret = memory_send_continue_tee_forward(
+				HOST_VM_ID, fragment, fragment_length, handle);
+
+			if (ret.a0 != FFA_SUCCESS) {
+				/*
+				 * The error will be passed on to the caller,
+				 * but log it here too.
+				 */
+				pr_warn("TEE didn't successfully complete "
+					"memory send operation. Rolling back.");
+
+				/*
+				 * The TEE failed to complete the send
+				 * operation, so roll back the page table update
+				 * for the VM.
+				 */
+				BUG_ON(!ffa_region_group_identity_map(
+					from_pgt, share_state->fragments,
+					share_state->fragment_constituent_counts,
+					share_state->fragment_count,
+					orig_from_mode));
+			}
+
+			/* Free share state. */
+			share_state_free(share_states, share_state, page_pool);
+		} else {
+			/* Abort sending to TEE. */
+			struct arm_smccc_1_2_regs tee_ret;
+			struct arm_smccc_1_2_regs args = {
+				.a0 = FFA_MEM_RECLAIM,
+				.a1 = (uint32_t)handle,
+				.a2 = (uint32_t)(handle >> 32)
+			};
+			arm_smccc_1_2_smc(&args, &tee_ret);
+
+			if (tee_ret.a0 != FFA_SUCCESS) {
+				/*
+				 * Nothing we can do if TEE doesn't abort
+				 * properly, just log it.
+				 */
+				pr_warn("TEE didn't successfully abort failed "
+					"memory send operation.");
+			}
+			/*
+			 * We don't need to free the share state in this case
+			 * because ffa_memory_send_complete does that already.
+			 */
+		}
+	} else {
+		uint32_t next_fragment_offset =
+			share_state_next_fragment_offset(share_states,
+							 share_state);
+
+		ret = memory_send_continue_tee_forward(HOST_VM_ID, fragment,
+						       fragment_length, handle);
+
+		if (ret.a0 != FFA_MEM_FRAG_RX ||
+		    ffa_frag_handle(ret) != handle ||
+		    ret.a3 != next_fragment_offset ||
+		    ffa_frag_sender(ret) != HOST_VM_ID) {
+			pr_warn("Got unexpected result from forwarding "
+				"FFA_MEM_FRAG_TX to TEE");
+			/* Free share state. */
+			share_state_free(share_states, share_state, page_pool);
+			ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+			goto out;
+		}
+
+		ret = (struct arm_smccc_1_2_regs){ .a0 = FFA_MEM_FRAG_RX,
+						   .a1 = (uint32_t)handle,
+						   .a2 = (uint32_t)(handle >>
+								    32),
+						   .a3 = next_fragment_offset };
+	}
+	goto out;
+
+out_free_fragment:
+	hyp_put_page(page_pool, fragment);
+
+out:
+	share_states_unlock(&share_states);
 	return ret;
 }

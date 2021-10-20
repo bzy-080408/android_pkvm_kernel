@@ -192,6 +192,14 @@ static inline ffa_vm_id_t ffa_frag_sender(struct arm_smccc_1_2_regs args)
 	return (args.a4 >> 16) & 0xffff;
 }
 
+static inline struct arm_smccc_1_2_regs
+ffa_mem_success(ffa_memory_handle_t handle)
+{
+	return (struct arm_smccc_1_2_regs){ .a0 = FFA_SUCCESS,
+					    .a2 = (uint32_t)handle,
+					    .a3 = (uint32_t)(handle >> 32) };
+}
+
 // TODO: The rest of this file should probably be in a different file, as it's specific to our
 // implementation rather than general FF-A types.
 

@@ -197,6 +197,93 @@ out:
 	return ret;
 }
 
+struct arm_smccc_1_2_regs ffa_mem_frag_tx(ffa_memory_handle_t handle,
+					  uint32_t fragment_length,
+					  ffa_vm_id_t sender_vm_id)
+{
+	const void *from_msg;
+	void *fragment_copy;
+	struct arm_smccc_1_2_regs ret;
+
+	/* Sender ID MBZ at virtual instance. */
+	if (sender_vm_id != 0)
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+
+	/*
+	 * Check that the sender has configured its send buffer. If the TX
+	 * mailbox at from_msg is configured (i.e. from_msg != NULL) then it can
+	 * be safely accessed after releasing the lock since the TX mailbox
+	 * address can only be configured once.
+	 */
+	hyp_spin_lock(&host_kvm.lock);
+	from_msg = host_kvm.tx_buffer;
+	hyp_spin_unlock(&host_kvm.lock);
+
+	if (from_msg == NULL)
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+
+	/*
+	 * Copy the fragment to a fresh page from the memory pool. This prevents
+	 * the sender from changing it underneath us, and also lets us keep it
+	 * around in the share state table if needed.
+	 */
+	if (fragment_length > MAILBOX_SIZE) {
+		pr_warn("Fragment length larger than mailbox size.");
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+	if (fragment_length < sizeof(struct ffa_mem_region_addr_range) ||
+	    fragment_length % sizeof(struct ffa_mem_region_addr_range) != 0) {
+		pr_warn("Invalid fragment length.");
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+	fragment_copy =
+		hyp_alloc_pages(&descriptor_pool, get_order(MAILBOX_SIZE));
+	if (fragment_copy == NULL) {
+		pr_warn("Failed to allocate fragment copy.");
+		return ffa_error(FFA_RET_NO_MEMORY);
+	}
+	memcpy(fragment_copy, from_msg, fragment_length);
+
+	/*
+	 * pKVM doesn't support fragmentation of memory retrieve requests
+	 * (because it doesn't support caller-specified mappings, so a request
+	 * will never be larger than a single page), so this must be part of a
+	 * memory send (i.e. donate, lend or share) request.
+	 *
+	 * We can tell from the handle whether the memory transaction is for the
+	 * TEE or not.
+	 */
+	if ((handle & FFA_MEMORY_HANDLE_ALLOCATOR_MASK) ==
+	    FFA_MEMORY_HANDLE_ALLOCATOR_HYPERVISOR) {
+		/* Sending memory to normal world VMs is not supported. */
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	} else {
+		hyp_spin_lock(&host_kvm.lock);
+		// TODO: Take secure world 'VM' lock?
+
+		/*
+		 * The TEE RX buffer state is checked in
+		 * `ffa_memory_tee_send_continue` rather than here, as we need
+		 * to return `FFA_MEM_FRAG_RX` with the current offset rather
+		 * than FFA_ERROR FFA_BUSY in case it is busy.
+		 */
+
+		ret = ffa_memory_tee_send_continue(&host_kvm.pgt, fragment_copy,
+						   fragment_length, handle,
+						   &descriptor_pool);
+		/*
+		 * `ffa_memory_tee_send_continue` takes ownership of the
+		 * fragment_copy (and frees it on failure), so we don't need to
+		 * free it here.
+		 */
+
+		hyp_spin_unlock(&host_kvm.lock);
+		// TODO: Release secure world lock
+	}
+
+	return ret;
+}
+
 /**
  * ffa_rxtx_map() - Handles the FFA_RXTX_MAP function.
  * @tx_address: The IPA of the TX buffer.
@@ -346,6 +433,10 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	case FFA_FN64_MEM_SHARE:
 		ret = ffa_mem_send(func_id, a1, a2, a3, a4);
 		break;
+	case FFA_MEM_FRAG_TX:
+		ret = ffa_mem_frag_tx(ffa_assemble_handle(a1, a2), a3,
+				      (a4 >> 16) & 0xffff);
+		break;
 	case FFA_MEM_RECLAIM:
 	case FFA_RXTX_UNMAP:
 	case FFA_MEM_RETRIEVE_REQ:
@@ -355,7 +446,6 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	case FFA_MEM_OP_PAUSE:
 	case FFA_MEM_OP_RESUME:
 	case FFA_MEM_FRAG_RX:
-	case FFA_MEM_FRAG_TX:
 		// TODO: Implement
 	default:
 		ret = ffa_error(FFA_RET_NOT_SUPPORTED);
