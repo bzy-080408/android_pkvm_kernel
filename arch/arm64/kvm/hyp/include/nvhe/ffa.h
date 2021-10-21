@@ -234,8 +234,28 @@ extern uint8_t spmd_rx_buffer[MAILBOX_SIZE];
 void *hyp_map(phys_addr_t start, size_t length, enum kvm_pgtable_prot prot);
 int hyp_unmap(phys_addr_t start, size_t length);
 
+/**
+ * enum mailbox_state - The state of an RX buffer.
+ * @MAILBOX_STATE_EMPTY: There is no message in the mailbox.
+ * @MAILBOX_STATE_RECEIVED: There is a message in the mailbox that is waiting for a reader.
+ * @MAILBOX_STATE_READ: There is a message in the mailbox that has been read.
+ *
+ * @EMPTY is the initial state. The follow state transitions are possible:
+ * * @EMPTY → @RECEIVED: message sent to the partition.
+ * * @RECEIVED → @READ: partition returns from ``FFA_MSG_WAIT`` or
+ *   ``FFA_MSG_POLL``, or host returns from ``FFA_RUN`` with an ``FFA_MSG_SEND``
+ *   where the receiver is itself.
+ * * @READ → @EMPTY: VM called ``FFA_RX_RELEASE``.
+ */
+enum mailbox_state {
+	MAILBOX_STATE_EMPTY,
+	MAILBOX_STATE_RECEIVED,
+	MAILBOX_STATE_READ,
+};
+
 struct spmd {
 	hyp_spinlock_t lock;
+	enum mailbox_state mailbox_state;
 };
 
 extern struct spmd spmd;

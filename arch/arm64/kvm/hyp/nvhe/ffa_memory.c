@@ -1112,7 +1112,14 @@ memory_send_tee_forward(ffa_vm_id_t sender_vm_id, uint32_t share_func,
 	struct arm_smccc_1_2_regs ret;
 
 	memcpy(spmd_rx_buffer, memory_region, fragment_length);
+	spmd.mailbox_state = MAILBOX_STATE_RECEIVED;
 	arm_smccc_1_2_smc(&args, &ret);
+
+	/*
+	 * After the call to the TEE completes it must have finished reading its
+	 * RX buffer, so it is ready for another message.
+	 */
+	spmd.mailbox_state = MAILBOX_STATE_EMPTY;
 
 	return ret;
 }
@@ -1205,7 +1212,14 @@ memory_send_continue_tee_forward(ffa_vm_id_t sender_vm_id, void *fragment,
 	struct arm_smccc_1_2_regs ret;
 
 	memcpy(spmd_rx_buffer, fragment, fragment_length);
+	spmd.mailbox_state = MAILBOX_STATE_RECEIVED;
 	arm_smccc_1_2_smc(&args, &ret);
+
+	/*
+	 * After the call to the TEE completes it must have finished reading its
+	 * RX buffer, so it is ready for another message.
+	 */
+	spmd.mailbox_state = MAILBOX_STATE_EMPTY;
 
 	return ret;
 }
@@ -1414,6 +1428,21 @@ struct arm_smccc_1_2_regs ffa_memory_tee_send_continue(
 		pr_err("Got SPM-allocated handle for memory send to non-TEE "
 		       "VM. This should never happen, and indicates a bug.");
 		ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+		goto out_free_fragment;
+	}
+
+	if (spmd.mailbox_state != MAILBOX_STATE_EMPTY) {
+		/*
+		 * If the TEE RX buffer is not available, tell the sender to
+		 * retry by returning the current offset again.
+		 */
+		ret = (struct arm_smccc_1_2_regs){
+			.a0 = FFA_MEM_FRAG_RX,
+			.a1 = (uint32_t)handle,
+			.a2 = (uint32_t)(handle >> 32),
+			.a3 = share_state_next_fragment_offset(share_states,
+							       share_state),
+		};
 		goto out_free_fragment;
 	}
 
