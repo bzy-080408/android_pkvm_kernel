@@ -498,6 +498,7 @@ static struct arm_smccc_1_2_regs constituents_get_mode(
 			/* Fail if addresses are not page-aligned. */
 			if (!IS_ALIGNED(begin, PAGE_SIZE) ||
 			    !IS_ALIGNED(end, PAGE_SIZE)) {
+				pr_warn("Not page-aligned.");
 				return ffa_error(FFA_RET_INVALID_PARAMETERS);
 			}
 
@@ -507,6 +508,7 @@ static struct arm_smccc_1_2_regs constituents_get_mode(
 			 */
 			if (!mm_vm_get_mode(vm_pgt, begin, end,
 					    &current_mode)) {
+				pr_warn("Constituent not in consistent mode");
 				return ffa_error(FFA_RET_DENIED);
 			}
 
@@ -514,10 +516,12 @@ static struct arm_smccc_1_2_regs constituents_get_mode(
 			 * Ensure that all constituents are mapped with the same
 			 * mode.
 			 */
-			if (i == 0)
+			if (i == 0) {
 				*orig_mode = current_mode;
-			else if (current_mode != *orig_mode)
+			} else if (current_mode != *orig_mode) {
+				pr_warn("Constituent is different mode to others");
 				return ffa_error(FFA_RET_DENIED);
+			}
 		}
 	}
 
@@ -1285,7 +1289,10 @@ memory_send_tee_forward(ffa_vm_id_t sender_vm_id, uint32_t share_func,
 
 	memcpy(spmd_rx_buffer, memory_region, fragment_length);
 	spmd.mailbox_state = MAILBOX_STATE_RECEIVED;
+	pr_info("Forwarding memory send to EL3, length %d/%d", fragment_length,
+		memory_share_length);
 	arm_smccc_1_2_smc(&args, &ret);
+	pr_info("EL3 returned");
 
 	/*
 	 * After the call to the TEE completes it must have finished reading its
@@ -1385,7 +1392,9 @@ memory_send_continue_tee_forward(ffa_vm_id_t sender_vm_id, void *fragment,
 
 	memcpy(spmd_rx_buffer, fragment, fragment_length);
 	spmd.mailbox_state = MAILBOX_STATE_RECEIVED;
+	pr_info("Forwarding memory send continue to EL3");
 	arm_smccc_1_2_smc(&args, &ret);
+	pr_info("EL3 returned");
 
 	/*
 	 * After the call to the TEE completes it must have finished reading its
