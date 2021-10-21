@@ -654,6 +654,10 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
+	mmu->arch = &kvm->arch;
+
+	if (is_protected_kvm_enabled())
+		return 0;
 
 	if (mmu->pgt != NULL) {
 		kvm_err("kvm_arch already initialized?\n");
@@ -677,7 +681,6 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	for_each_possible_cpu(cpu)
 		*per_cpu_ptr(mmu->last_vcpu_ran, cpu) = -1;
 
-	mmu->arch = &kvm->arch;
 	mmu->pgt = pgt;
 	mmu->pgd_phys = __pa(pgt->pgd);
 	WRITE_ONCE(mmu->vmid.vmid_gen, 0);
@@ -762,6 +765,9 @@ void kvm_free_stage2_pgd(struct kvm_s2_mmu *mmu)
 {
 	struct kvm *kvm = kvm_s2_mmu_to_kvm(mmu);
 	struct kvm_pgtable *pgt = NULL;
+
+	if (is_protected_kvm_enabled())
+		return;
 
 	spin_lock(&kvm->mmu_lock);
 	pgt = mmu->pgt;
@@ -1117,6 +1123,22 @@ static int sanitise_mte_tags(struct kvm *kvm, kvm_pfn_t pfn,
 	return 0;
 }
 
+static int pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_host_share_guest),
+			  pfn, gfn, vcpu, &res);
+	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+
+	/*
+	 * Getting -EPERM at this point implies that the pfn has already been
+	 * shared. This should only ever happen when two vCPUs faulted on the
+	 * same page, and the current one lost the race to do the donation.
+	 */
+	return (res.a1 == -EPERM) ? -EAGAIN : res.a1;
+}
+
 static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  struct kvm_memory_slot *memslot, unsigned long hva,
 			  unsigned long fault_status)
@@ -1129,6 +1151,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	unsigned long mmu_seq;
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_memory_cache *memcache = &vcpu->arch.mmu_page_cache;
+	struct kvm_hyp_memcache *hyp_memcache = &vcpu->arch.pkvm.memcache;
 	struct vm_area_struct *vma;
 	short vma_shift;
 	gfn_t gfn;
@@ -1165,7 +1188,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * logging_active is guaranteed to never be true for VM_PFNMAP
 	 * memslots.
 	 */
-	if (logging_active) {
+	if (logging_active || is_protected_kvm_enabled()) {
 		force_pte = true;
 		vma_shift = PAGE_SHIFT;
 	} else {
@@ -1205,13 +1228,25 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	gfn = fault_ipa >> PAGE_SHIFT;
 	mmap_read_unlock(current->mm);
 
-	/*
-	 * Permission faults just need to update the existing leaf entry,
-	 * and so normally don't require allocations from the memcache. The
-	 * only exception to this is when dirty logging is enabled at runtime
-	 * and a write fault needs to collapse a block entry into a table.
-	 */
-	if (fault_status != FSC_PERM || (logging_active && write_fault)) {
+	if (is_protected_kvm_enabled()) {
+		/*
+		 * All shared pages will be mapped RWX in protected guests,
+		 * so proactively ask for writeable memory as we can't cope
+		 * with CoW.
+		 */
+		write_fault = true;
+		ret = topup_hyp_memcache(hyp_memcache,
+					 kvm_mmu_cache_min_pages(kvm));
+		if (ret)
+			return ret;
+	} else if (fault_status != FSC_PERM || (logging_active && write_fault)) {
+		/*
+		 * Permission faults just need to update the existing leaf
+		 * entry, and so normally don't require allocations from the
+		 * memcache. The only exception to this is when dirty logging
+		 * is enabled at runtime and a write fault needs to collapse
+		 * a block entry into a table.
+		 */
 		ret = kvm_mmu_topup_memory_cache(memcache,
 						 kvm_mmu_cache_min_pages(kvm));
 		if (ret)
@@ -1270,6 +1305,11 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	pgt = vcpu->arch.hw_mmu->pgt;
 	if (mmu_notifier_retry(kvm, mmu_seq))
 		goto out_unlock;
+
+	if (is_protected_kvm_enabled()) {
+		ret = pkvm_host_share_guest(pfn, gfn, vcpu);
+		goto out_unlock;
+	}
 
 	/*
 	 * If we are not forced to use page mapping, check if we are
