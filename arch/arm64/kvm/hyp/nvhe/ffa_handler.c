@@ -177,7 +177,11 @@ static struct arm_smccc_1_2_regs ffa_mem_send(u32 share_func, u32 length,
 
 	hyp_spin_lock(&host_kvm.lock);
 	hyp_spin_lock(&spmd.lock);
-	// TODO: Check if receiver is busy?
+
+	if (spmd.mailbox_state != MAILBOX_STATE_EMPTY) {
+		ret = ffa_error(FFA_RET_BUSY);
+		goto out_unlock;
+	}
 
 	ret = ffa_memory_tee_send(&host_kvm.pgt, memory_region, length,
 				  fragment_length, share_func,
