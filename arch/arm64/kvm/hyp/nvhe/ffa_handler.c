@@ -29,6 +29,8 @@ __aligned(FFA_PAGE_SIZE) uint8_t spmd_rx_buffer[MAILBOX_SIZE];
 
 static struct hyp_pool descriptor_pool;
 
+struct spmd spmd;
+
 static bool is_ffa_call(u64 func_id)
 {
 	return ARM_SMCCC_IS_FAST_CALL(func_id) &&
@@ -76,6 +78,8 @@ int ffa_init(void *descriptor_pool_base)
 		hyp_pool_init(&descriptor_pool, pfn, ffa_descriptor_pages(), 0);
 	if (pool_ret != 0)
 		return pool_ret;
+
+	hyp_spin_lock_init(&spmd.lock);
 
 	arm_smccc_1_2_smc(&args, &ret);
 
@@ -175,7 +179,7 @@ static struct arm_smccc_1_2_regs ffa_mem_send(u32 share_func, u32 length,
 	}
 
 	hyp_spin_lock(&host_kvm.lock);
-	// TODO: Take secure world 'VM' lock?
+	hyp_spin_lock(&spmd.lock);
 	// TODO: Check if receiver is busy?
 
 	ret = ffa_memory_tee_send(&host_kvm.pgt, memory_region, length,
@@ -189,7 +193,7 @@ static struct arm_smccc_1_2_regs ffa_mem_send(u32 share_func, u32 length,
 
 out_unlock:
 	hyp_spin_unlock(&host_kvm.lock);
-	// TODO: Release secure world lock
+	hyp_spin_unlock(&spmd.lock);
 
 out:
 	if (memory_region != NULL) {
@@ -264,7 +268,7 @@ struct arm_smccc_1_2_regs ffa_mem_frag_tx(ffa_memory_handle_t handle,
 		return ffa_error(FFA_RET_INVALID_PARAMETERS);
 	} else {
 		hyp_spin_lock(&host_kvm.lock);
-		// TODO: Take secure world 'VM' lock?
+		hyp_spin_lock(&spmd.lock);
 
 		/*
 		 * The TEE RX buffer state is checked in
@@ -283,7 +287,7 @@ struct arm_smccc_1_2_regs ffa_mem_frag_tx(ffa_memory_handle_t handle,
 		 */
 
 		hyp_spin_unlock(&host_kvm.lock);
-		// TODO: Release secure world lock
+		hyp_spin_unlock(&spmd.lock);
 	}
 
 	return ret;

@@ -1249,6 +1249,9 @@ ffa_memory_tee_send(struct kvm_pgtable *from_pgt,
 	ffa_memory_access_permissions_t permissions;
 	struct arm_smccc_1_2_regs ret;
 
+	hyp_assert_lock_held(&host_kvm.lock);
+	hyp_assert_lock_held(&spmd.lock);
+
 	/*
 	 * If there is an error validating the `memory_region` then we need to
 	 * free it because we own it but we won't be storing it in a share state
@@ -1398,6 +1401,7 @@ struct arm_smccc_1_2_regs ffa_memory_tee_send_continue(
 	struct ffa_mem_region *memory_region;
 
 	hyp_assert_lock_held(&host_kvm.lock);
+	hyp_assert_lock_held(&spmd.lock);
 
 	ret = ffa_memory_send_continue_validate(
 		share_states, handle, &share_state, HOST_VM_ID, page_pool);
