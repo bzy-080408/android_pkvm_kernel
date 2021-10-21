@@ -38,7 +38,8 @@ On x86:
 
 On aarch64:
 
-- host_kvm.lock is taken outside pkvm_pgd_lock.
+- host_kvm.lock is taken outside spmd.lock and pkvm_pgd_lock.
+- spmd.lock is taken outside pkvm_pgd_lock.
 
 Everything else is a leaf: no other lock is taken inside the critical
 sections.
@@ -275,3 +276,10 @@ time it will be set using the Dirty tracking mechanism described above.
 :Protects:	host_kvm.pgt, host_kvm.tx_buffer, host_kvm.rx_buffer
 :Comment:	This lock must be held whenever the hypervisor accesses the host
 		stage-2 page table or FF-A mailbox buffers.
+
+:Name:		spmd.lock
+:Type:		hyp_spinlock_t
+:Arch:		aarch64
+:Protects:	spmd.mailbox_state, spmd_tx_buffer, spmd_rx_buffer
+:Comment:	This lock must be held during SMC calls to EL3 where it may access its
+		FF-A mailbox buffers.

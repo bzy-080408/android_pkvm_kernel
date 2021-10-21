@@ -4,6 +4,8 @@
  * Author: Andrew Walbran <qwandor@google.com>
  */
 
+#include <nvhe/spinlock.h>
+
 #define FFA_MIN_FUNC_NUM 0x60
 #define FFA_MAX_FUNC_NUM 0x7F
 
@@ -230,3 +232,9 @@ extern uint8_t spmd_rx_buffer[MAILBOX_SIZE];
 
 void *hyp_map(phys_addr_t start, size_t length, enum kvm_pgtable_prot prot);
 int hyp_unmap(phys_addr_t start, size_t length);
+
+struct spmd {
+	hyp_spinlock_t lock;
+};
+
+extern struct spmd spmd;
