@@ -221,6 +221,8 @@ struct kvm_protected_vcpu {
 	 * PSCI_0_2_AFFINITY_LEVEL_PENDING
 	 */
 	int power_state;
+
+	struct kvm_hyp_memcache memcache;
 };
 
 struct kvm_vcpu_fault_info {
