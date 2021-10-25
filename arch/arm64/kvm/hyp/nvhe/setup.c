@@ -165,13 +165,6 @@ static void hpool_put_page(void *addr)
 	hyp_put_page(&hpool, addr);
 }
 
-#define KVM_INVALID_PTE_OWNER_MASK	GENMASK(9, 2)
-
-static kvm_pte_t kvm_init_invalid_leaf_owner(u8 owner_id)
-{
-	return FIELD_PREP(KVM_INVALID_PTE_OWNER_MASK, owner_id);
-}
-
 static int finalize_host_mappings_walker(u64 addr, u64 end, u32 level,
 					 kvm_pte_t *ptep,
 					 enum kvm_pgtable_walk_flags flag,
@@ -209,8 +202,7 @@ static int finalize_host_mappings_walker(u64 addr, u64 end, u32 level,
 	state = pkvm_getstate(kvm_pgtable_hyp_pte_prot(pte));
 	switch (state) {
 	case PKVM_PAGE_OWNED:
-		return host_stage2_annotate_locked(phys, PAGE_SIZE,
-						   kvm_init_invalid_leaf_owner(pkvm_hyp_id));
+		return host_stage2_set_owner_locked(phys, PAGE_SIZE, pkvm_hyp_id);
 	case PKVM_PAGE_SHARED_OWNED:
 		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_BORROWED);
 		break;

@@ -499,16 +499,23 @@ int host_stage2_idmap_locked(phys_addr_t addr, u64 size,
 	return host_stage2_try(__host_stage2_idmap, addr, addr + size, prot);
 }
 
-int host_stage2_annotate_locked(phys_addr_t addr, u64 size,
-				kvm_pte_t annotation)
+#define KVM_INVALID_PTE_OWNER_MASK	GENMASK(9, 2)
+static kvm_pte_t kvm_init_invalid_leaf_owner(u8 owner_id)
 {
+	return FIELD_PREP(KVM_INVALID_PTE_OWNER_MASK, owner_id);
+}
+
+int host_stage2_set_owner_locked(phys_addr_t addr, u64 size,
+				 u8 owner_id)
+{
+	kvm_pte_t annotation = kvm_init_invalid_leaf_owner(owner_id);
 	int ret;
 
 	ret = host_stage2_try(kvm_pgtable_stage2_annotate, &host_kvm.pgt,
 			      addr, size, &host_s2_pool, annotation);
 
 	if (!ret && kvm_iommu_ops.host_stage2_set_owner)
-		kvm_iommu_ops.host_stage2_set_owner(addr, size, annotation);
+		kvm_iommu_ops.host_stage2_set_owner(addr, size, owner_id);
 
 	return ret;
 }
