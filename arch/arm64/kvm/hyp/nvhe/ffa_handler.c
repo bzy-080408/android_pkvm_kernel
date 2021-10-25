@@ -26,6 +26,10 @@ u64 __ro_after_init smccc_has_sve_hint;
 // TODO: Support other page sizes before this goes upstream.
 #define MAILBOX_SIZE 4096
 
+/* Mailboxes for communicating with the SPMD in EL3. */
+__aligned(FFA_PAGE_SIZE) static uint8_t spmd_tx_buffer[MAILBOX_SIZE];
+__aligned(FFA_PAGE_SIZE) static uint8_t spmd_rx_buffer[MAILBOX_SIZE];
+
 /** Constructs an FF-A error return value with the specified error code. */
 static struct arm_smccc_1_2_regs ffa_error(u64 error_code)
 {
@@ -51,6 +55,33 @@ static struct arm_smccc_1_2_regs ffa_version(u32 input_version)
 	return (struct arm_smccc_1_2_regs){
 		.a0 = FFA_SUPPORTED_VERSION,
 	};
+}
+
+/**
+ * ffa_init() - Initialises the FF-A module, by setting up buffers with the EL3
+ * firmware.
+ */
+void ffa_init(void)
+{
+	struct arm_smccc_1_2_regs ret;
+	phys_addr_t rx_pa = hyp_virt_to_phys(spmd_rx_buffer);
+	phys_addr_t tx_pa = hyp_virt_to_phys(spmd_tx_buffer);
+	/*
+	 * TX and RX are swapped around because the RX buffer from the SPMD's point of view is
+	 * equivalent to the TX buffer from a VM's point of view.
+	 */
+	const struct arm_smccc_1_2_regs args = { .a0 = FFA_FN64_RXTX_MAP,
+						 .a1 = rx_pa,
+						 .a2 = tx_pa,
+						 .a3 = MAILBOX_SIZE /
+						       FFA_PAGE_SIZE };
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	if (ret.a0 == SMCCC_RET_NOT_SUPPORTED) {
+		/* TODO: Log a warning. */
+	} else if (ret.a0 != FFA_SUCCESS)
+		BUG();
 }
 
 /**
