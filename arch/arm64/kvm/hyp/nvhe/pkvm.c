@@ -272,32 +272,6 @@ void put_shadow_vcpu(struct kvm_vcpu *vcpu)
 	hyp_spin_unlock(&shadow_lock);
 }
 
-/*
- * Returns the hyp shadow vcpu for the corresponding host vcpu,
- * or NULL if it fails.
- */
-struct kvm_vcpu *hyp_get_shadow_vcpu(const struct kvm_vcpu *vcpu)
-{
-	struct shadow_vcpu_state *shadow_vcpu_state;
-	struct kvm_shadow_vm *vm;
-	int vcpu_idx;
-	int shadow_handle;
-
-	if (!kvm_vm_is_protected(kern_hyp_va(vcpu->kvm)))
-		return NULL;
-
-	shadow_handle = vcpu->arch.pkvm.shadow_handle;
-	vm = find_shadow_by_handle(shadow_handle);
-	vcpu_idx = vcpu->vcpu_idx;
-
-	if (unlikely(vcpu_idx < 0 || vcpu_idx >= vm->created_vcpus))
-		return NULL;
-
-	shadow_vcpu_state = &vm->shadow_vcpus[vcpu_idx];
-
-	return &shadow_vcpu_state->vcpu;
-}
-
 /* Copy the supported features for the vcpu from the host. */
 static void copy_features(struct kvm_vcpu *shadow_vcpu, struct kvm_vcpu *host_vcpu)
 {
