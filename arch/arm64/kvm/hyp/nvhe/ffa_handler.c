@@ -12,6 +12,8 @@
 #include <linux/printk.h>
 #include <nvhe/ffa.h>
 #include <nvhe/ffa_handler.h>
+#include <nvhe/ffa_memory.h>
+#include <nvhe/gfp.h>
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
@@ -21,24 +23,11 @@
 // TODO: Initialise this properly
 u64 __ro_after_init smccc_has_sve_hint;
 
-/*
- * The size of RX/TX buffer which we support. The implementation assumes that
- * this is the same size as the stage 2 page table page size.
- */
-// TODO: Support other page sizes before this goes upstream.
-#define MAILBOX_SIZE 4096
-
 /* Mailboxes for communicating with the SPMD in EL3. */
-__aligned(FFA_PAGE_SIZE) static uint8_t spmd_tx_buffer[MAILBOX_SIZE];
-__aligned(FFA_PAGE_SIZE) static uint8_t spmd_rx_buffer[MAILBOX_SIZE];
+__aligned(FFA_PAGE_SIZE) uint8_t spmd_tx_buffer[MAILBOX_SIZE];
+__aligned(FFA_PAGE_SIZE) uint8_t spmd_rx_buffer[MAILBOX_SIZE];
 
 static struct hyp_pool descriptor_pool;
-
-/** Constructs an FF-A error return value with the specified error code. */
-static struct arm_smccc_1_2_regs ffa_error(u64 error_code)
-{
-	return (struct arm_smccc_1_2_regs){ .a0 = FFA_ERROR, .a2 = error_code };
-}
 
 static bool is_ffa_call(u64 func_id)
 {
@@ -99,6 +88,116 @@ int ffa_init(void *descriptor_pool_base)
 	}
 
 	return 0;
+}
+
+/**
+ * ffa_mem_send() - Handles the FFA_MEM_DONATE, FFA_MEM_LEND and FFA_MEM_SHARE
+ *                  functions.
+ * @share_func: The function ID of the FF-A function used to send the memory.
+ *              Should be one of FFA_MEM_DONATE, FFA_MEM_LEND or FFA_MEM_SHARE.
+ * @length: The length of the entire memory region descriptor in bytes.
+ * @fragment_length: The length of the first fragment of the memory region
+ *                   descriptor.
+ * @address: The address of the memory region descriptor, or 0 to use the TX
+ *           mailbox. Non-zero values are not currently supported.
+ * @page_count: The number of FFA_PAGE_SIZE pages used for the memory region
+ *              descriptor, or 0 if the TX mailbox is being used. Non-zero
+ *              values are not currently supported.
+ *
+ * Return: FFA_SUCCESS with the handle assigned to the memory region, or an
+ *         appropriate FFA_ERROR.
+ */
+static struct arm_smccc_1_2_regs ffa_mem_send(u32 share_func, u32 length,
+					      u32 fragment_length,
+					      hpa_t address, u32 page_count)
+{
+	const void *from_msg;
+	struct ffa_mem_region *memory_region;
+	struct arm_smccc_1_2_regs ret;
+
+	if (address != 0 || page_count != 0) {
+		/* pKVM only supports passing the descriptor in the TX mailbox. */
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	if (fragment_length > length) {
+		/* Fragment length greater than total length. */
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+	if (fragment_length <
+	    sizeof(struct ffa_mem_region) +
+		    sizeof(struct ffa_mem_region_attributes)) {
+		/* Initial fragment length smaller than header size. */
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	/* Lock host VM info to get TX buffer address. */
+	hyp_spin_lock(&host_kvm.lock);
+	from_msg = host_kvm.tx_buffer;
+	hyp_spin_unlock(&host_kvm.lock);
+
+	if (from_msg == NULL) {
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	/*
+	 * Copy the memory region descriptor to a fresh page from the memory
+	 * pool. This prevents the sender from changing it underneath us, and
+	 * also lets us keep it around in the share state table if needed.
+	 */
+	if (fragment_length > MAILBOX_SIZE) {
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+	// TODO: Do we need locking?
+	memory_region = (struct ffa_mem_region *)hyp_alloc_pages(
+		&descriptor_pool, get_order(MAILBOX_SIZE));
+	if (memory_region == NULL) {
+		return ffa_error(FFA_RET_NO_MEMORY);
+	}
+	memcpy(memory_region, from_msg, fragment_length);
+
+	/* The sender must match the caller. */
+	if (memory_region->sender_id != HOST_VM_ID) {
+		ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+		goto out;
+	}
+
+	if (memory_region->ep_count != 1) {
+		/* pKVM doesn't support multi-way memory sharing for now. */
+		ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+		goto out;
+	}
+
+	if (memory_region->ep_mem_access[0].receiver != TEE_VM_ID) {
+		/* pKVM only supports FF-A memory sharing to SPs, not normal world VMs. */
+		ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+		goto out;
+	}
+
+	hyp_spin_lock(&host_kvm.lock);
+	// TODO: Take secure world 'VM' lock?
+	// TODO: Check if receiver is busy?
+
+	ret = ffa_memory_tee_send(&host_kvm.pgt, memory_region, length,
+				  fragment_length, share_func,
+				  &descriptor_pool);
+	/*
+	 * ffa_tee_memory_send takes ownership of the memory_region (and frees
+	 * it on failure), so make sure we don't free it.
+	 */
+	memory_region = NULL;
+
+out_unlock:
+	hyp_spin_unlock(&host_kvm.lock);
+	// TODO: Release secure world lock
+
+out:
+	if (memory_region != NULL) {
+		/* Free memory_region. */
+		hyp_put_page(&descriptor_pool, memory_region);
+	}
+
+	return ret;
 }
 
 /**
@@ -249,6 +348,8 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	case FFA_FN64_MEM_LEND:
 	case FFA_MEM_SHARE:
 	case FFA_FN64_MEM_SHARE:
+		ret = ffa_mem_send(func_id, a1, a2, a3, a4);
+		break;
 	case FFA_MEM_RETRIEVE_REQ:
 	case FFA_FN64_MEM_RETRIEVE_REQ:
 	case FFA_MEM_RETRIEVE_RESP:
