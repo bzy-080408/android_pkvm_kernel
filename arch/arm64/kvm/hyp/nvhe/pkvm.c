@@ -246,6 +246,32 @@ static struct kvm_shadow_vm *find_shadow_by_handle(int shadow_handle)
 	return shadow_table[shadow_index];
 }
 
+struct kvm_vcpu *get_shadow_vcpu(int shadow_handle, int vcpu_idx)
+{
+	struct kvm_vcpu *vcpu = NULL;
+	struct kvm_shadow_vm *vm;
+
+	hyp_spin_lock(&shadow_lock);
+	vm = find_shadow_by_handle(shadow_handle);
+	if (!vm || vcpu_idx < 0 || vm->created_vcpus <= vcpu_idx)
+		goto unlock;
+	vcpu = &vm->shadow_vcpus[vcpu_idx].vcpu;
+	hyp_page_ref_inc(hyp_virt_to_page(vm));
+unlock:
+	hyp_spin_unlock(&shadow_lock);
+
+	return vcpu;
+}
+
+void put_shadow_vcpu(struct kvm_vcpu *vcpu)
+{
+	struct kvm_shadow_vm *vm = vcpu->arch.pkvm.shadow_vm;
+
+	hyp_spin_lock(&shadow_lock);
+	hyp_page_ref_dec(hyp_virt_to_page(vm));
+	hyp_spin_unlock(&shadow_lock);
+}
+
 /*
  * Returns the hyp shadow vcpu for the corresponding host vcpu,
  * or NULL if it fails.
@@ -565,12 +591,14 @@ void __pkvm_teardown_shadow(struct kvm *kvm)
 	shadow_handle = kvm->arch.pkvm.shadow_handle;
 
 	/* Lookup then remove entry from the shadow table. */
+	hyp_spin_lock(&shadow_lock);
 	vm = find_shadow_by_handle(shadow_handle);
-	WARN_ON(!vm);
-	if (!vm)
+	if (WARN_ON(!vm || hyp_page_count(vm))) {
+		hyp_spin_unlock(&shadow_lock);
 		return;
-
-	shadow_size = vm->shadow_area_size;
+	}
+	__remove_shadow_table(shadow_handle);
+	hyp_spin_unlock(&shadow_lock);
 
 	/* Reclaim guest pages, and page-table pages */
 	mc = &vm->host_kvm->arch.pkvm.teardown_mc;
@@ -579,6 +607,7 @@ void __pkvm_teardown_shadow(struct kvm *kvm)
 	unpin_host_vcpus(vm);
 
 	/* Push the metadata pages to the teardown memcache */
+	shadow_size = vm->shadow_area_size;
 	host_kvm = vm->host_kvm;
 	memset(vm, 0, shadow_size);
 	for (addr = vm; addr < ((void *)vm + shadow_size); addr += PAGE_SIZE)
