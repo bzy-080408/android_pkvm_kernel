@@ -1123,17 +1123,17 @@ static int sanitise_mte_tags(struct kvm *kvm, kvm_pfn_t pfn,
 	return 0;
 }
 
-static int pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
+static int pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_host_share_guest),
+	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_host_donate_guest),
 			  pfn, gfn, vcpu, &res);
 	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
 
 	/*
 	 * Getting -EPERM at this point implies that the pfn has already been
-	 * shared. This should only ever happen when two vCPUs faulted on the
+	 * donated. This should only ever happen when two vCPUs faulted on the
 	 * same page, and the current one lost the race to do the donation.
 	 */
 	return (res.a1 == -EPERM) ? -EAGAIN : res.a1;
@@ -1230,7 +1230,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	if (is_protected_kvm_enabled()) {
 		/*
-		 * All shared pages will be mapped RWX in protected guests,
+		 * All donated pages will be mapped RWX in protected guests,
 		 * so proactively ask for writeable memory as we can't cope
 		 * with CoW.
 		 */
@@ -1307,7 +1307,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		goto out_unlock;
 
 	if (is_protected_kvm_enabled()) {
-		ret = pkvm_host_share_guest(pfn, gfn, vcpu);
+		ret = pkvm_host_donate_guest(pfn, gfn, vcpu);
 		goto out_unlock;
 	}
 
