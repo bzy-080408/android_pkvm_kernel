@@ -117,6 +117,27 @@ int pkvm_create_mappings(void *from, void *to, enum kvm_pgtable_prot prot)
 	return ret;
 }
 
+int pkvm_destroy_mappings_locked(void *from, void *to)
+{
+	unsigned long start = (unsigned long)from & PAGE_MASK;
+	unsigned long end = PAGE_ALIGN((unsigned long)to);
+
+	hyp_assert_lock_held(&pkvm_pgd_lock);
+
+	return kvm_pgtable_hyp_unmap(&pkvm_pgtable, start, end - start);
+}
+
+int pkvm_destroy_mappings(void *from, void *to)
+{
+	int ret;
+
+	hyp_spin_lock(&pkvm_pgd_lock);
+	ret = pkvm_destroy_mappings_locked(from, to);
+	hyp_spin_unlock(&pkvm_pgd_lock);
+
+	return ret;
+}
+
 int hyp_back_vmemmap(phys_addr_t back)
 {
 	unsigned long i, start, size, end = 0;

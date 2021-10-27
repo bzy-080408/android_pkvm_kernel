@@ -9,3 +9,6 @@
 
 /** FF-A 1.0 version number. */
 #define FFA_SUPPORTED_VERSION (1 << 16 | 0)
+
+void *hyp_map(phys_addr_t start, size_t length, enum kvm_pgtable_prot prot);
+int hyp_unmap(phys_addr_t start, size_t length);
