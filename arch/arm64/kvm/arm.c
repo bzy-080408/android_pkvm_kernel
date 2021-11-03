@@ -161,6 +161,7 @@ vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
 	return VM_FAULT_SIGBUS;
 }
 
+void free_hyp_memcache(struct kvm_hyp_memcache *mc);
 static void kvm_shadow_destroy(struct kvm *kvm)
 {
 	struct arm_smccc_res res;
@@ -171,6 +172,8 @@ static void kvm_shadow_destroy(struct kvm *kvm)
 	arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_teardown_shadow),
 			kvm, &res);
 	WARN_ON(res.a0 != SMCCC_RET_SUCCESS);
+
+	free_hyp_memcache(&kvm->arch.pkvm.teardown_mc);
 }
 
 /**
@@ -427,6 +430,7 @@ void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 	if (vcpu_has_run_once(vcpu) && unlikely(!irqchip_in_kernel(vcpu->kvm)))
 		static_branch_dec(&userspace_irqchip_in_use);
 
+	free_hyp_memcache(&vcpu->arch.pkvm.memcache);
 	kvm_mmu_free_memory_cache(&vcpu->arch.mmu_page_cache);
 	kvm_timer_vcpu_terminate(vcpu);
 	kvm_pmu_vcpu_destroy(vcpu);
