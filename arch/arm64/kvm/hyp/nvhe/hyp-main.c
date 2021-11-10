@@ -29,21 +29,20 @@ struct kvm_iommu_ops kvm_iommu_ops;
 
 void __kvm_hyp_host_forward_smc(struct kvm_cpu_context *host_ctxt);
 
-typedef void (*shadow_entry_handler_fn)(const struct kvm_vcpu *, struct kvm_vcpu *);
-typedef void (*shadow_exit_handler_fn)(struct kvm_vcpu *, const struct kvm_vcpu *);
+typedef void (*shadow_entry_exit_handler_fn)(struct kvm_vcpu *, struct kvm_vcpu *);
 
-static void handle_pvm_entry_wfx(const struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_entry_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	shadow_vcpu->arch.flags |= host_vcpu->arch.flags & KVM_ARM64_INCREMENT_PC;
 }
 
-static void handle_pvm_entry_hvc64(const struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	/* HVCs for pvms either don't return or use only one register. */
 	vcpu_set_reg(shadow_vcpu, 0, vcpu_get_reg(host_vcpu, 0));
 }
 
-static void handle_pvm_entry_sys64(const struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_entry_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	u32 esr_el2 = shadow_vcpu->arch.fault.esr_el2;
 	bool is_read = (esr_el2 & ESR_ELx_SYS64_ISS_DIR_MASK) == ESR_ELx_SYS64_ISS_DIR_READ;
@@ -65,7 +64,7 @@ static void handle_pvm_entry_sys64(const struct kvm_vcpu *host_vcpu, struct kvm_
 	}
 }
 
-static void handle_pvm_entry_abt(const struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_entry_abt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	shadow_vcpu->arch.flags |= host_vcpu->arch.flags &
 		(KVM_ARM64_PENDING_EXCEPTION | KVM_ARM64_INCREMENT_PC);
@@ -83,7 +82,7 @@ static void handle_pvm_entry_abt(const struct kvm_vcpu *host_vcpu, struct kvm_vc
 	}
 }
 
-static void handle_pvm_entry_dabt(const struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_entry_dabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	bool pend_exception;
 	bool inc_pc;
@@ -102,14 +101,14 @@ static void handle_pvm_entry_dabt(const struct kvm_vcpu *host_vcpu, struct kvm_v
 	}
 }
 
-static void handle_pvm_exit_wfx(struct kvm_vcpu *host_vcpu, const struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_exit_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	host_vcpu->arch.ctxt.regs.pstate = shadow_vcpu->arch.ctxt.regs.pstate &
 		PSR_MODE_MASK;
 	host_vcpu->arch.fault.esr_el2 = shadow_vcpu->arch.fault.esr_el2;
 }
 
-static void handle_pvm_exit_sys64(struct kvm_vcpu *host_vcpu, const struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_exit_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	u32 esr_el2 = shadow_vcpu->arch.fault.esr_el2;
 	bool is_write = (esr_el2 & ESR_ELx_SYS64_ISS_DIR_MASK) == ESR_ELx_SYS64_ISS_DIR_WRITE;
@@ -160,7 +159,7 @@ static int get_num_hvc_args(const struct kvm_vcpu *vcpu)
 	return 0;
 }
 
-static void handle_pvm_exit_hvc64(struct kvm_vcpu *host_vcpu, const struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_exit_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	int i;
 
@@ -171,7 +170,7 @@ static void handle_pvm_exit_hvc64(struct kvm_vcpu *host_vcpu, const struct kvm_v
 		vcpu_set_reg(host_vcpu, i, vcpu_get_reg(shadow_vcpu, i));
 }
 
-static void handle_pvm_exit_abt(struct kvm_vcpu *host_vcpu, const struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_exit_abt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	host_vcpu->arch.ctxt.regs.pstate = shadow_vcpu->arch.ctxt.regs.pstate & PSR_MODE_MASK;
 	host_vcpu->arch.fault.esr_el2 = shadow_vcpu->arch.fault.esr_el2;
@@ -181,7 +180,7 @@ static void handle_pvm_exit_abt(struct kvm_vcpu *host_vcpu, const struct kvm_vcp
 		__vcpu_sys_reg(shadow_vcpu, SCTLR_EL1) & (SCTLR_ELx_EE | SCTLR_EL1_E0E);
 }
 
-static void handle_pvm_exit_dabt(struct kvm_vcpu *host_vcpu, const struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_exit_dabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	handle_pvm_exit_abt(host_vcpu, shadow_vcpu);
 
@@ -197,7 +196,7 @@ static void handle_pvm_exit_dabt(struct kvm_vcpu *host_vcpu, const struct kvm_vc
 	}
 }
 
-static const shadow_entry_handler_fn entry_shadow_handlers[] = {
+static const shadow_entry_exit_handler_fn entry_shadow_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
 	[ESR_ELx_EC_WFx]		= handle_pvm_entry_wfx,
 	[ESR_ELx_EC_HVC64]		= handle_pvm_entry_hvc64,
@@ -206,7 +205,7 @@ static const shadow_entry_handler_fn entry_shadow_handlers[] = {
 	[ESR_ELx_EC_DABT_LOW]		= handle_pvm_entry_dabt,
 };
 
-static const shadow_exit_handler_fn exit_shadow_handlers[] = {
+static const shadow_entry_exit_handler_fn exit_shadow_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
 	[ESR_ELx_EC_WFx]		= handle_pvm_exit_wfx,
 	[ESR_ELx_EC_HVC64]		= handle_pvm_exit_hvc64,
@@ -279,7 +278,7 @@ static void sync_timer_state(struct kvm_vcpu *shadow_vcpu)
 static void flush_shadow_state(struct kvm_vcpu *shadow_vcpu)
 {
 	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
-	shadow_entry_handler_fn ec_handler;
+	shadow_entry_exit_handler_fn ec_handler;
 	u8 esr_ec;
 
 	flush_vgic_state(host_vcpu, shadow_vcpu);
@@ -308,7 +307,7 @@ static void flush_shadow_state(struct kvm_vcpu *shadow_vcpu)
 static void sync_shadow_state(struct kvm_vcpu *shadow_vcpu, u32 exit_reason)
 {
 	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
-	shadow_exit_handler_fn ec_handler;
+	shadow_entry_exit_handler_fn ec_handler;
 	u8 esr_ec;
 
 	sync_vgic_state(host_vcpu, shadow_vcpu);
