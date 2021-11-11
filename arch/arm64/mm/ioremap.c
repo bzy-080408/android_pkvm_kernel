@@ -65,7 +65,7 @@ void kvm_init_ioremap_services(void)
 		return;
 
 	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_HYP_KVM_MMIO_GUARD_INFO_FUNC_ID,
-			     &res);
+			     0, 0, 0, &res);
 	if (res.a0 != PAGE_SIZE)
 		return;
 

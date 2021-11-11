@@ -1450,6 +1450,18 @@ bool kvm_install_ioguard_page(struct kvm_vcpu *vcpu, gpa_t ipa)
 	struct kvm *kvm = vcpu->kvm;
 	int ret, idx;
 
+	/*
+	 * In protected mode, this is just about donating pages to the
+	 * greedy hypervisor, and everything is handled on the other
+	 * side.
+	 */
+	if (is_protected_kvm_enabled()) {
+		pr_warn("topping up for %llx\n", ipa);
+		ret = topup_hyp_memcache(&vcpu->arch.pkvm_memcache,
+					 kvm_mmu_cache_min_pages(kvm));
+		return !ret;
+	}
+
 	if (!test_bit(KVM_ARCH_FLAG_MMIO_GUARD, &kvm->arch.flags))
 		return false;
 
