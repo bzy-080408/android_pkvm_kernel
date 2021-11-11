@@ -84,6 +84,9 @@ static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *
 	u32 fn = smccc_get_function(shadow_vcpu);
 
 	switch (fn) {
+	case ARM_SMCCC_VENDOR_HYP_KVM_MMIO_GUARD_MAP_FUNC_ID:
+		pkvm_refill_memcache(shadow_vcpu, host_vcpu);
+		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
 		fallthrough;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
@@ -271,9 +274,11 @@ static int get_num_hvc_args(struct kvm_vcpu *vcpu)
 		return 0;
 
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
-		fallthrough;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
 		return 3;
+
+	case ARM_SMCCC_VENDOR_HYP_KVM_MMIO_GUARD_MAP_FUNC_ID:
+		return 2;
 
 	/* The rest are either blocked or handled by hyp. */
 	default:
@@ -304,8 +309,7 @@ static void handle_pvm_exit_iabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *sh
 
 static void handle_pvm_exit_dabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
-	/* FIXME: Revisit once MMIO-guard is available */
-	shadow_vcpu->mmio_needed = true;
+	shadow_vcpu->mmio_needed = __pkvm_check_ioguard_page(shadow_vcpu);
 
 	if (shadow_vcpu->mmio_needed) {
 		/* r0 as transfer register between the guest and the host. */
