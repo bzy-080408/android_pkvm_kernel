@@ -180,8 +180,13 @@ int pkvm_init_el2_context(struct kvm *kvm)
 	mutex_unlock(&kvm->lock);
 
 	if (ret < 0) {
-		kvm_err("Creating shadow structures for protected VM failed: %d\n",
-			ret);
+		if (ret == -EEXIST) {
+			kvm_info("Protected VM already initialized.\n");
+			ret = 0;
+		} else {
+			kvm_err("Creating shadow structures for protected VM failed: %d\n",
+				ret);
+		}
 		return ret;
 	}
 
