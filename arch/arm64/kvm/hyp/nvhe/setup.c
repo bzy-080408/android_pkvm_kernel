@@ -296,6 +296,10 @@ void __noreturn __pkvm_init_finalise(void)
 	if (ret)
 		goto out;
 
+	ret = hyp_create_pcpu_fixmap();
+	if (ret)
+		goto out;
+
 	hyp_shadow_table_init(shadow_table_base);
 out:
 	/*
