@@ -51,6 +51,8 @@ struct host_kvm {
 };
 extern struct host_kvm host_kvm;
 
+extern unsigned long hyp_nr_cpus;
+
 typedef u32 pkvm_id;
 
 extern const pkvm_id pkvm_hyp_id;
