@@ -14,6 +14,7 @@
 #include <nvhe/early_alloc.h>
 #include <nvhe/gfp.h>
 #include <nvhe/memory.h>
+#include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
 
@@ -24,6 +25,7 @@ struct memblock_region hyp_memory[HYP_MEMBLOCK_REGIONS];
 unsigned int hyp_memblock_nr;
 
 static u64 __io_map_base;
+static DEFINE_PER_CPU(void *, hyp_fixmap_base);
 
 static int __pkvm_create_mappings(unsigned long start, unsigned long size,
 				  unsigned long phys, enum kvm_pgtable_prot prot)
@@ -208,6 +210,76 @@ int hyp_map_vectors(void)
 		return ret;
 
 	__hyp_bp_vect_base = (void *)bp_base;
+
+	return 0;
+}
+
+void *hyp_fixmap_map(phys_addr_t phys)
+{
+	void *addr = *this_cpu_ptr(&hyp_fixmap_base);
+	int ret = kvm_pgtable_hyp_map(&pkvm_pgtable, (u64)addr, PAGE_SIZE,
+				      phys, PAGE_HYP);
+	return ret ? NULL : addr;
+}
+
+int hyp_fixmap_unmap(void)
+{
+	void *addr = *this_cpu_ptr(&hyp_fixmap_base);
+	int ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, (u64)addr, PAGE_SIZE);
+
+	return (ret != PAGE_SIZE) ? -EINVAL : 0;
+}
+
+static int __pin_pgtable_cb(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
+			    enum kvm_pgtable_walk_flags flag, void * const arg)
+{
+	if (!kvm_pte_valid(*ptep) || level != KVM_PGTABLE_MAX_LEVELS - 1)
+		return -EINVAL;
+	hyp_page_ref_inc(hyp_virt_to_page(ptep));
+
+	return 0;
+}
+
+static int hyp_pin_pgtable_pages(u64 addr)
+{
+	struct kvm_pgtable_walker walker = {
+		.cb	= __pin_pgtable_cb,
+		.flags	= KVM_PGTABLE_WALK_LEAF,
+	};
+
+	return kvm_pgtable_walk(&pkvm_pgtable, addr, PAGE_SIZE, &walker);
+}
+
+int hyp_create_pcpu_fixmap(void)
+{
+	unsigned long addr, i;
+	int ret;
+
+	for (i = 0; i < hyp_nr_cpus; i++) {
+		ret = pkvm_alloc_private_va_range(PAGE_SIZE, &addr);
+		if (ret)
+			return ret;
+
+		/*
+		 * Create a dummy mapping, to get the intermediate page-table
+		 * pages allocated, then take a reference on the last level
+		 * page to keep it around at all times.
+		 */
+		ret = kvm_pgtable_hyp_map(&pkvm_pgtable, addr, PAGE_SIZE,
+					  __hyp_pa(__hyp_bss_start), PAGE_HYP);
+		if (ret)
+			return ret;
+
+		ret = hyp_pin_pgtable_pages(addr);
+		if (ret)
+			return ret;
+
+		ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, addr, PAGE_SIZE);
+		if (ret != PAGE_SIZE)
+			return -EINVAL;
+
+		*per_cpu_ptr(&hyp_fixmap_base, i) = (void *)addr;
+	}
 
 	return 0;
 }
