@@ -94,6 +94,28 @@ int ffa_init(void *descriptor_pool_base)
 	return 0;
 }
 
+static struct arm_smccc_1_2_regs
+ffa_mem_reclaim(ffa_memory_handle_t handle, ffa_memory_region_flags_t flags)
+{
+	struct arm_smccc_1_2_regs ret;
+
+	if ((handle & FFA_MEMORY_HANDLE_ALLOCATOR_MASK) ==
+	    FFA_MEMORY_HANDLE_ALLOCATOR_HYPERVISOR) {
+		/* Sending memory to normal world VMs is not supported, so nor is reclaiming. */
+		ret = ffa_error(FFA_RET_INVALID_PARAMETERS);
+	} else {
+		hyp_spin_lock(&host_kvm.lock);
+		hyp_spin_lock(&spmd.lock);
+
+		ret = ffa_memory_tee_reclaim(handle, flags);
+
+		hyp_spin_unlock(&host_kvm.lock);
+		hyp_spin_unlock(&spmd.lock);
+	}
+
+	return ret;
+}
+
 /**
  * ffa_mem_send() - Handles the FFA_MEM_DONATE, FFA_MEM_LEND and FFA_MEM_SHARE
  *                  functions.
@@ -446,6 +468,8 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 				      (a4 >> 16) & 0xffff);
 		break;
 	case FFA_MEM_RECLAIM:
+		ret = ffa_mem_reclaim(ffa_assemble_handle(a1, a2), a3);
+		break;
 	case FFA_RXTX_UNMAP:
 	case FFA_MEM_RETRIEVE_REQ:
 	case FFA_FN64_MEM_RETRIEVE_REQ:

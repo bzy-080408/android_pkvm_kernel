@@ -16,3 +16,6 @@ ffa_memory_tee_send(struct kvm_pgtable *from_pgt,
 struct arm_smccc_1_2_regs ffa_memory_tee_send_continue(
 	struct kvm_pgtable *from_pgt, void *fragment, uint32_t fragment_length,
 	ffa_memory_handle_t handle, struct hyp_pool *page_pool);
+struct arm_smccc_1_2_regs
+ffa_memory_tee_reclaim(ffa_memory_handle_t handle,
+		       ffa_memory_region_flags_t flags);
