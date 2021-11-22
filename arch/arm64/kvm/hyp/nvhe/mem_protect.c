@@ -30,6 +30,7 @@ static struct hyp_pool host_s2_pool;
 
 const pkvm_id pkvm_host_id	= 0;
 const pkvm_id pkvm_hyp_id	= (1 << 16);
+const pkvm_id pkvm_host_poison	= pkvm_hyp_id + 1;
 
 static pkvm_id pkvm_guest_id(struct kvm_vcpu *vcpu)
 {
@@ -292,12 +293,7 @@ static int reclaim_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	 * stage-2 so no need to waste effort trying to keep it in sync.
 	 */
 	phys = kvm_pte_to_phys(pte);
-	BUG_ON(host_stage2_set_owner_locked(phys, PAGE_SIZE, pkvm_host_id));
-
-	/*
-	 * XXX: if protected guest mark the page 'dirty' instead, and zero it
-	 * lazily on host s2 aborts.
-	 */
+	BUG_ON(host_stage2_set_owner_locked(phys, PAGE_SIZE, pkvm_host_poison));
 
 	return 0;
 }
@@ -509,6 +505,11 @@ int host_stage2_idmap_locked(phys_addr_t addr, u64 size,
 static kvm_pte_t kvm_init_invalid_leaf_owner(pkvm_id owner_id)
 {
 	return FIELD_PREP(KVM_INVALID_PTE_OWNER_MASK, owner_id);
+}
+
+static pkvm_id kvm_get_owner_id(kvm_pte_t pte)
+{
+	return FIELD_GET(KVM_INVALID_PTE_OWNER_MASK, pte);
 }
 
 int host_stage2_set_owner_locked(phys_addr_t addr, u64 size,
