@@ -1756,3 +1756,61 @@ int __pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 
 	return ret;
 }
+
+static int hyp_zero_page(phys_addr_t phys)
+{
+	void *addr = __hyp_va(ALIGN_DOWN(phys, PAGE_SIZE));
+	int ret;
+
+	hyp_lock_component();
+	ret = pkvm_create_mappings_locked(addr, addr + PAGE_SIZE, PAGE_HYP);
+	if (ret)
+		goto unlock;
+	memset(addr, 0, PAGE_SIZE);
+	ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, (u64)addr, PAGE_SIZE);
+	ret = (ret == PAGE_SIZE) ? 0 : -EINVAL;
+
+unlock:
+	hyp_unlock_component();
+
+	return ret;
+}
+
+int __pkvm_host_reclaim_page(u64 pfn)
+{
+	u64 addr = hyp_pfn_to_phys(pfn);
+	enum pkvm_page_state state;
+	kvm_pte_t pte;
+	int ret;
+
+	host_lock_component();
+
+	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, addr, &pte, NULL);
+	if (ret)
+		goto unlock;
+
+	if (kvm_pte_valid(pte)) {
+		state = host_get_page_state(pte);
+		ret = (state == PKVM_PAGE_OWNED) ? 0 : -EPERM;
+		goto unlock;
+	}
+
+	switch (kvm_get_owner_id(pte)) {
+	case pkvm_host_id:
+		ret = 0;
+		break;
+	case pkvm_host_poison:
+		ret = hyp_zero_page(addr);
+		if (ret)
+			goto unlock;
+		ret = host_stage2_set_owner_locked(addr, PAGE_SIZE, pkvm_host_id);
+		break;
+	default:
+		ret = -EPERM;
+	}
+
+unlock:
+	host_unlock_component();
+
+	return ret;
+}
