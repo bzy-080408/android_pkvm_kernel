@@ -198,6 +198,11 @@ static void kvm_shadow_destroy(struct kvm *kvm)
 
 	ppages = &kvm->arch.pkvm.pinned_pages;
 	list_for_each_entry_safe(ppage, tmp, ppages, link) {
+		arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__pkvm_host_reclaim_page),
+				  page_to_pfn(ppage->page), &res);
+		WARN_ON((res.a0 != SMCCC_RET_SUCCESS) || res.a1);
+		cond_resched();
+
 		account_locked_vm(mm, 1, false);
 		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
 		list_del(&ppage->link);
