@@ -769,6 +769,56 @@ ffa_clear_memory_constituents(struct ffa_mem_region_addr_range **fragments,
 }
 
 /**
+ * memory_retrieve_tee() - Retrieve memory region information from the SPMC.
+ * @length: The length of the entire memory region descriptor for the request.
+ * @fragment_length:
+ *   The length of the first fragment of the memory region descriptor for the
+ *   request.
+ *
+ * Return: The result returned by the SPMD in EL3.
+ */
+static struct arm_smccc_1_2_regs memory_retrieve_tee(uint32_t length,
+						     uint32_t fragment_length)
+{
+	struct arm_smccc_1_2_regs args = { .a0 = FFA_MEM_RETRIEVE_REQ,
+					   .a1 = length,
+					   .a2 = fragment_length };
+	struct arm_smccc_1_2_regs ret;
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	return ret;
+}
+
+static struct arm_smccc_1_2_regs memory_frag_rx_tee(ffa_memory_handle_t handle,
+						    uint32_t fragment_offset)
+{
+	struct arm_smccc_1_2_regs args = { .a0 = FFA_MEM_FRAG_RX,
+					   .a1 = (uint32_t)handle,
+					   .a2 = (uint32_t)(handle >> 32),
+					   .a3 = fragment_offset };
+	struct arm_smccc_1_2_regs ret;
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	return ret;
+}
+
+static struct arm_smccc_1_2_regs
+memory_reclaim_tee(ffa_memory_handle_t handle, ffa_memory_region_flags_t flags)
+{
+	struct arm_smccc_1_2_regs args = { .a0 = FFA_MEM_RECLAIM,
+					   .a1 = (uint32_t)handle,
+					   .a2 = (uint32_t)(handle >> 32),
+					   .a3 = flags };
+	struct arm_smccc_1_2_regs ret;
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	return ret;
+}
+
+/**
  * ffa_send_check_update() - Validates and prepares memory to be sent from the
  *                           calling partition to another.
  * @from_pgt: The page table of the sender, i.e. the host.
@@ -899,6 +949,111 @@ ffa_send_check_update(struct kvm_pgtable *from_pgt,
 	ret = (struct arm_smccc_1_2_regs){ .a0 = FFA_SUCCESS };
 
 out:
+	/*
+	 * Tidy up the page table by reclaiming failed mappings (if there was an
+	 * error) or merging entries into blocks where possible (on success).
+	 */
+	// TODO: Defragment by coalescing page mappings into block mappings.
+
+	return ret;
+}
+
+/**
+ * ffa_tee_reclaim_check_update() - Validates and reclaims the given memory
+ *                                 region from the TEE.
+ * @handle: The handle of the memory region to reclaim.
+ * @constituents: An array of constituent ranges of the memory region.
+ * @constituent_count: The length of the @constituents array.
+ * @clear: Whether to request the SPM to clear the memory before reclaiming it.
+ *
+ * Reclaims the given memory from the TEE. To do this space is first reserved in
+ * the <to> VM's page table, then the reclaim request is sent on to the TEE,
+ * then (if that is successful) the memory is mapped back into the <to> VM's
+ * page table.
+ *
+ * This function requires the calling context to hold the <to> lock.
+ *
+ * Return:
+ *  In case of error, one of the following values is returned:
+ *   * FFA_RET_INVALID_PARAMETERS - The endpoint provided parameters were
+ *     erroneous;
+ *   * FFA_RET_NO_MEMORY - Hafnium did not have sufficient memory to complete
+ *     the request.
+ *  Success is indicated by FFA_SUCCESS.
+ */
+static struct arm_smccc_1_2_regs
+ffa_tee_reclaim_check_update(ffa_memory_handle_t handle,
+			     struct ffa_mem_region_addr_range *constituents,
+			     uint32_t constituent_count, bool clear)
+{
+	struct arm_smccc_1_2_regs ret;
+	ffa_memory_region_flags_t tee_flags;
+	uint32_t i;
+
+	/*
+	 * Make sure constituents are properly aligned to a 64-bit boundary. If
+	 * not we would get alignment faults trying to read (64-bit) values.
+	 */
+	if (!IS_ALIGNED((uintptr_t)constituents, 8)) {
+		pr_info("Constituents not aligned.");
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	/* Fail if there are no constituents. */
+	if (constituent_count == 0) {
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	/*
+	 * Check that the state transition is allowed for all constituents of
+	 * the memory region being reclaimed, according to the host page table.
+	 */
+	for (i = 0; i < constituent_count; ++i) {
+		hpa_t begin = constituents[i].address;
+		size_t size = constituents[i].pg_cnt * FFA_PAGE_SIZE;
+
+		if (__pkvm_host_check_reclaim_secure_world(begin, size) != 0) {
+			pr_warn("Host tried to reclaim memory in invalid state.");
+			return ffa_error(FFA_RET_DENIED);
+		}
+	}
+
+	/*
+	 * Forward the request to the TEE and see what happens.
+	 */
+	tee_flags = 0;
+	if (clear) {
+		tee_flags |= FFA_MEMORY_REGION_FLAG_CLEAR;
+	}
+	ret = memory_reclaim_tee(handle, tee_flags);
+
+	if (ret.a0 != FFA_SUCCESS) {
+		pr_info("Got %#x (%d) from TEE in response to FFA_MEM_RECLAIM, "
+			"expected FFA_SUCCESS.",
+			ret.a0, ret.a2);
+		goto out;
+	}
+
+	/*
+	 * The TEE was happy with it, so complete the reclaim by mapping the
+	 * memory into the recipient.
+	 */
+	for (i = 0; i < constituent_count; ++i) {
+		hpa_t begin = constituents[i].address;
+		size_t size = constituents[i].pg_cnt * FFA_PAGE_SIZE;
+
+		if (__pkvm_host_reclaim_secure_world(begin, size) != 0) {
+			pr_warn("Failed to update host page table for reclaiming memory.");
+			ret = ffa_error(FFA_RET_NO_MEMORY);
+			// TODO: Roll back partial update.
+			goto out;
+		}
+	}
+
+	ret = (struct arm_smccc_1_2_regs){ .a0 = FFA_SUCCESS };
+
+out:
+
 	/*
 	 * Tidy up the page table by reclaiming failed mappings (if there was an
 	 * error) or merging entries into blocks where possible (on success).
@@ -1233,6 +1388,36 @@ memory_send_continue_tee_forward(ffa_vm_id_t sender_vm_id, void *fragment,
 }
 
 /**
+ * ffa_memory_lender_retrieve_request_init() - Initialises a memory region
+ *                                             descriptor for a retrieve
+ *                                             request.
+ * @memory_region: A pointer to the memory region descriptor to initialise.
+ * @handle: The handle of the memory region to retrieve.
+ * @sender: The FF-A ID of the partition which sent the memory region.
+ *
+ * Initialises the given ``ffa_mem_region`` to be used for an
+ * ``FFA_MEM_RETRIEVE_REQ`` from the hypervisor to the TEE.
+ *
+ * Return: the size of the message written.
+ */
+uint32_t
+ffa_memory_lender_retrieve_request_init(struct ffa_mem_region *memory_region,
+					ffa_memory_handle_t handle,
+					ffa_vm_id_t sender)
+{
+	memory_region->sender_id = sender;
+	memory_region->attributes = 0;
+	memory_region->reserved_0 = 0;
+	memory_region->flags = 0;
+	memory_region->handle = handle;
+	memory_region->tag = 0;
+	memory_region->reserved_1 = 0;
+	memory_region->ep_count = 0;
+
+	return sizeof(struct ffa_mem_region);
+}
+
+/**
  * ffa_memory_tee_send() - Validates a call to donate, lend or share memory to
  *                         the TEE and then updates the stage-2 page tables.
  * @from_pgt: The page table of the sender, i.e. the host.
@@ -1500,13 +1685,8 @@ struct arm_smccc_1_2_regs ffa_memory_tee_send_continue(
 			share_state_free(share_states, share_state, page_pool);
 		} else {
 			/* Abort sending to TEE. */
-			struct arm_smccc_1_2_regs tee_ret;
-			struct arm_smccc_1_2_regs args = {
-				.a0 = FFA_MEM_RECLAIM,
-				.a1 = (uint32_t)handle,
-				.a2 = (uint32_t)(handle >> 32)
-			};
-			arm_smccc_1_2_smc(&args, &tee_ret);
+			struct arm_smccc_1_2_regs tee_ret =
+				memory_reclaim_tee(handle, 0);
 
 			if (tee_ret.a0 != FFA_SUCCESS) {
 				/*
@@ -1555,4 +1735,125 @@ out_free_fragment:
 out:
 	share_states_unlock(&share_states);
 	return ret;
+}
+
+struct arm_smccc_1_2_regs
+ffa_memory_tee_reclaim(ffa_memory_handle_t handle,
+		       ffa_memory_region_flags_t flags)
+{
+	uint32_t request_length = ffa_memory_lender_retrieve_request_init(
+		(struct ffa_mem_region *)spmd_rx_buffer, handle, HOST_VM_ID);
+	struct arm_smccc_1_2_regs tee_ret;
+	uint32_t length;
+	uint32_t fragment_length;
+	uint32_t fragment_offset;
+	struct ffa_mem_region *memory_region;
+	struct ffa_composite_mem_region *composite;
+
+	BUG_ON(request_length > MAILBOX_SIZE);
+
+	hyp_assert_lock_held(&host_kvm.lock);
+	hyp_assert_lock_held(&spmd.lock);
+
+	/* Retrieve memory region information from the TEE. */
+	tee_ret = memory_retrieve_tee(request_length, request_length);
+	if (tee_ret.a0 == FFA_ERROR) {
+		pr_info("Got error %d from EL3.", tee_ret.a2);
+		return tee_ret;
+	}
+	if (tee_ret.a0 != FFA_MEM_RETRIEVE_RESP) {
+		pr_info("Got %#x from EL3, expected FFA_MEM_RETRIEVE_RESP.",
+			tee_ret.a0);
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	length = tee_ret.a1;
+	fragment_length = tee_ret.a2;
+
+	if (fragment_length > MAILBOX_SIZE || fragment_length > length ||
+	    length > sizeof(tee_retrieve_buffer)) {
+		pr_info("Invalid fragment length %d/%d (max %d/%d).",
+			fragment_length, length, MAILBOX_SIZE,
+			sizeof(tee_retrieve_buffer));
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	/*
+	 * Copy the first fragment of the memory region descriptor to an
+	 * internal buffer.
+	 */
+	memcpy(tee_retrieve_buffer, spmd_tx_buffer, fragment_length);
+
+	/* Fetch the remaining fragments into the same buffer. */
+	fragment_offset = fragment_length;
+	while (fragment_offset < length) {
+		tee_ret = memory_frag_rx_tee(handle, fragment_offset);
+		if (tee_ret.a0 != FFA_MEM_FRAG_TX) {
+			pr_info("Got %#x (%d) from TEE in response to "
+				"FFA_MEM_FRAG_RX, expected FFA_MEM_FRAG_TX.",
+				tee_ret.a0, tee_ret.a2);
+			return tee_ret;
+		}
+		if (ffa_frag_handle(tee_ret) != handle) {
+			pr_info("Got FFA_MEM_FRAG_TX for unexpected handle %#x "
+				"in response to FFA_MEM_FRAG_RX for handle "
+				"%#x.",
+				ffa_frag_handle(tee_ret), handle);
+			return ffa_error(FFA_RET_INVALID_PARAMETERS);
+		}
+		if (ffa_frag_sender(tee_ret) != 0) {
+			pr_info("Got FFA_MEM_FRAG_TX with unexpected sender %d "
+				"(expected 0).",
+				ffa_frag_sender(tee_ret));
+			return ffa_error(FFA_RET_INVALID_PARAMETERS);
+		}
+		fragment_length = tee_ret.a3;
+		if (fragment_length > MAILBOX_SIZE ||
+		    fragment_offset + fragment_length > length) {
+			pr_info("Invalid fragment length %d at offset %d (max "
+				"%d).",
+				fragment_length, fragment_offset, MAILBOX_SIZE);
+			return ffa_error(FFA_RET_INVALID_PARAMETERS);
+		}
+		memcpy(tee_retrieve_buffer + fragment_offset, spmd_tx_buffer,
+		       fragment_length);
+
+		fragment_offset += fragment_length;
+	}
+
+	memory_region = (struct ffa_mem_region *)tee_retrieve_buffer;
+
+	if (memory_region->ep_count != 1) {
+		/* Only one receiver supported for now. */
+		pr_info("Multiple recipients not supported (got %d, expected "
+			"1).",
+			memory_region->ep_count);
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	if (memory_region->handle != handle) {
+		pr_info("Got memory region handle %#x from TEE but requested "
+			"handle %#x.",
+			memory_region->handle, handle);
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	/* The original sender must match the caller. */
+	if (HOST_VM_ID != memory_region->sender_id) {
+		pr_info("Host VM %d attempted to reclaim memory handle %#x "
+			"originally sent by VM %d.",
+			HOST_VM_ID, handle, memory_region->sender_id);
+		return ffa_error(FFA_RET_INVALID_PARAMETERS);
+	}
+
+	composite = ffa_memory_region_get_composite(memory_region, 0);
+
+	/*
+	 * Validate that the reclaim transition is allowed for the given memory
+	 * region, forward the request to the TEE and then map the memory back
+	 * into the caller's stage-2 page table.
+	 */
+	return ffa_tee_reclaim_check_update(handle, composite->constituents,
+					    composite->addr_range_cnt,
+					    flags & FFA_MEM_CLEAR);
 }

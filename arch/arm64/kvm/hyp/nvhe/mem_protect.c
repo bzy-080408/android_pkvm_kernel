@@ -1330,6 +1330,10 @@ static int check_unshare(struct pkvm_mem_share *share)
 	case PKVM_ID_HYP:
 		ret = hyp_ack_unshare(completer_addr, tx);
 		break;
+	case PKVM_ID_SECURE_WORLD:
+		/* Nothing to check, always succeeds. */
+		ret = 0;
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -1363,6 +1367,10 @@ static int __do_unshare(struct pkvm_mem_share *share)
 		break;
 	case PKVM_ID_HYP:
 		ret = hyp_complete_unshare(completer_addr, tx);
+		break;
+	case PKVM_ID_SECURE_WORLD:
+		/* Nothing to do, we don't maintain any page tables for the secure world. */
+		ret = 0;
 		break;
 	default:
 		ret = -EINVAL;
@@ -1720,6 +1728,71 @@ int __pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, u64 ipa)
 	host_unlock_component();
 
 	return ret;
+}
+
+/**
+ * __pkvm_host_check_reclaim_secure_world() - Checks whether the host can
+ *                                            reclaim the given memory range
+ *                                            from the secure world.
+ * @host_addr:
+ *   The IPA of the start of the memory range in the host stage-2 page table.
+ * @size: The length of the memory range in bytes.
+ *
+ * Return: 0 if the transition is valid, or a negative error value if not.
+ */
+int __pkvm_host_check_reclaim_secure_world(hpa_t host_addr, size_t size)
+{
+	// TODO: This handles reclaiming memory that has been shared, but what
+	// about memory that was lent?
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator 	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = 0,
+				},
+			},
+			.completer 	= {
+				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+		.prot = 0,
+	};
+
+	return check_unshare(&share);
+}
+
+/**
+ * __pkvm_host_reclaim_secure_world() - Reclaims memory which the host
+ *                                      previously shared with the secure world.
+ * @host_addr:
+ *   The IPA of the start of the memory range in the host stage-2 page table.
+ * @size: The length of the memory range in bytes.
+ *
+ * Return: 0 on success, or a negative error value on failure.
+ */
+int __pkvm_host_reclaim_secure_world(hpa_t host_addr, size_t size)
+{
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator 	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = 0,
+				},
+			},
+			.completer 	= {
+				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+		.prot = 0,
+	};
+
+	return do_unshare(&share);
 }
 
 int __pkvm_host_unshare_hyp(u64 pfn)
