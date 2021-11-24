@@ -87,6 +87,21 @@ ffa_mem_frag_tx(ffa_memory_handle_t handle, uint32_t fragment_length)
 	return ret;
 }
 
+static inline struct arm_smccc_1_2_regs
+ffa_mem_reclaim(ffa_memory_handle_t handle, uint32_t flags)
+{
+	struct arm_smccc_1_2_regs args =
+		(struct arm_smccc_1_2_regs){ .a0 = FFA_MEM_RECLAIM,
+					     .a1 = (uint32_t)handle,
+					     .a2 = (uint32_t)(handle >> 32),
+					     .a3 = flags };
+	struct arm_smccc_1_2_regs ret;
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	return ret;
+}
+
 static void print_error(struct arm_smccc_1_2_regs ret)
 {
 	if (ret.a0 == FFA_ERROR) {
@@ -486,6 +501,22 @@ static int __init test_memory_share_fragmented(void)
 	return 0;
 }
 
+/*
+ * Memory which wasn't shared can't be reclaimed.
+ */
+static int __init test_memory_reclaim_invalid(void)
+{
+	ffa_memory_handle_t invalid_handle = 42;
+	struct arm_smccc_1_2_regs ret;
+
+	ret = ffa_mem_reclaim(invalid_handle, 0);
+
+	if (ret.a0 != FFA_ERROR || ret.a2 != FFA_RET_INVALID_PARAMETERS)
+		return -1;
+
+	return 0;
+}
+
 static void __init selftest(void)
 {
 	tx_buffer = (void *)get_zeroed_page(GFP_ATOMIC);
@@ -505,6 +536,8 @@ static void __init selftest(void)
 	KSTM_CHECK_ZERO(test_memory_share());
 	pr_info("test_memory_share_fragmented");
 	KSTM_CHECK_ZERO(test_memory_share_fragmented());
+	pr_info("test_memory_reclaim_invalid");
+	KSTM_CHECK_ZERO(test_memory_reclaim_invalid());
 }
 
 KSTM_MODULE_LOADERS(test_ffa);
