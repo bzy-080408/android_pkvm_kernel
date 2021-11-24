@@ -654,6 +654,7 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
+	INIT_LIST_HEAD(&kvm->arch.pkvm.pinned_pages);
 	mmu->arch = &kvm->arch;
 
 	if (is_protected_kvm_enabled())
@@ -1139,6 +1140,70 @@ static int pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 	return (res.a1 == -EPERM) ? -EAGAIN : res.a1;
 }
 
+static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
+			  unsigned long hva)
+{
+	struct kvm_hyp_memcache *hyp_memcache = &vcpu->arch.pkvm.memcache;
+	struct mm_struct *mm = current->mm;
+	unsigned int flags = FOLL_FORCE |
+			     FOLL_HWPOISON |
+			     FOLL_LONGTERM |
+			     FOLL_WRITE;
+	struct kvm_pinned_page *ppage;
+	struct kvm *kvm = vcpu->kvm;
+	struct page *page;
+	u64 pfn;
+	int ret;
+
+	ret = topup_hyp_memcache(hyp_memcache, kvm_mmu_cache_min_pages(kvm));
+	if (ret)
+		return -ENOMEM;
+
+	ppage = kmalloc(sizeof(*ppage), GFP_KERNEL_ACCOUNT);
+	if (!ppage)
+		return -ENOMEM;
+
+	ret = account_locked_vm(mm, 1, true);
+	if (ret)
+		goto free_ppage;
+
+	mmap_read_lock(mm);
+	ret = pin_user_pages(hva, 1, flags, &page, NULL);
+	mmap_read_unlock(mm);
+
+	if (ret == -EHWPOISON) {
+		kvm_send_hwpoison_signal(hva, PAGE_SHIFT);
+		ret = 0;
+		goto dec_account;
+	} else if (ret != 1) {
+		ret = -EFAULT;
+		goto dec_account;
+	}
+
+	pfn = page_to_pfn(page);
+	ret = pkvm_host_donate_guest(pfn, fault_ipa >> PAGE_SHIFT, vcpu);
+	if (ret) {
+		if (ret == -EAGAIN)
+			ret = 0;
+		goto unpin;
+	}
+
+	ppage->page = page;
+	INIT_LIST_HEAD(&ppage->link);
+	list_add(&ppage->link, &kvm->arch.pkvm.pinned_pages);
+
+	return 0;
+
+unpin:
+	unpin_user_pages(&page, 1);
+dec_account:
+	account_locked_vm(mm, 1, false);
+free_ppage:
+	kfree(ppage);
+
+	return ret;
+}
+
 static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  struct kvm_memory_slot *memslot, unsigned long hva,
 			  unsigned long fault_status)
@@ -1501,7 +1566,11 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		goto out_unlock;
 	}
 
-	ret = user_mem_abort(vcpu, fault_ipa, memslot, hva, fault_status);
+
+	if (is_protected_kvm_enabled())
+		ret = pkvm_mem_abort(vcpu, fault_ipa, hva);
+	else
+		ret = user_mem_abort(vcpu, fault_ipa, memslot, hva, fault_status);
 	if (ret == 0)
 		ret = 1;
 out:
