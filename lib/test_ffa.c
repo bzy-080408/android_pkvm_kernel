@@ -72,6 +72,21 @@ static inline struct arm_smccc_1_2_regs ffa_mem_share(uint32_t length,
 	return ret;
 }
 
+static inline struct arm_smccc_1_2_regs
+ffa_mem_frag_tx(ffa_memory_handle_t handle, uint32_t fragment_length)
+{
+	struct arm_smccc_1_2_regs args =
+		(struct arm_smccc_1_2_regs){ .a0 = FFA_MEM_FRAG_TX,
+					     .a1 = (uint32_t)handle,
+					     .a2 = (uint32_t)(handle >> 32),
+					     .a3 = fragment_length };
+	struct arm_smccc_1_2_regs ret;
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	return ret;
+}
+
 static void print_error(struct arm_smccc_1_2_regs ret)
 {
 	if (ret.a0 == FFA_ERROR) {
@@ -236,6 +251,31 @@ ffa_memory_region_init(struct ffa_mem_region *memory_region,
 	return composite_memory_region->addr_range_cnt - count_to_copy;
 }
 
+static uint32_t
+ffa_memory_fragment_init(struct ffa_mem_region_addr_range *fragment,
+			 size_t fragment_max_size,
+			 const struct ffa_mem_region_addr_range constituents[],
+			 uint32_t constituent_count, uint32_t *fragment_length)
+{
+	uint32_t fragment_max_constituents =
+		fragment_max_size / sizeof(struct ffa_mem_region_addr_range);
+	uint32_t count_to_copy = constituent_count;
+	uint32_t i;
+
+	if (count_to_copy > fragment_max_constituents)
+		count_to_copy = fragment_max_constituents;
+
+	for (i = 0; i < count_to_copy; ++i)
+		fragment[i] = constituents[i];
+
+	if (fragment_length != NULL) {
+		*fragment_length = count_to_copy *
+				   sizeof(struct ffa_mem_region_addr_range);
+	}
+
+	return constituent_count - count_to_copy;
+}
+
 /** Calling an unsupported FF-A function should result in an error. */
 static int __init test_invalid_smc(void)
 {
@@ -374,6 +414,78 @@ static int __init test_memory_share(void)
 	return 0;
 }
 
+/**
+ * Memory can be shared to Trusty SPD in multiple fragments.
+ */
+static int __init test_memory_share_fragmented(void)
+{
+	uint8_t *page0 = (uint8_t *)get_zeroed_page(GFP_ATOMIC);
+	uint8_t *page1 = (uint8_t *)get_zeroed_page(GFP_ATOMIC);
+	const hpa_t address0 = virt_to_phys(page0);
+	const hpa_t address1 = virt_to_phys(page1);
+	struct ffa_mem_region_addr_range constituents[] = {
+		{ .address = address0, .pg_cnt = 1 },
+		{ .address = address1, .pg_cnt = 1 },
+	};
+	int i;
+	ffa_memory_handle_t handle;
+	uint32_t total_length;
+	uint32_t fragment_length;
+	struct arm_smccc_1_2_regs ret;
+
+	if (page0 == NULL || page1 == NULL) {
+		pr_err("Failed to allocate pages to share");
+		return -1;
+	}
+
+	/* Dirty the memory before sharing it. */
+	memset(page0, 'b', FFA_PAGE_SIZE);
+	memset(page1, 'b', FFA_PAGE_SIZE);
+
+	if (ffa_memory_region_init(
+		    tx_buffer, MAILBOX_SIZE, HOST_VM_ID, TEE_VM_ID,
+		    constituents, ARRAY_SIZE(constituents), 0, 0, FFA_MEM_RW, 0,
+		    FFA_MEM_NORMAL, FFA_MEM_WRITE_BACK, FFA_MEM_INNER_SHAREABLE,
+		    &total_length, &fragment_length) != 0) {
+		pr_err("Failed to initialise memory region");
+		return -1;
+	}
+	/* Send the first fragment without the last constituent. */
+	fragment_length -= sizeof(struct ffa_mem_region_addr_range);
+	ret = ffa_mem_share(total_length, fragment_length);
+	if (ret.a0 != FFA_MEM_FRAG_RX || ret.a3 != fragment_length) {
+		pr_err("Failed to send first fragment.");
+		return -1;
+	}
+	handle = ffa_frag_handle(ret);
+
+	/* Send second fragment. */
+	if (ffa_memory_fragment_init(tx_buffer, MAILBOX_SIZE, constituents + 1,
+				     1, &fragment_length) != 0) {
+		return -1;
+	}
+	ret = ffa_mem_frag_tx(handle, fragment_length);
+	if (ret.a0 != FFA_SUCCESS || ffa_mem_success_handle(ret) != handle) {
+		pr_err("Failed to send second fragment.");
+		return -1;
+	}
+	pr_info("Got handle %#x.", handle);
+	if (handle == 0 || (handle & FFA_MEMORY_HANDLE_ALLOCATOR_MASK) ==
+				   FFA_MEMORY_HANDLE_ALLOCATOR_HYPERVISOR) {
+		return -1;
+	}
+
+	/* Make sure we can still write to it. */
+	for (i = 0; i < FFA_PAGE_SIZE; ++i) {
+		page0[i] = i;
+		page1[i] = i;
+	}
+
+	/* Leak the shared pages, so they don't get reused for something else. */
+
+	return 0;
+}
+
 static void __init selftest(void)
 {
 	tx_buffer = (void *)get_zeroed_page(GFP_ATOMIC);
@@ -391,6 +503,8 @@ static void __init selftest(void)
 	KSTM_CHECK_ZERO(test_rxtx_map());
 	pr_info("test_memory_share");
 	KSTM_CHECK_ZERO(test_memory_share());
+	pr_info("test_memory_share_fragmented");
+	KSTM_CHECK_ZERO(test_memory_share_fragmented());
 }
 
 KSTM_MODULE_LOADERS(test_ffa);
