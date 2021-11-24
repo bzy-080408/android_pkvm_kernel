@@ -517,6 +517,43 @@ static int __init test_memory_reclaim_invalid(void)
 	return 0;
 }
 
+/**
+ * Memory which was shared can be immediately reclaimed.
+ */
+static int __init test_memory_reclaim(void)
+{
+	uint8_t *page = (uint8_t *)get_zeroed_page(GFP_ATOMIC);
+	const hpa_t address = virt_to_phys(page);
+	struct ffa_mem_region_addr_range constituents[] = {
+		{ .address = address, .pg_cnt = 1 },
+	};
+	struct arm_smccc_1_2_regs ret;
+	ffa_memory_handle_t handle;
+
+	if (page == NULL) {
+		pr_err("Failed to allocate page to share");
+		return -1;
+	}
+
+	/* Dirty the memory before sharing it. */
+	memset(page, 'b', FFA_PAGE_SIZE);
+
+	handle = init_and_send(constituents, ARRAY_SIZE(constituents));
+
+	/* Make sure we can still write to it. */
+	for (int i = 0; i < FFA_PAGE_SIZE; ++i)
+		page[i] = i;
+
+	pr_info("Reclaiming handle %#x.", handle);
+	ret = ffa_mem_reclaim(handle, 0);
+	if (ret.a0 != FFA_SUCCESS)
+		return -1;
+
+	free_page((uintptr_t)page);
+
+	return 0;
+}
+
 static void __init selftest(void)
 {
 	tx_buffer = (void *)get_zeroed_page(GFP_ATOMIC);
@@ -538,6 +575,8 @@ static void __init selftest(void)
 	KSTM_CHECK_ZERO(test_memory_share_fragmented());
 	pr_info("test_memory_reclaim_invalid");
 	KSTM_CHECK_ZERO(test_memory_reclaim_invalid());
+	pr_info("test_memory_reclaim");
+	KSTM_CHECK_ZERO(test_memory_reclaim());
 }
 
 KSTM_MODULE_LOADERS(test_ffa);
