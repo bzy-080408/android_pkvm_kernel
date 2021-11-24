@@ -989,6 +989,7 @@ ffa_tee_reclaim_check_update(ffa_memory_handle_t handle,
 	struct arm_smccc_1_2_regs ret;
 	ffa_memory_region_flags_t tee_flags;
 	uint32_t i;
+	bool lent;
 
 	/*
 	 * Make sure constituents are properly aligned to a 64-bit boundary. If
@@ -1005,14 +1006,33 @@ ffa_tee_reclaim_check_update(ffa_memory_handle_t handle,
 	}
 
 	/*
+	 * If the state transition for reclaiming shared memory fails for the first
+	 * constituent, then maybe it was lent rather than shared so check that
+	 * instead.
+	 */
+	lent = __pkvm_host_check_reclaim_shared_secure_world(
+		       constituents[0].address,
+		       constituents[0].pg_cnt * FFA_PAGE_SIZE) != 0;
+
+	/*
 	 * Check that the state transition is allowed for all constituents of
 	 * the memory region being reclaimed, according to the host page table.
 	 */
 	for (i = 0; i < constituent_count; ++i) {
 		hpa_t begin = constituents[i].address;
 		size_t size = constituents[i].pg_cnt * FFA_PAGE_SIZE;
+		int check_ret;
 
-		if (__pkvm_host_check_reclaim_secure_world(begin, size) != 0) {
+		if (lent) {
+			check_ret = __pkvm_host_check_reclaim_lent_secure_world(
+				begin, size);
+		} else {
+			check_ret =
+				__pkvm_host_check_reclaim_shared_secure_world(
+					begin, size);
+		}
+
+		if (check_ret != 0) {
 			pr_warn("Host tried to reclaim memory in invalid state.");
 			return ffa_error(FFA_RET_DENIED);
 		}
@@ -1041,8 +1061,17 @@ ffa_tee_reclaim_check_update(ffa_memory_handle_t handle,
 	for (i = 0; i < constituent_count; ++i) {
 		hpa_t begin = constituents[i].address;
 		size_t size = constituents[i].pg_cnt * FFA_PAGE_SIZE;
+		int reclaim_ret;
 
-		if (__pkvm_host_reclaim_secure_world(begin, size) != 0) {
+		if (lent) {
+			reclaim_ret = __pkvm_host_reclaim_lent_secure_world(
+				begin, size);
+		} else {
+			reclaim_ret = __pkvm_host_reclaim_shared_secure_world(
+				begin, size);
+		}
+
+		if (reclaim_ret != 0) {
 			pr_warn("Failed to update host page table for reclaiming memory.");
 			ret = ffa_error(FFA_RET_NO_MEMORY);
 			// TODO: Roll back partial update.

@@ -810,6 +810,14 @@ static int host_request_unshare(u64 *completer_addr,
 	return __host_check_page_state_range(addr, size, PKVM_PAGE_SHARED_OWNED);
 }
 
+static int secure_world_request_donation(u64 *completer_addr,
+			      const struct pkvm_mem_transition *tx)
+{
+	*completer_addr = tx->initiator.hyp.completer_addr;
+	/* Nothing to check, always succeeds. */
+	return 0;
+}
+
 static int host_initiate_share(u64 *completer_addr,
 			       const struct pkvm_mem_transition *tx)
 {
@@ -1412,6 +1420,9 @@ static int check_donation(struct pkvm_mem_donation *donation)
 	case PKVM_ID_HYP:
 		ret = hyp_request_donation(&completer_addr, tx);
 		break;
+	case PKVM_ID_SECURE_WORLD:
+		ret = secure_world_request_donation(&completer_addr, tx);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -1452,6 +1463,9 @@ static int __do_donate(struct pkvm_mem_donation *donation)
 		break;
 	case PKVM_ID_HYP:
 		ret = hyp_initiate_donation(&completer_addr, tx);
+		break;
+	case PKVM_ID_SECURE_WORLD:
+		ret = secure_world_request_donation(&completer_addr, tx);
 		break;
 	default:
 		ret = -EINVAL;
@@ -1731,19 +1745,18 @@ int __pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, u64 ipa)
 }
 
 /**
- * __pkvm_host_check_reclaim_secure_world() - Checks whether the host can
- *                                            reclaim the given memory range
- *                                            from the secure world.
+ * __pkvm_host_check_reclaim_shared_secure_world() - Checks whether the host can
+ *                                                   reclaim the given memory
+ *                                                   range which was shared with
+ *                                                   the secure world.
  * @host_addr:
  *   The IPA of the start of the memory range in the host stage-2 page table.
  * @size: The length of the memory range in bytes.
  *
  * Return: 0 if the transition is valid, or a negative error value if not.
  */
-int __pkvm_host_check_reclaim_secure_world(hpa_t host_addr, size_t size)
+int __pkvm_host_check_reclaim_shared_secure_world(hpa_t host_addr, size_t size)
 {
-	// TODO: This handles reclaiming memory that has been shared, but what
-	// about memory that was lent?
 	struct pkvm_mem_share share = {
 		.tx	= {
 			.nr_pages	= size / PAGE_SIZE,
@@ -1765,15 +1778,16 @@ int __pkvm_host_check_reclaim_secure_world(hpa_t host_addr, size_t size)
 }
 
 /**
- * __pkvm_host_reclaim_secure_world() - Reclaims memory which the host
- *                                      previously shared with the secure world.
+ * __pkvm_host_reclaim_shared_secure_world() - Reclaims memory which the host
+ *                                             previously shared with the secure
+ *                                             world.
  * @host_addr:
  *   The IPA of the start of the memory range in the host stage-2 page table.
  * @size: The length of the memory range in bytes.
  *
  * Return: 0 on success, or a negative error value on failure.
  */
-int __pkvm_host_reclaim_secure_world(hpa_t host_addr, size_t size)
+int __pkvm_host_reclaim_shared_secure_world(hpa_t host_addr, size_t size)
 {
 	struct pkvm_mem_share share = {
 		.tx	= {
@@ -1863,6 +1877,70 @@ int __pkvm_host_donate_secure_world(hpa_t host_addr, size_t size)
 			},
 			.completer	= {
 				.id	= PKVM_ID_SECURE_WORLD,
+			},
+		},
+	};
+
+	return do_donate(&donation);
+}
+
+/**
+ * __pkvm_host_check_reclaim_lent_secure_world() - Checks whether the host can
+ *                                                 reclaim the given memory
+ *                                                 range which was lent to the
+ *                                                 secure world.
+ * @host_addr:
+ *   The IPA of the start of the memory range in the host stage-2 page table.
+ * @size: The length of the memory range in bytes.
+ *
+ * Return: 0 if the reclaim transition is valid, or a negative error value if
+ * not.
+ */
+int __pkvm_host_check_reclaim_lent_secure_world(hpa_t host_addr, size_t size)
+{
+	struct pkvm_mem_donation donation = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator = {
+				.id	= PKVM_ID_SECURE_WORLD,
+				.addr	= 0,
+				.host	= {
+					.completer_addr = host_addr,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_HOST,
+			},
+		},
+	};
+
+	return check_donation(&donation);
+}
+
+/**
+ * __pkvm_host_reclaim_lent_secure_world() - Reclaims the given memory range
+ *                                           which the host previously lent to
+ *                                           the secure world.
+ * @host_addr:
+ *   The IPA of the start of the memory range in the host stage-2 page table.
+ * @size: The length of the memory range in bytes.
+ *
+ * Return: 0 on success, or a negative error value on failure.
+ */
+int __pkvm_host_reclaim_lent_secure_world(hpa_t host_addr, size_t size)
+{
+	struct pkvm_mem_donation donation = {
+		.tx	= {
+			.nr_pages	= size / PAGE_SIZE,
+			.initiator = {
+				.id	= PKVM_ID_SECURE_WORLD,
+				.addr	= 0,
+				.host	= {
+					.completer_addr = host_addr,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_HOST,
 			},
 		},
 	};
