@@ -75,12 +75,22 @@ static inline struct arm_smccc_1_2_regs ffa_mem_share(uint32_t length,
 static inline struct arm_smccc_1_2_regs
 ffa_mem_frag_tx(ffa_memory_handle_t handle, uint32_t fragment_length)
 {
-	struct arm_smccc_1_2_regs args =
-		(struct arm_smccc_1_2_regs){ .a0 = FFA_MEM_FRAG_TX,
-					     .a1 = (uint32_t)handle,
-					     .a2 = (uint32_t)(handle >> 32),
-					     .a3 = fragment_length };
+	ffa_vm_id_t sender_vm_id;
+	struct arm_smccc_1_2_regs args;
 	struct arm_smccc_1_2_regs ret;
+
+	if (is_protected_kvm_enabled()) {
+		/* Sender MBZ for virtual FF-A interface. */
+		sender_vm_id = 0;
+	} else {
+		sender_vm_id = HOST_VM_ID;
+	}
+	args = (struct arm_smccc_1_2_regs){ .a0 = FFA_MEM_FRAG_TX,
+					    .a1 = (uint32_t)handle,
+					    .a2 = (uint32_t)(handle >> 32),
+					    .a3 = fragment_length,
+					    .a4 = (uint32_t)sender_vm_id
+						  << 16 };
 
 	arm_smccc_1_2_smc(&args, &ret);
 
