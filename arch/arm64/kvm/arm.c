@@ -60,7 +60,8 @@ static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 DEFINE_STATIC_KEY_FALSE(userspace_irqchip_in_use);
 
 /* KVM "vendor" hypercalls which may be forwarded to userspace on request. */
-#define KVM_EXIT_HYPERCALL_VALID_MASK	(0)
+#define KVM_EXIT_HYPERCALL_VALID_MASK	(BIT(ARM_SMCCC_KVM_FUNC_MEM_SHARE) |	\
+					 BIT(ARM_SMCCC_KVM_FUNC_MEM_UNSHARE))
 
 bool kvm_arch_has_private_mem(struct kvm *kvm)
 {
