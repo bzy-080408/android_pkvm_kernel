@@ -251,6 +251,8 @@ struct kvm_arch {
 	 * the associated pKVM instance in the hypervisor.
 	 */
 	struct kvm_protected_vm pkvm;
+
+	u64 hypercall_exit_enabled;
 };
 
 struct kvm_vcpu_fault_info {
