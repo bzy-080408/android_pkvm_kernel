@@ -1191,7 +1191,9 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	ppage->page = page;
 	INIT_LIST_HEAD(&ppage->link);
+	spin_lock(&kvm->mmu_lock);
 	list_add(&ppage->link, &kvm->arch.pkvm.pinned_pages);
+	spin_unlock(&kvm->mmu_lock);
 
 	return 0;
 

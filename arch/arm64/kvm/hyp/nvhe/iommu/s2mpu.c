@@ -238,7 +238,7 @@ static void set_mpt_range_locked(struct mpt *mpt, phys_addr_t first_byte,
 		__range_invalidation(dev, first_byte, last_byte);
 }
 
-static void s2mpu_host_stage2_set_owner(phys_addr_t addr, size_t size, u8 owner_id)
+static void s2mpu_host_stage2_set_owner(phys_addr_t addr, size_t size, pkvm_id owner_id)
 {
 	/* Grant access only to the default owner of the page table (ID=0). */
 	enum mpt_prot prot = owner_id ? MPT_PROT_NONE : MPT_PROT_RW;

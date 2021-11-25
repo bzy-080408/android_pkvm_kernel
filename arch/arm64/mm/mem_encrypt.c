@@ -20,6 +20,12 @@
 
 static unsigned long memshare_granule_sz;
 
+bool mem_encrypt_active(void)
+{
+	return memshare_granule_sz;
+}
+EXPORT_SYMBOL(mem_encrypt_active);
+
 void kvm_init_memshare_services(void)
 {
 	int i;
