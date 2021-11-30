@@ -240,6 +240,12 @@ static void clean_dcache_guest_page(void *va, size_t size)
 	hyp_fixmap_unmap();
 }
 
+static void invalidate_icache_guest_page(void *va, size_t size)
+{
+	__invalidate_icache_guest_page(hyp_fixmap_map(__hyp_pa(va)), size);
+	hyp_fixmap_unmap();
+}
+
 int kvm_guest_prepare_stage2(struct kvm_shadow_vm *vm, void *pgd)
 {
 	struct kvm_s2_mmu *mmu = &vm->arch.mmu;
@@ -267,6 +273,7 @@ int kvm_guest_prepare_stage2(struct kvm_shadow_vm *vm, void *pgd)
 		.get_page		= guest_s2_get_page,
 		.put_page		= guest_s2_put_page,
 		.dcache_clean_inval_poc	= clean_dcache_guest_page,
+		.icache_inval_pou	= invalidate_icache_guest_page,
 	};
 
 	__guest_lock(vm);
