@@ -53,6 +53,19 @@ static struct arm_smccc_1_2_regs ffa_version(u32 input_version)
 }
 
 /**
+ * ffa_id_get() - Handles the FFA_ID_GET function.
+ *
+ * Return: FFA_SUCCESS with the FF-A partition ID of the host.
+ */
+static struct arm_smccc_1_2_regs ffa_id_get(void)
+{
+	return (struct arm_smccc_1_2_regs){
+		.a0 = FFA_SUCCESS,
+		.a2 = HOST_VM_ID,
+	};
+}
+
+/**
  * ffa_init() - Initialises the FF-A module, by setting up buffers with the EL3
  * firmware and initialising the page pool.
  */
@@ -425,7 +438,6 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	case FFA_FEATURES:
 	case FFA_RX_RELEASE:
 	case FFA_PARTITION_INFO_GET:
-	case FFA_ID_GET:
 	case FFA_MSG_POLL: // TODO: Need to copy buffer on return
 	case FFA_MSG_WAIT: // TODO: Need to copy buffer on return
 	case FFA_YIELD:
@@ -450,6 +462,9 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	}
 	case FFA_VERSION:
 		ret = ffa_version(a1);
+		break;
+	case FFA_ID_GET:
+		ret = ffa_id_get();
 		break;
 	case FFA_RXTX_MAP: // Should this be allowed?
 	case FFA_FN64_RXTX_MAP:
