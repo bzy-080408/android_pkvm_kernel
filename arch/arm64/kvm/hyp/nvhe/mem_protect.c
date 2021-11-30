@@ -234,6 +234,12 @@ static void guest_s2_put_page(void *addr)
 	hyp_put_page(&current_vm->pool, addr);
 }
 
+static void clean_dcache_guest_page(void *va, size_t size)
+{
+	__clean_dcache_guest_page(hyp_fixmap_map(__hyp_pa(va)), size);
+	hyp_fixmap_unmap();
+}
+
 int kvm_guest_prepare_stage2(struct kvm_shadow_vm *vm, void *pgd)
 {
 	struct kvm_s2_mmu *mmu = &vm->arch.mmu;
@@ -260,6 +266,7 @@ int kvm_guest_prepare_stage2(struct kvm_shadow_vm *vm, void *pgd)
 		.page_count		= hyp_page_count,
 		.get_page		= guest_s2_get_page,
 		.put_page		= guest_s2_put_page,
+		.dcache_clean_inval_poc	= clean_dcache_guest_page,
 	};
 
 	__guest_lock(vm);
