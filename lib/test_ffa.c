@@ -339,6 +339,27 @@ static int __init test_get_version(void)
 	return 0;
 }
 
+static int __init test_id_get(void)
+{
+	struct arm_smccc_1_2_regs ret;
+	const struct arm_smccc_1_2_regs args = { .a0 = FFA_ID_GET };
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	if (ret.a0 != FFA_SUCCESS) {
+		pr_err("FFA_ID_GET: expected FFA_SUCCESS");
+		print_error(ret);
+		return -1;
+	}
+	if (is_protected_kvm_enabled() && ret.a2 != HOST_VM_ID) {
+		pr_err("FFA_ID_GET: Expected ID %#x for host but got %#x.",
+		       HOST_VM_ID, ret.a2);
+		return -1;
+	}
+
+	return 0;
+}
+
 static int set_up_mailbox(void)
 {
 	struct arm_smccc_1_2_regs ret;
@@ -586,6 +607,8 @@ static void __init selftest(void)
 	KSTM_CHECK_ZERO(test_invalid_smc());
 	pr_info("test_get_version");
 	KSTM_CHECK_ZERO(test_get_version());
+	pr_info("test_id_get");
+	KSTM_CHECK_ZERO(test_id_get());
 	pr_info("test_rxtx_map");
 	KSTM_CHECK_ZERO(test_rxtx_map());
 	pr_info("test_memory_share");
