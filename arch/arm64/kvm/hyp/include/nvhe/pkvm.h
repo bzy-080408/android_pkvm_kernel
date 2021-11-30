@@ -40,7 +40,6 @@ struct kvm_shadow_vm {
 	size_t shadow_area_size;
 
 	struct kvm_arch arch;
-	struct kvm_s2_mmu mmu;
 	struct kvm_pgtable pgt;
 	struct kvm_pgtable_mm_ops mm_ops;
 	struct hyp_pool pool;
