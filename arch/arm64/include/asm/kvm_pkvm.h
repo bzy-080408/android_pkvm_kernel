@@ -322,4 +322,10 @@ static inline unsigned long host_s2_pgtable_pages(void)
 	return res;
 }
 
+static inline unsigned long ffa_descriptor_pages(void)
+{
+	/* The number of pages to reserve for FF-A memory descriptors. */
+	return 100;
+}
+
 #endif	/* __ARM64_KVM_PKVM_H__ */
