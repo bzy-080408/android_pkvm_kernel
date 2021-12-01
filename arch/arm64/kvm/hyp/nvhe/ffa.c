@@ -12,6 +12,8 @@
 /* "ID value 0 must be returned at the Non-secure physical FF-A instance" */
 #define HOST_FFA_ID	0
 
+static struct kvm_ffa_buffers ffa_buffers;
+
 static void ffa_to_smccc_error(struct arm_smccc_res *res, u64 errno)
 {
 	*res = (struct arm_smccc_res) {
@@ -84,7 +86,7 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	return true;
 }
 
-int hyp_ffa_init(void)
+int hyp_ffa_init(void *rx, void *tx)
 {
 	struct arm_smccc_res res;
 
@@ -104,6 +106,12 @@ int hyp_ffa_init(void)
 
 	if (res.a2 != HOST_FFA_ID)
 		return -EINVAL;
+
+	ffa_buffers = (struct kvm_ffa_buffers) {
+		.lock	= __HYP_SPIN_LOCK_UNLOCKED,
+		.tx	= tx,
+		.rx	= rx,
+	};
 
 	return 0;
 }
