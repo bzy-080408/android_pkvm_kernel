@@ -322,4 +322,10 @@ static inline unsigned long host_s2_pgtable_pages(void)
 	return res;
 }
 
+static inline unsigned long hyp_ffa_proxy_pages(void)
+{
+	/* A page each for the hypervisor's RX and TX mailboxes. */
+	return 2;
+}
+
 #endif	/* __ARM64_KVM_PKVM_H__ */
