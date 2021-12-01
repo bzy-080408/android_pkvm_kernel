@@ -347,6 +347,7 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm, int nr
 
 	vm->host_kvm = kvm;
 	vm->created_vcpus = 0;
+	vm->arch.pkvm.pvmfw_load_addr = kvm->arch.pkvm.pvmfw_load_addr;
 
 	for (i = 0; i < nr_vcpus; i++) {
 		struct kvm_vcpu *host_vcpu = kern_hyp_va(kvm->vcpus[i]);
@@ -383,6 +384,15 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm, int nr
 
 		if (test_bit(KVM_ARM_VCPU_POWER_OFF, shadow_vcpu->arch.features)) {
 			shadow_vcpu->arch.pkvm.power_state = PSCI_0_2_AFFINITY_LEVEL_OFF;
+		} else if (pvm_has_pvmfw(vm)) {
+			if (vm->pvmfw_entry_vcpu) {
+				ret = -EINVAL;
+				goto fail;
+			}
+
+			vm->pvmfw_entry_vcpu = shadow_vcpu;
+			shadow_vcpu->arch.reset_state.reset = true;
+			shadow_vcpu->arch.pkvm.power_state = PSCI_0_2_AFFINITY_LEVEL_ON_PENDING;
 		} else {
 			struct vcpu_reset_state *reset_state = &shadow_vcpu->arch.reset_state;
 
@@ -618,6 +628,43 @@ void __pkvm_teardown_shadow(struct kvm *kvm)
 	WARN_ON(__pkvm_hyp_donate_host(pfn, nr_pages));
 }
 
+int pkvm_load_pvmfw_pages(struct kvm_shadow_vm *vm, u64 ipa, phys_addr_t phys,
+			  u64 size)
+{
+	struct kvm_protected_vm *pkvm = &vm->arch.pkvm;
+	u64 npages, offset = ipa - pkvm->pvmfw_load_addr;
+	void *src = hyp_phys_to_virt(pvmfw_base) + offset;
+
+	if (offset >= pvmfw_size)
+		return -EINVAL;
+
+	size = min(size, pvmfw_size - offset);
+	if (!PAGE_ALIGNED(size) || !PAGE_ALIGNED(src))
+		return -EINVAL;
+
+	npages = size >> PAGE_SHIFT;
+	while (npages--) {
+		void *dst;
+
+		dst = hyp_fixmap_map(phys);
+		if (!dst)
+			return -EINVAL;
+
+		/*
+		 * No need for cache maintenance here, as the pgtable code will
+		 * take care of this when installing the pte in the guest's
+		 * stage-2 page table.
+		 */
+		memcpy(dst, src, PAGE_SIZE);
+
+		hyp_fixmap_unmap();
+		src += PAGE_SIZE;
+		phys += PAGE_SIZE;
+	}
+
+	return 0;
+}
+
 /*
  * This function sets the registers on the vcpu to their architecturally defined
  * reset values.
@@ -627,6 +674,7 @@ void __pkvm_teardown_shadow(struct kvm *kvm)
 void pkvm_reset_vcpu(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_reset_state *reset_state = &vcpu->arch.reset_state;
+	struct kvm_shadow_vm *vm = vcpu->arch.pkvm.shadow_vm;
 
 	WARN_ON(!reset_state->reset);
 
@@ -651,8 +699,26 @@ void pkvm_reset_vcpu(struct kvm_vcpu *vcpu)
 	if (reset_state->be)
 		kvm_vcpu_set_be(vcpu);
 
-	*vcpu_pc(vcpu) = reset_state->pc;
-	vcpu_set_reg(vcpu, 0, reset_state->r0);
+	if (vm->pvmfw_entry_vcpu == vcpu) {
+		struct kvm_vcpu *host_vcpu = vcpu->arch.pkvm.host_vcpu;
+		u64 entry = vm->arch.pkvm.pvmfw_load_addr;
+		int i;
+
+		/* X0 - X14 provided by the VMM (preserved) */
+		for (i = 0; i <= 14; ++i)
+			vcpu_set_reg(vcpu, i, vcpu_get_reg(host_vcpu, i));
+
+		/* X15: Boot protocol version */
+		vcpu_set_reg(vcpu, 15, 0);
+
+		/* PC: IPA of pvmfw base */
+		*vcpu_pc(vcpu) = entry;
+
+		vm->pvmfw_entry_vcpu = NULL;
+	} else {
+		*vcpu_pc(vcpu) = reset_state->pc;
+		vcpu_set_reg(vcpu, 0, reset_state->r0);
+	}
 
 	reset_state->reset = false;
 

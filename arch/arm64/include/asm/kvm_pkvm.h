@@ -15,6 +15,11 @@
 #define KVM_MAX_PVMS 255
 
 #define HYP_MEMBLOCK_REGIONS 128
+#define PVMFW_INVALID_LOAD_ADDR	(-1)
+
+int kvm_arm_vm_ioctl_pkvm(struct kvm *kvm, struct kvm_enable_cap *cap);
+int kvm_init_pvm(struct kvm *kvm, unsigned long type);
+int create_el2_shadow(struct kvm *kvm);
 
 /*
  * Definitions for features to be allowed or restricted for guest virtual
@@ -228,6 +233,9 @@ static inline int pkvm_get_max_wrps(void)
 
 extern struct memblock_region kvm_nvhe_sym(hyp_memory)[];
 extern unsigned int kvm_nvhe_sym(hyp_memblock_nr);
+
+extern phys_addr_t kvm_nvhe_sym(pvmfw_base);
+extern phys_addr_t kvm_nvhe_sym(pvmfw_size);
 
 static inline unsigned long
 hyp_vmemmap_memblock_size(struct memblock_region *reg, size_t vmemmap_entry_size)

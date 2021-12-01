@@ -17,6 +17,9 @@
 #include "hyp_constants.h"
 
 static struct reserved_mem *pkvm_firmware_mem;
+static phys_addr_t *pvmfw_base = &kvm_nvhe_sym(pvmfw_base);
+static phys_addr_t *pvmfw_size = &kvm_nvhe_sym(pvmfw_size);
+
 static struct memblock_region *hyp_memory = kvm_nvhe_sym(hyp_memory);
 static unsigned int *hyp_memblock_nr_ptr = &kvm_nvhe_sym(hyp_memblock_nr);
 
@@ -118,15 +121,12 @@ static void update_vcpu_state(struct kvm_vcpu *vcpu, int shadow_handle)
  *
  * Return 0 on success, negative error code on failure.
  */
-static int create_el2_shadow(struct kvm *kvm)
+static int __create_el2_shadow(struct kvm *kvm)
 {
 	size_t pgd_sz, shadow_sz;
 	void *pgd, *shadow_addr;
 	int shadow_handle;
 	int ret, i;
-
-	if (kvm->arch.pkvm.shadow_handle)
-		return -EEXIST;
 
 	if (kvm->created_vcpus < 1)
 		return -EINVAL;
@@ -174,22 +174,16 @@ free_pgd:
 	return ret;
 }
 
-int pkvm_init_el2_context(struct kvm *kvm)
+int create_el2_shadow(struct kvm *kvm)
 {
 	int ret = 0;
 
-	mutex_lock(&kvm->lock);
-	ret = create_el2_shadow(kvm);
-	mutex_unlock(&kvm->lock);
+	mutex_lock(&kvm->arch.pkvm.shadow_lock);
+	if (!kvm->arch.pkvm.shadow_handle)
+		ret = __create_el2_shadow(kvm);
+	mutex_unlock(&kvm->arch.pkvm.shadow_lock);
 
-	if (ret < 0) {
-		kvm_err("Creating shadow structures for protected VM failed: %d\n",
-			ret);
-		return ret;
-	}
-
-	kvm_pr_unimpl("Stage-2 protection is a work-in-progress: civilization phase III\n");
-	return 0;
+	return ret;
 }
 
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,
@@ -206,9 +200,6 @@ static int __init pkvm_firmware_rmem_init(struct reserved_mem *rmem)
 {
 	unsigned long node = rmem->fdt_node;
 
-	if (kvm_get_mode() != KVM_MODE_PROTECTED)
-		return pkvm_firmware_rmem_err(rmem, "protected mode not enabled");
-
 	if (pkvm_firmware_mem)
 		return pkvm_firmware_rmem_err(rmem, "duplicate reservation");
 
@@ -224,8 +215,94 @@ static int __init pkvm_firmware_rmem_init(struct reserved_mem *rmem)
 	if (!PAGE_ALIGNED(rmem->size))
 		return pkvm_firmware_rmem_err(rmem, "size is not page-aligned");
 
+	*pvmfw_size = rmem->size;
+	*pvmfw_base = rmem->base;
 	pkvm_firmware_mem = rmem;
 	return 0;
 }
 RESERVEDMEM_OF_DECLARE(pkvm_firmware, "linux,pkvm-guest-firmware-memory",
 		       pkvm_firmware_rmem_init);
+
+static int __init pkvm_firmware_rmem_clear(void)
+{
+	void *addr;
+	phys_addr_t size;
+
+	if (likely(!pkvm_firmware_mem) || is_protected_kvm_enabled())
+		return 0;
+
+	kvm_info("Clearing unused pKVM firmware memory\n");
+	size = pkvm_firmware_mem->size;
+	addr = memremap(pkvm_firmware_mem->base, size, MEMREMAP_WB);
+	if (!addr)
+		return -EINVAL;
+
+	memset(addr, 0, size);
+	dcache_clean_poc((unsigned long)addr, (unsigned long)addr + size);
+	memunmap(addr);
+	return 0;
+}
+device_initcall_sync(pkvm_firmware_rmem_clear);
+
+static int pkvm_vm_ioctl_set_fw_ipa(struct kvm *kvm, u64 ipa)
+{
+	int ret = 0;
+
+	if (!pkvm_firmware_mem)
+		return -EINVAL;
+
+	mutex_lock(&kvm->arch.pkvm.shadow_lock);
+	if (kvm->arch.pkvm.shadow_handle) {
+		ret = -EBUSY;
+		goto out_unlock;
+	}
+
+	kvm->arch.pkvm.pvmfw_load_addr = ipa;
+out_unlock:
+	mutex_unlock(&kvm->arch.pkvm.shadow_lock);
+	return ret;
+}
+
+static int pkvm_vm_ioctl_info(struct kvm *kvm,
+			      struct kvm_protected_vm_info __user *info)
+{
+	struct kvm_protected_vm_info kinfo = {
+		.firmware_size = pkvm_firmware_mem ?
+				 pkvm_firmware_mem->size :
+				 0,
+	};
+
+	return copy_to_user(info, &kinfo, sizeof(kinfo)) ? -EFAULT : 0;
+}
+
+int kvm_arm_vm_ioctl_pkvm(struct kvm *kvm, struct kvm_enable_cap *cap)
+{
+	if (cap->args[1] || cap->args[2] || cap->args[3])
+		return -EINVAL;
+
+	switch (cap->flags) {
+	case KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FW_IPA:
+		return pkvm_vm_ioctl_set_fw_ipa(kvm, cap->args[0]);
+	case KVM_CAP_ARM_PROTECTED_VM_FLAGS_INFO:
+		return pkvm_vm_ioctl_info(kvm, (void __user *)cap->args[0]);
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int kvm_init_pvm(struct kvm *kvm, unsigned long type)
+{
+	mutex_init(&kvm->arch.pkvm.shadow_lock);
+	kvm->arch.pkvm.pvmfw_load_addr = PVMFW_INVALID_LOAD_ADDR;
+
+	if (!(type & KVM_VM_TYPE_ARM_PROTECTED))
+		return 0;
+
+	if (!is_protected_kvm_enabled())
+		return -EINVAL;
+
+	kvm->arch.pkvm.enabled = true;
+	return 0;
+}
