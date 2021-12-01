@@ -6,5 +6,5 @@
 
 #include <asm/kvm_host.h>
 
-void ffa_init(void);
+int ffa_init(void *descriptor_pool_base);
 bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt);

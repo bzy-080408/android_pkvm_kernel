@@ -5,6 +5,7 @@
  */
 
 #include <asm/kvm_pgtable.h>
+#include <asm/kvm_pkvm.h>
 #include <linux/arm-smccc.h>
 #include <linux/arm_ffa.h>
 #include <linux/kvm_types.h>
@@ -29,6 +30,8 @@ u64 __ro_after_init smccc_has_sve_hint;
 /* Mailboxes for communicating with the SPMD in EL3. */
 __aligned(FFA_PAGE_SIZE) static uint8_t spmd_tx_buffer[MAILBOX_SIZE];
 __aligned(FFA_PAGE_SIZE) static uint8_t spmd_rx_buffer[MAILBOX_SIZE];
+
+static struct hyp_pool descriptor_pool;
 
 /** Constructs an FF-A error return value with the specified error code. */
 static struct arm_smccc_1_2_regs ffa_error(u64 error_code)
@@ -59,10 +62,12 @@ static struct arm_smccc_1_2_regs ffa_version(u32 input_version)
 
 /**
  * ffa_init() - Initialises the FF-A module, by setting up buffers with the EL3
- * firmware.
+ * firmware and initialising the page pool.
  */
-void ffa_init(void)
+int ffa_init(void *descriptor_pool_base)
 {
+	unsigned long pfn;
+	int pool_ret;
 	struct arm_smccc_1_2_regs ret;
 	phys_addr_t rx_pa = hyp_virt_to_phys(spmd_rx_buffer);
 	phys_addr_t tx_pa = hyp_virt_to_phys(spmd_tx_buffer);
@@ -76,12 +81,20 @@ void ffa_init(void)
 						 .a3 = MAILBOX_SIZE /
 						       FFA_PAGE_SIZE };
 
+	pfn = hyp_virt_to_pfn(descriptor_pool_base);
+	pool_ret =
+		hyp_pool_init(&descriptor_pool, pfn, ffa_descriptor_pages(), 0);
+	if (pool_ret != 0)
+		return pool_ret;
+
 	arm_smccc_1_2_smc(&args, &ret);
 
 	if (ret.a0 == SMCCC_RET_NOT_SUPPORTED) {
 		/* TODO: Log a warning. */
 	} else if (ret.a0 != FFA_SUCCESS)
 		BUG();
+
+	return 0;
 }
 
 /**
