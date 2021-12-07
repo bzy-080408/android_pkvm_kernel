@@ -709,8 +709,6 @@ static void update_vmid(struct kvm_vmid *vmid)
 	spin_unlock(&kvm_vmid_lock);
 }
 
-extern int pkvm_init_el2_context(struct kvm *);
-
 /*
  * Handle both the initialisation that is being done when the vcpu is
  * run for the first time, as well as the updates that must be
@@ -758,10 +756,6 @@ int kvm_arch_vcpu_run_pid_change(struct kvm_vcpu *vcpu)
 		 */
 		static_branch_inc(&userspace_irqchip_in_use);
 	}
-
-	// XXX: Bodge for testing
-	if (kvm_vm_is_protected(kvm))
-		pkvm_init_el2_context(kvm);
 
 	return ret;
 }
