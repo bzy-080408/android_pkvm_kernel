@@ -632,7 +632,7 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	u64 mmfr0, mmfr1;
 	u32 phys_shift;
 
-	if (type & ~(KVM_VM_TYPE_ARM_IPA_SIZE_MASK | KVM_VM_TYPE_ARM_PROTECTED))
+	if (type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK)
 		return -EINVAL;
 
 	phys_shift = KVM_VM_TYPE_ARM_IPA_SIZE(type);
@@ -654,7 +654,6 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
-	kvm->arch.pkvm.enabled = type & KVM_VM_TYPE_ARM_PROTECTED;
 	INIT_LIST_HEAD(&kvm->arch.pkvm.pinned_pages);
 	mmu->arch = &kvm->arch;
 
