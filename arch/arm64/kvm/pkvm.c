@@ -314,3 +314,21 @@ int kvm_init_pvm(struct kvm *kvm, unsigned long type)
 	kvm->arch.pkvm.enabled = true;
 	return 0;
 }
+
+static int BODGE_install_loader(void)
+{
+	void *addr;
+
+	if (!pkvm_firmware_mem)
+		return -ENOMEM;
+
+	addr = memremap(pkvm_firmware_mem->base, PAGE_SIZE, MEMREMAP_WB);
+	if (!addr)
+		return -EFAULT;
+
+	pr_info("!! Installing dummy pvmfw into reserved memory region...\n");
+	((u32 *)addr)[0] = 0xd61f0080; // BR	X4
+	memunmap(addr);
+	return 0;
+}
+arch_initcall(BODGE_install_loader);
