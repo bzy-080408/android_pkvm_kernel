@@ -636,7 +636,7 @@ void pkvm_reset_vcpu(struct kvm_vcpu *vcpu)
 		 * This call should not fail since we've already checked for
 		 * feature support on initialization.
 		 */
-		WARN_ON(!kvm_vcpu_enable_ptrauth(vcpu));
+		WARN_ON(kvm_vcpu_enable_ptrauth(vcpu));
 	}
 
 	/* Reset core registers */
