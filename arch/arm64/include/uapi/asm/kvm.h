@@ -424,6 +424,15 @@ struct kvm_arm_copy_mte_tags {
 /* run->fail_entry.hardware_entry_failure_reason codes. */
 #define KVM_EXIT_FAIL_ENTRY_CPU_UNSUPPORTED	(1ULL << 0)
 
+/* Protected KVM */
+#define KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FW_IPA	0
+#define KVM_CAP_ARM_PROTECTED_VM_FLAGS_INFO		1
+
+struct kvm_protected_vm_info {
+	__u64 firmware_size;
+	__u64 __reserved[7];
+};
+
 #endif
 
 #endif /* __ARM_KVM_H__ */
