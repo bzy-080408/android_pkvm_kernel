@@ -8,6 +8,7 @@ ARM
    :maxdepth: 2
 
    hyp-abi
+   pkvm
    psci
    pvtime
    ptp_kvm

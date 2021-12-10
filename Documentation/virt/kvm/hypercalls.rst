@@ -37,6 +37,12 @@ MIPS:
   number in $2 (v0). Up to four arguments may be placed in $4-$7 (a0-a3) and
   the return value is placed in $2 (v0).
 
+Arm64:
+  KVM hypercalls use the HVC instruction according to version 1.1 of the Arm
+  SMC Calling Convention and place KVM-specific hypercalls into the "vendor
+  specific" service range using a UID of 28b46fb6-2ec5-11e9-a9ca-4b564d003a74.
+  See Documentation/virt/kvm/arm/ for information about specific hypercalls.
+
 KVM Hypercalls Documentation
 ============================
 

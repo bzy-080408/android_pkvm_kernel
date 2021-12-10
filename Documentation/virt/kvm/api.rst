@@ -6925,6 +6925,66 @@ indicated by the fd to the VM this is called on.
 This is intended to support intra-host migration of VMs between userspace VMMs,
 upgrading the VMM process without interrupting the guest.
 
+7.30 KVM_CAP_ARM_PROTECTED_VM
+-----------------------------
+
+:Architectures: arm64
+:Target: VM
+:Parameters: flags is a single KVM_CAP_ARM_PROTECTED_VM_FLAGS_* value
+
+This capability is only present for virtual machines created using the
+KVM_VM_TYPE_ARM_PROTECTED machine type identifier. See
+Documentation/virt/kvm/arm/pkvm.rst for more information.
+
+The 'flags' parameter is defined as follows:
+
+7.30.1 KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FW_IPA
+------------------------------------------------
+
+:Capability: 'flag' parameter to KVM_CAP_ARM_PROTECTED_VM
+:Architectures: arm64
+:Target: VM
+:Parameters: args[0] specifies the IPA base at which to load the guest firmware
+:Returns: 0 on success; negative error code on failure
+
+This capability sets the base address of a contiguous region of guest physical
+memory specified by the IPA passed in arg[0] at which the guest firmware image
+provided by the host firmware is to be loaded when the guest is run.
+
+The first vCPU to enter the guest is defined to be the primary vCPU. All other
+vCPUs belonging to the VM are secondary vCPUs.
+
+The general purpose registers of the primary vCPU belonging to a VM with this
+capability enabled are initialised as follows:
+
+	===========	===========
+	Register(s)	Reset value
+	===========	===========
+	X0-X14:		Preserved (see KVM_SET_ONE_REG)
+	X15:		Boot protocol version (0)
+	X16-X30:	Reserved (0)
+	PC:		IPA base of firmware image (args[0])
+	===========	===========
+
+Secondary vCPUs belonging to a VM with this capability enabled will return
+-EPERM in response to a KVM_RUN ioctl() if the vCPU was not initialised with
+the KVM_ARM_VCPU_POWER_OFF feature.
+
+It is an error to enable this capability on a VM after issuing a KVM_RUN
+ioctl() on one of its vCPUs.
+
+7.30.2 KVM_CAP_ARM_PROTECTED_VM_FLAGS_INFO
+------------------------------------------
+
+:Capability: 'flag' parameter to KVM_CAP_ARM_PROTECTED_VM
+:Architectures: arm64
+:Target: VM
+:Parameters: args[0] contains a pointer to a 'struct kvm_protected_vm_info'
+:Returns: 0 on success; negative error code on failure
+
+Populates the 'struct kvm_protected_vm_info' pointed to by args[0] with
+information about the protected environment for the VM.
+
 8. Other capabilities.
 ======================
 
