@@ -6,7 +6,6 @@
 
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_pgtable.h>
-#include <linux/align.h>
 #include <linux/arm-smccc.h>
 #include <linux/arm_ffa.h>
 #include <linux/kvm_types.h>
@@ -16,6 +15,7 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
+#include <stdalign.h>
 
 /* The maximum number of recipients a memory region may be sent to. */
 #define MAX_MEM_SHARE_RECIPIENTS 1

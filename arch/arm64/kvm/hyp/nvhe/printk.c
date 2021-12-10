@@ -7,12 +7,12 @@
 #include <linux/kernel.h>
 #include <linux/kern_levels.h>
 #include <linux/printk.h>
-#include <linux/stdarg.h>
+#include <stdarg.h>
 #include <../debug-pl011.h>
 
 #define LOG_LINE_MAX 1024
 
-int _printk(const char *fmt, ...)
+int printk(const char *fmt, ...)
 {
 	va_list args;
 	int r;

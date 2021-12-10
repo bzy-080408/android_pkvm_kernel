@@ -18,7 +18,7 @@
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
 #include <nvhe/trap_handler.h>
-#include <linux/align.h>
+#include <stdalign.h>
 
 // TODO: Initialise this properly
 u64 __ro_after_init smccc_has_sve_hint;

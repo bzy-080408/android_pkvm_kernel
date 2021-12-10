@@ -8,10 +8,10 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/align.h>
 #include <linux/arm_ffa.h>
 #include <linux/arm-smccc.h>
 #include <linux/kvm_types.h>
+#include <stdalign.h>
 #include "../tools/testing/selftests/kselftest_module.h"
 
 /** FF-A version 1.0. */

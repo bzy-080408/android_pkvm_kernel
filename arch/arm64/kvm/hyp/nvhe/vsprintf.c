@@ -9,7 +9,7 @@
 #include <linux/ctype.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
-#include <linux/stdarg.h>
+#include <stdarg.h>
 #include <linux/stddef.h>
 #include <linux/string.h>
 
