@@ -198,6 +198,8 @@ struct kvm_arch {
 #define KVM_ARCH_FLAG_MTE_ENABLED			1
 	/* At least one vCPU has ran in the VM */
 #define KVM_ARCH_FLAG_HAS_RAN_ONCE			2
+	/* Guest has bought into the MMIO guard extension */
+#define KVM_ARCH_FLAG_MMIO_GUARD			3
 	unsigned long flags;
 
 	/*
