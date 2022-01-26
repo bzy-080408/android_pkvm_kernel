@@ -146,6 +146,17 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 			return PTR_ERR(stack_va);
 		stack_va += PAGE_SIZE;
 		per_cpu_ptr(&kvm_init_params, i)->stack_hyp_va = (u64) stack_va;
+
+		/*
+		 * Map the panic info pages as shared and transfer ownership to
+		 * the hypervisor.
+		 */
+		prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_SHARED_OWNED);
+		start = (void *)per_cpu_ptr(&kvm_init_params, i)->panic_info_hyp_va;
+		end = start + PAGE_SIZE;
+		ret = pkvm_create_mappings(start, end, prot);
+		if (ret)
+			return ret;
 	}
 
 	/*

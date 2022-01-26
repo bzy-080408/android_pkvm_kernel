@@ -50,6 +50,7 @@ DEFINE_STATIC_KEY_FALSE(kvm_protected_mode_initialized);
 DECLARE_KVM_HYP_PER_CPU(unsigned long, kvm_hyp_vector);
 
 static DEFINE_PER_CPU(unsigned long, kvm_arm_hyp_stack_page);
+DEFINE_PER_CPU(unsigned long, kvm_arm_hyp_panic_info_page);
 DECLARE_KVM_NVHE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
 
 /* The VMID used in the VTTBR */
@@ -1605,6 +1606,7 @@ static void cpu_prepare_hyp_mode(int cpu)
 	params->tcr_el2 = tcr;
 
 	params->stack_hyp_va = kern_hyp_va(per_cpu(kvm_arm_hyp_stack_page, cpu) + PAGE_SIZE);
+	params->panic_info_hyp_va = kern_hyp_va(per_cpu(kvm_arm_hyp_panic_info_page, cpu));
 	params->pgd_pa = kvm_mmu_get_httbr();
 	if (is_protected_kvm_enabled())
 		params->hcr_el2 = HCR_HOST_NVHE_PROTECTED_FLAGS;
@@ -1899,6 +1901,7 @@ static void teardown_hyp_mode(void)
 	for_each_possible_cpu(cpu) {
 		free_page(per_cpu(kvm_arm_hyp_stack_page, cpu));
 		free_pages(kvm_nvhe_sym(kvm_arm_hyp_percpu_base)[cpu], nvhe_percpu_order());
+		free_page(per_cpu(kvm_arm_hyp_panic_info_page, cpu));
 	}
 }
 
@@ -1991,6 +1994,24 @@ static int init_hyp_mode(void)
 	}
 
 	/*
+	 * Allocate panic_info pages for Hypervisor-mode.
+	 * This is used by the hypervisor to share its stack trace
+	 * with the host on a hyp_panic().
+	 */
+	for_each_possible_cpu(cpu) {
+		unsigned long panic_info_page;
+
+		panic_info_page = __get_free_page(GFP_KERNEL);
+		if (!panic_info_page) {
+			err = -ENOMEM;
+			goto out_err;
+		}
+
+		per_cpu(kvm_arm_hyp_panic_info_page, cpu) = panic_info_page;
+	}
+
+
+	/*
 	 * Allocate and initialize pages for Hypervisor-mode percpu regions.
 	 */
 	for_each_possible_cpu(cpu) {
@@ -2071,6 +2092,21 @@ static int init_hyp_mode(void)
 			goto out_err;
 		}
 	}
+
+	/*
+	 * Map the Hyp panic_info pages
+	 */
+	for_each_possible_cpu(cpu) {
+		char *panic_info_page = (char *)per_cpu(kvm_arm_hyp_panic_info_page, cpu);
+		err = create_hyp_mappings(panic_info_page, panic_info_page + PAGE_SIZE,
+					  PAGE_HYP);
+
+		if (err) {
+			kvm_err("Cannot map hyp panic_info page\n");
+			goto out_err;
+		}
+	}
+
 
 	for_each_possible_cpu(cpu) {
 		char *percpu_begin = (char *)kvm_nvhe_sym(kvm_arm_hyp_percpu_base)[cpu];
