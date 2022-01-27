@@ -21,6 +21,8 @@
 #include <nvhe/trap_handler.h>
 
 unsigned long hyp_nr_cpus;
+DEFINE_PER_CPU(unsigned long [PAGE_SIZE/sizeof(long)], hyp_overflow_stack)
+	__aligned(16);
 
 phys_addr_t pvmfw_base;
 phys_addr_t pvmfw_size;

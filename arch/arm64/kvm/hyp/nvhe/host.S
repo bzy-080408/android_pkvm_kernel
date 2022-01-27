@@ -171,13 +171,8 @@ SYM_FUNC_END(__host_hvc)
 	b	hyp_panic
 
 0:
-	/*
-	 * Reset SP to the top of the stack, to allow handling the hyp_panic.
-	 * This corrupts the stack but hyp_panic doesn't currently unwind
-	 * the stack nor does kallsyms have the nvhe symbols.
-	 */
-	ldr_this_cpu	x0, kvm_init_params + NVHE_INIT_STACK_HYP_VA, x1
-	mov	sp, x0
+	/* Switch to the overflow stack */
+	adr_this_cpu sp, hyp_overflow_stack + PAGE_SIZE, x0
 
 	b	hyp_panic
 .endm
