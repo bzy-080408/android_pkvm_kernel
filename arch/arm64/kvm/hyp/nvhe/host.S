@@ -174,7 +174,8 @@ SYM_FUNC_END(__host_hvc)
 	/* Switch to the overflow stack */
 	adr_this_cpu sp, hyp_overflow_stack + PAGE_SIZE, x0
 
-	b	hyp_panic
+	bl	hyp_panic_bad_stack
+	ASM_BUG()
 .endm
 
 .macro invalid_host_el1_vect

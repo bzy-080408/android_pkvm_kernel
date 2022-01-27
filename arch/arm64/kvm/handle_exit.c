@@ -24,6 +24,8 @@
 #define CREATE_TRACE_POINTS
 #include "trace_handle_exit.h"
 
+DECLARE_PER_CPU(unsigned long, kvm_arm_hyp_panic_info_page);
+
 typedef int (*exit_handle_fn)(struct kvm_vcpu *);
 
 static void kvm_handle_guest_serror(struct kvm_vcpu *vcpu, u32 esr)
@@ -233,6 +235,31 @@ static int handle_trap_exceptions(struct kvm_vcpu *vcpu)
 	return handled;
 }
 
+/* Print the HYP backtrace from the panic_info page */
+static void hyp_backtrace(u64 hyp_offset)
+{
+	unsigned long *panic_info =
+		(unsigned long *)*this_cpu_ptr(&kvm_arm_hyp_panic_info_page);
+	unsigned long pc = *panic_info++;
+	unsigned long va_mask = GENMASK_ULL(vabits_actual - 1, 0);
+
+	kvm_err("nVHE HYP call trace (vmlinux addresses):\n");
+
+	/* PC == 0 indicates the end of the backtrace. See: hyp_dump_backtrace() */
+	while (pc) {
+		pc &= va_mask;		/* Mask tags */
+
+		/*
+		 * The nVHE hyp symbols are not included by kallsyms to avoid
+		 * issues with aliasing. That means that the symbols cannot be
+		 * printed with the "%pS" format specifier, so fall back to
+		 * the vmlinux address.
+		 */
+		kvm_err(" [<%016llx>]\n", pc + hyp_offset);
+		pc = *panic_info++;
+	}
+}
+
 /*
  * Return > 0 to return to guest, < 0 on error, 0 (and set exit_reason) on
  * proper exit to userspace.
@@ -300,6 +327,7 @@ void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index)
 		kvm_handle_guest_serror(vcpu, kvm_vcpu_get_esr(vcpu));
 }
 
+
 void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr,
 					      u64 elr_virt, u64 elr_phys,
 					      u64 par, uintptr_t vcpu,
@@ -345,6 +373,8 @@ void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr,
 	 * hyp VAs to vmlinux addresses.
 	 */
 	kvm_err("Hyp Offset: 0x%llx\n", hyp_offset);
+
+	hyp_backtrace(hyp_offset);
 
 	panic("HYP panic:\nPS:%08llx PC:%016llx ESR:%08llx\nFAR:%016llx HPFAR:%016llx PAR:%016llx\nVCPU:%016lx\n",
 	      spsr, elr_virt, esr, far, hpfar, par, vcpu);

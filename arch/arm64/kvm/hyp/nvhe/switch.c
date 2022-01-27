@@ -28,6 +28,7 @@
 
 #include <nvhe/mem_protect.h>
 #include <nvhe/pkvm.h>
+#include <nvhe/stacktrace.h>
 
 /* Non-VHE specific context */
 DEFINE_PER_CPU(struct kvm_host_data, kvm_host_data);
@@ -364,8 +365,15 @@ void __noreturn hyp_panic(void)
 		__sysreg_restore_state_nvhe(host_ctxt);
 	}
 
+	hyp_dump_backtrace();
+
 	__hyp_do_panic(host_ctxt, spsr, elr, par);
 	unreachable();
+}
+
+void __noreturn hyp_panic_bad_stack(void)
+{
+	hyp_panic();
 }
 
 asmlinkage void kvm_unexpected_el2_exception(void)
