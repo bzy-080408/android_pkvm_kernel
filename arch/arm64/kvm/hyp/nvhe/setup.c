@@ -11,6 +11,7 @@
 #include <asm/kvm_pkvm.h>
 
 #include <nvhe/early_alloc.h>
+#include <nvhe/ffa.h>
 #include <nvhe/gfp.h>
 #include <nvhe/memory.h>
 #include <nvhe/mem_protect.h>
@@ -308,6 +309,9 @@ void __noreturn __pkvm_init_finalise(void)
 	if (ret)
 		goto out;
 
+	ret = hyp_ffa_init();
+	if (ret)
+		goto out;
 out:
 	/*
 	 * We tail-called to here from handle___pkvm_init() and will not return,
