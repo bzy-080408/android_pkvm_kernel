@@ -242,20 +242,15 @@ static void hyp_backtrace(u64 hyp_offset)
 		(unsigned long *)*this_cpu_ptr(&kvm_arm_hyp_panic_info_page);
 	unsigned long pc = *panic_info++;
 	unsigned long va_mask = GENMASK_ULL(vabits_actual - 1, 0);
+	unsigned long addr;
 
-	kvm_err("nVHE HYP call trace (vmlinux addresses):\n");
+	kvm_err("nVHE HYP call trace:\n");
 
 	/* PC == 0 indicates the end of the backtrace. See: hyp_dump_backtrace() */
 	while (pc) {
 		pc &= va_mask;		/* Mask tags */
-
-		/*
-		 * The nVHE hyp symbols are not included by kallsyms to avoid
-		 * issues with aliasing. That means that the symbols cannot be
-		 * printed with the "%pS" format specifier, so fall back to
-		 * the vmlinux address.
-		 */
-		kvm_err(" [<%016llx>]\n", pc + hyp_offset);
+		addr = pc + hyp_offset;
+		kvm_err("[<%016llx>] %pB\n", addr, addr);
 		pc = *panic_info++;
 	}
 }
@@ -335,13 +330,8 @@ void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr,
 	u64 elr_in_kimg = __phys_to_kimg(elr_phys);
 	u64 hyp_offset = elr_in_kimg - kaslr_offset() - elr_virt;
 	u64 mode = spsr & PSR_MODE_MASK;
+	u64 panic_addr = elr_virt + hyp_offset;
 
-	/*
-	 * The nVHE hyp symbols are not included by kallsyms to avoid issues
-	 * with aliasing. That means that the symbols cannot be printed with the
-	 * "%pS" format specifier, so fall back to the vmlinux address if
-	 * there's no better option.
-	 */
 	if (mode != PSR_MODE_EL2t && mode != PSR_MODE_EL2h) {
 		kvm_err("Invalid host exception to nVHE hyp!\n");
 	} else if (ESR_ELx_EC(esr) == ESR_ELx_EC_BRK64 &&
@@ -361,9 +351,9 @@ void __noreturn __cold nvhe_hyp_panic_handler(u64 esr, u64 spsr,
 		if (file)
 			kvm_err("nVHE hyp BUG at: %s:%u!\n", file, line);
 		else
-			kvm_err("nVHE hyp BUG at: %016llx!\n", elr_virt + hyp_offset);
+			kvm_err("nVHE hyp BUG at: [<%016llx>] %pB!\n", panic_addr, panic_addr);
 	} else {
-		kvm_err("nVHE hyp panic at: %016llx!\n", elr_virt + hyp_offset);
+		kvm_err("nVHE hyp panic at: [<%016llx>] %pB!\n", panic_addr, panic_addr);
 	}
 
 	/*
