@@ -357,6 +357,86 @@ static int __init test_id_get(void)
 	return 0;
 }
 
+/*
+ * Returns 0 if call is successful and the value of a2 matches the result's a2.
+ */
+static bool test_ffa_feature(u32 feature_id, bool supported, u64 a2)
+{
+	struct arm_smccc_1_2_regs ret;
+	const struct arm_smccc_1_2_regs args = { .a0 = FFA_FEATURES,
+						 .a1 = feature_id };
+
+	arm_smccc_1_2_smc(&args, &ret);
+
+	if (supported) {
+		if (ret.a0 != FFA_SUCCESS) {
+			pr_err("FFA_FEATURES: expected FFA_SUCCESS");
+			print_error(ret);
+			return -1;
+		}
+		if (a2 != ret.a2) {
+			pr_err("FFA_FEATURES: Expected ret.a2 0x%llx but got 0x%llx.",
+				a2, ret.a2);
+			return -1;
+		}
+	} else if (ret.a0 != FFA_ERROR || ret.a2 != FFA_RET_NOT_SUPPORTED) {
+		pr_err("FFA_FEATURES: expected FFA_ERROR:FFA_RET_NOT_SUPPORTED");
+		print_error(ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * Possible return values when querying the minimum buffer size and alignment
+ * boundary for the RX and TX buffers via FFA_FEATURES:FFA_FN64_RXTX_MAP.
+ */
+#if PAGE_SIZE == SZ_4K
+#define FFA_FEAT_BUFFER_ALIGN (0b00U)
+#elif PAGE_SIZE == SZ_16K
+#define FFA_FEAT_BUFFER_ALIGN (0b10U)
+#elif PAGE_SIZE == SZ_64K
+#define FFA_FEAT_BUFFER_ALIGN (0b01U)
+#else
+#error "Unsupported PAGE_SIZE."
+#endif
+
+static int __init test_ffa_features(void)
+{
+	int ret = 0;
+
+	ret |= test_ffa_feature(FFA_RXTX_UNMAP, true, 0);
+	ret |= test_ffa_feature(FFA_ID_GET, true, 0);
+
+	if (is_protected_kvm_enabled()) {
+		ret |= test_ffa_feature(FFA_MEM_LEND, true, 0);
+		ret |= test_ffa_feature(FFA_FN64_MEM_LEND, true, 0);
+		ret |= test_ffa_feature(FFA_MEM_SHARE, true, 0);
+		ret |= test_ffa_feature(FFA_FN64_MEM_SHARE, true, 0);
+
+		ret |= test_ffa_feature(FFA_FN64_RXTX_MAP, true, FFA_FEAT_BUFFER_ALIGN);
+
+		ret |= test_ffa_feature(FFA_FN64_MEM_RETRIEVE_REQ, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_RETRIEVE_RESP, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_RELINQUISH, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_OP_PAUSE, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_OP_RESUME, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_FRAG_RX, false, 0);
+		ret |= test_ffa_feature(FFA_FN64_MEM_DONATE, false, 0);
+		ret |= test_ffa_feature(FFA_MSG_SEND, false, 0);
+		ret |= test_ffa_feature(FFA_MSG_POLL, false, 0);
+		ret |= test_ffa_feature(FFA_MSG_WAIT, false, 0);
+		ret |= test_ffa_feature(FFA_MSG_SEND_DIRECT_REQ, false, 0);
+		ret |= test_ffa_feature(FFA_MSG_SEND_DIRECT_RESP, false, 0);
+		ret |= test_ffa_feature(FFA_RXTX_MAP, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_DONATE, false, 0);
+		ret |= test_ffa_feature(FFA_MEM_RETRIEVE_REQ, false, 0);
+	}
+
+	return ret ? -1 : 0;
+}
+
 static int set_up_mailbox(void)
 {
 	struct arm_smccc_1_2_regs ret;
@@ -601,6 +681,8 @@ static void __init selftest(void)
 	KSTM_CHECK_ZERO(test_get_version());
 	pr_info("test_id_get");
 	KSTM_CHECK_ZERO(test_id_get());
+	pr_info("test_ffa_features");
+	KSTM_CHECK_ZERO(test_ffa_features());
 	pr_info("test_rxtx_map");
 	KSTM_CHECK_ZERO(test_rxtx_map());
 	pr_info("test_memory_share");
