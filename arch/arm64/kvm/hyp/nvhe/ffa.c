@@ -495,6 +495,7 @@ static bool do_ffa_features(struct arm_smccc_res *res,
 
 	switch (feat_func_id) {
 	case FFA_RXTX_UNMAP:
+	case FFA_ID_GET:
 		ffa_to_smccc_res(res, FFA_RET_SUCCESS);
 		return true;
 
@@ -544,6 +545,12 @@ static bool do_ffa_features(struct arm_smccc_res *res,
 	return false;
 }
 
+static void do_ffa_id_get(struct arm_smccc_res *res,
+			  struct kvm_cpu_context *ctxt)
+{
+	ffa_to_smccc_prop_res(res, FFA_RET_SUCCESS, HOST_FFA_ID);
+}
+
 bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(u32, func_id, host_ctxt, 0);
@@ -573,6 +580,9 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	case FFA_FEATURES:
 		if (!do_ffa_features(&res, host_ctxt))
 			return false; /* Pass through */
+		goto out_handled;
+	case FFA_ID_GET:
+		do_ffa_id_get(&res, host_ctxt);
 		goto out_handled;
 	case FFA_MEM_LEND:
 	case FFA_FN64_MEM_LEND:
