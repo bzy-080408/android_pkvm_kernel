@@ -24,12 +24,22 @@ static void ffa_to_smccc_error(struct arm_smccc_res *res, u64 errno)
 	};
 }
 
-static void ffa_to_smccc_res(struct arm_smccc_res *res, int ret)
+/*
+ * FFA_RET_SUCCESS may return function specific results in w2/x2-w7/x7.
+ * So far we only need w2/x2.
+ */
+static void ffa_to_smccc_prop_res(struct arm_smccc_res *res, int ret, u64 x2)
 {
 	if (ret == FFA_RET_SUCCESS)
-		*res = (struct arm_smccc_res) { .a0 = FFA_SUCCESS };
+		*res = (struct arm_smccc_res) { .a0 = FFA_SUCCESS,
+						.a2 = x2 };
 	else
 		ffa_to_smccc_error(res, ret);
+}
+
+static void ffa_to_smccc_res(struct arm_smccc_res *res, int ret)
+{
+	ffa_to_smccc_prop_res(res, ret, 0);
 }
 
 static void ffa_set_retval(struct kvm_cpu_context *ctxt,
@@ -471,9 +481,72 @@ out_unlock:
 	return;
 }
 
+/*
+ * Filter out advertising unsupported features, and advertise features supported
+ * by hyp with the properties that hyp supports.
+ *
+ * Return true if the feature query has been handled, or false if the query
+ * should pass through.
+ */
+static bool do_ffa_features(struct arm_smccc_res *res,
+			    struct kvm_cpu_context *ctxt)
+{
+	DECLARE_REG(u32, feat_func_id, ctxt, 1);
+
+	switch (feat_func_id) {
+	case FFA_RXTX_UNMAP:
+		ffa_to_smccc_res(res, FFA_RET_SUCCESS);
+		return true;
+
+	case FFA_MEM_LEND:
+	case FFA_FN64_MEM_LEND:
+	case FFA_MEM_SHARE:
+	case FFA_FN64_MEM_SHARE:
+		/*
+		 * 0 for no support for transmission of a memory transaction
+		 * descriptor in a buffer dynamically allocated by the endpoint.
+		 */
+		ffa_to_smccc_prop_res(res, FFA_RET_SUCCESS, 0);
+		return true;
+
+	case FFA_FN64_RXTX_MAP:
+		/*
+		 * Advertise the minimum buffer size and alignment boundary for
+		 * the RX and TX buffers supported by hyp.
+		 */
+		ffa_to_smccc_prop_res(res, FFA_RET_SUCCESS, FFA_FEAT_BUFFER_ALIGN);
+		return true;
+
+	/* Not supported */
+	case FFA_FN64_MEM_RETRIEVE_REQ:
+	case FFA_MEM_RETRIEVE_RESP:
+	case FFA_MEM_RELINQUISH:
+	case FFA_MEM_OP_PAUSE:
+	case FFA_MEM_OP_RESUME:
+	case FFA_MEM_FRAG_RX:
+	case FFA_FN64_MEM_DONATE:
+	case FFA_MSG_SEND:
+	case FFA_MSG_POLL:
+	case FFA_MSG_WAIT:
+	case FFA_MSG_SEND_DIRECT_REQ:
+	case FFA_MSG_SEND_DIRECT_RESP:
+	case FFA_RXTX_MAP:
+	case FFA_MEM_DONATE:
+	case FFA_MEM_RETRIEVE_REQ:
+		ffa_to_smccc_res(res, FFA_RET_NOT_SUPPORTED);
+		return true;
+
+	/* Pass through */
+	default:
+		break;
+	}
+
+	return false;
+}
+
 bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(u64, func_id, host_ctxt, 0);
+	DECLARE_REG(u32, func_id, host_ctxt, 0);
 	struct arm_smccc_res res;
 
 	if (!is_ffa_call(func_id))
@@ -496,6 +569,10 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 		goto out_handled;
 	case FFA_MEM_FRAG_TX:
 		do_ffa_mem_frag_tx(&res, host_ctxt);
+		goto out_handled;
+	case FFA_FEATURES:
+		if (!do_ffa_features(&res, host_ctxt))
+			return false; /* Pass through */
 		goto out_handled;
 	case FFA_MEM_LEND:
 	case FFA_FN64_MEM_LEND:

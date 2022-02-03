@@ -94,6 +94,20 @@
  */
 #define FFA_PAGE_SIZE		SZ_4K
 
+/*
+ * Possible return values when querying the minimum buffer size and alignment
+ * boundary for the RX and TX buffers via FFA_FEATURES:FFA_FN64_RXTX_MAP.
+ */
+#if PAGE_SIZE == SZ_4K
+#define FFA_FEAT_BUFFER_ALIGN (0b00U)
+#elif PAGE_SIZE == SZ_16K
+#define FFA_FEAT_BUFFER_ALIGN (0b10U)
+#elif PAGE_SIZE == SZ_64K
+#define FFA_FEAT_BUFFER_ALIGN (0b01U)
+#else
+#error "Unsupported PAGE_SIZE."
+#endif
+
 /* FFA Bus/Device/Driver related */
 struct ffa_device {
 	int vm_id;
