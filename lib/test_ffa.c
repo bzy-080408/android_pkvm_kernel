@@ -544,71 +544,93 @@ static int __init test_memory_share(void)
 /**
  * Memory can be shared to Trusty SPD in multiple fragments.
  */
-static int __init test_memory_share_fragmented(void)
+static int __init test_memory_share_fragmented(ffa_memory_handle_t *ret_handle)
 {
-	uint8_t *page0 = (uint8_t *)get_zeroed_page(GFP_ATOMIC);
-	uint8_t *page1 = (uint8_t *)get_zeroed_page(GFP_ATOMIC);
-	const hpa_t address0 = virt_to_phys(page0);
-	const hpa_t address1 = virt_to_phys(page1);
-	struct ffa_mem_region_addr_range constituents[] = {
-		{ .address = address0, .pg_cnt = 1 },
-		{ .address = address1, .pg_cnt = 1 },
-	};
-	int i;
-	ffa_memory_handle_t handle;
-	uint32_t total_length;
-	uint32_t fragment_length;
+	uint8_t *ho_page = (uint8_t *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, 10);
+	struct ffa_mem_region_addr_range constituents[512];
+	uint32_t nr_constituents_remaining;
 	struct arm_smccc_1_2_regs ret;
+	ffa_memory_handle_t handle, received_handle;
+	uint32_t constituent_idx;
+	uint32_t fragment_length;
+	uint32_t total_length;
+	uint32_t expected;
+	phys_addr_t phys;
+	int i;
 
-	if (page0 == NULL || page1 == NULL) {
+	if (!ho_page) {
 		pr_err("Failed to allocate pages to share");
 		return -1;
 	}
+	phys = virt_to_phys(ho_page);
 
 	/* Dirty the memory before sharing it. */
-	memset(page0, 'b', FFA_PAGE_SIZE);
-	memset(page1, 'b', FFA_PAGE_SIZE);
+	memset(ho_page, 'b', 1024);
 
-	if (ffa_memory_region_init(
+	/*
+	 * Put every other page in the constitutents. Non-contiguity guarantees
+	 * a long memory descriptor.
+	 */
+	for (i = 0; i < 1024; i += 2) {
+		constituents[i/2] = (struct ffa_mem_region_addr_range) {
+						.address = phys + i * PAGE_SIZE,
+						.pg_cnt = 1
+				    };
+	}
+
+	nr_constituents_remaining = ffa_memory_region_init(
 		    tx_buffer, MAILBOX_SIZE, HOST_VM_ID, TEE_VM_ID,
 		    constituents, ARRAY_SIZE(constituents), 0, 0, FFA_MEM_RW, 0,
 		    FFA_MEM_NORMAL, FFA_MEM_WRITE_BACK, FFA_MEM_INNER_SHAREABLE,
-		    &total_length, &fragment_length) != 0) {
-		pr_err("Failed to initialise memory region");
+		    &total_length, &fragment_length);
+
+	if (!nr_constituents_remaining) {
+		pr_err("Fragmented descriptor unexpectedly fits in first fragment.\n");
 		return -1;
 	}
-	/* Send the first fragment without the last constituent. */
-	fragment_length -= sizeof(struct ffa_mem_region_addr_range);
+
 	ret = ffa_mem_share(total_length, fragment_length);
 	if (ret.a0 != FFA_MEM_FRAG_RX || ret.a3 != fragment_length) {
 		pr_err("Failed to send first fragment.");
 		return -1;
 	}
 	handle = ffa_frag_handle(ret);
+	pr_info("Got handle %#x from SHARE", handle);
 
-	/* Send second fragment. */
-	if (ffa_memory_fragment_init(tx_buffer, MAILBOX_SIZE, constituents + 1,
-				     1, &fragment_length) != 0) {
-		return -1;
-	}
-	ret = ffa_mem_frag_tx(handle, fragment_length);
-	if (ret.a0 != FFA_SUCCESS || ffa_mem_success_handle(ret) != handle) {
-		pr_err("Failed to send second fragment.");
-		return -1;
-	}
-	pr_info("Got handle %#x.", handle);
-	if (handle == 0 || (handle & FFA_MEMORY_HANDLE_ALLOCATOR_MASK) ==
-				   FFA_MEMORY_HANDLE_ALLOCATOR_HYPERVISOR) {
-		return -1;
+	/* Send next fragments. */
+	constituent_idx = ARRAY_SIZE(constituents) - nr_constituents_remaining;
+	while (nr_constituents_remaining) {
+		uint32_t delta = ffa_memory_fragment_init(tx_buffer, MAILBOX_SIZE, &constituents[constituent_idx],
+						        nr_constituents_remaining, &fragment_length);
+		constituent_idx += nr_constituents_remaining - delta;
+		nr_constituents_remaining = delta;
+
+		ret = ffa_mem_frag_tx(handle, fragment_length);
+		if (nr_constituents_remaining) {
+			expected = FFA_MEM_FRAG_RX;
+			received_handle = ffa_frag_handle(ret);
+		} else {
+			expected = FFA_SUCCESS;
+			received_handle = ffa_mem_success_handle(ret);
+		}
+		if (ret.a0 != expected || received_handle != handle) {
+			pr_err("Failed to send next fragment.");
+			return -1;
+		}
+		pr_info("Got handle %#x from FRAG_TX", handle);
+		if (handle == 0 || (handle & FFA_MEMORY_HANDLE_ALLOCATOR_MASK) ==
+				FFA_MEMORY_HANDLE_ALLOCATOR_HYPERVISOR) {
+			return -1;
+		}
 	}
 
 	/* Make sure we can still write to it. */
-	for (i = 0; i < FFA_PAGE_SIZE; ++i) {
-		page0[i] = i;
-		page1[i] = i;
-	}
+	memset(ho_page, 'a', 1024);
 
 	/* Leak the shared pages, so they don't get reused for something else. */
+
+	if (ret_handle)
+		*ret_handle = handle;
 
 	return 0;
 }
@@ -666,6 +688,26 @@ static int __init test_memory_reclaim(void)
 	return 0;
 }
 
+static int __init test_memory_reclaim_fragmented(void)
+{
+	struct arm_smccc_1_2_regs ret;
+	ffa_memory_handle_t handle;
+
+	if (test_memory_share_fragmented(&handle)) {
+		pr_err("Failed to issue a fragmented share");
+		return -1;
+	}
+
+	pr_info("Reclaiming handle %#x.", handle);
+	ret = ffa_mem_reclaim(handle, 0);
+	if (ret.a0 != FFA_SUCCESS) {
+		pr_err("Failed to reclaim fragmented descriptor");
+		return -1;
+	}
+
+	return 0;
+}
+
 static void __init selftest(void)
 {
 	tx_buffer = (void *)get_zeroed_page(GFP_ATOMIC);
@@ -688,11 +730,13 @@ static void __init selftest(void)
 	pr_info("test_memory_share");
 	KSTM_CHECK_ZERO(test_memory_share());
 	pr_info("test_memory_share_fragmented");
-	KSTM_CHECK_ZERO(test_memory_share_fragmented());
+	KSTM_CHECK_ZERO(test_memory_share_fragmented(NULL));
 	pr_info("test_memory_reclaim_invalid");
 	KSTM_CHECK_ZERO(test_memory_reclaim_invalid());
 	pr_info("test_memory_reclaim");
 	KSTM_CHECK_ZERO(test_memory_reclaim());
+	pr_info("test_memory_reclaim_fragmented");
+	KSTM_CHECK_ZERO(test_memory_reclaim_fragmented());
 }
 
 KSTM_MODULE_LOADERS(test_ffa);
