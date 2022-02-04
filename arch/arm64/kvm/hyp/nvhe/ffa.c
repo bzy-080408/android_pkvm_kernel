@@ -75,6 +75,15 @@ static int spmd_unmap_ffa_buffers(void)
 	return res.a0 == FFA_SUCCESS ? FFA_RET_SUCCESS : res.a2;
 }
 
+static void spmd_mem_frag_tx(struct arm_smccc_res *res, u32 handle_lo,
+			     u32 handle_hi, u32 fraglen, u32 endpoint_id)
+{
+	arm_smccc_1_1_smc(FFA_MEM_FRAG_TX,
+			  handle_lo, handle_hi, fraglen, endpoint_id,
+			  0, 0, 0,
+			  res);
+}
+
 static void spmd_mem_share(struct arm_smccc_res *res, u32 len, u32 fraglen)
 {
 	arm_smccc_1_1_smc(FFA_FN64_MEM_SHARE,
@@ -249,6 +258,53 @@ static int ffa_host_unshare_ranges(struct ffa_mem_region_addr_range *ranges,
 	return ret;
 }
 
+static void do_ffa_mem_frag_tx(struct arm_smccc_res *res,
+			       struct kvm_cpu_context *ctxt)
+{
+	DECLARE_REG(u32, handle_lo, ctxt, 1);
+	DECLARE_REG(u32, handle_hi, ctxt, 2);
+	DECLARE_REG(u32, fraglen, ctxt, 3);
+	DECLARE_REG(u32, endpoint_id, ctxt, 4);
+	struct ffa_mem_region_addr_range *buf;
+	int ret = FFA_RET_INVALID_PARAMETERS;
+	u32 nr_ranges;
+
+	if (fraglen > PAGE_SIZE || fraglen % sizeof(*buf))
+		goto out;
+
+	hyp_spin_lock(&host_kvm.ffa.lock);
+	if (!host_kvm.ffa.tx)
+		goto out_unlock;
+
+	buf = ffa_buffers.tx;
+	memcpy(buf, host_kvm.ffa.tx, fraglen);
+	nr_ranges = fraglen / sizeof(*buf);
+
+	ret = ffa_host_share_ranges(buf, nr_ranges);
+	if (ret)
+		goto out_unlock;
+
+	spmd_mem_frag_tx(res, handle_lo, handle_hi, fraglen, endpoint_id);
+	if (res->a0 != FFA_SUCCESS && res->a0 != FFA_MEM_FRAG_RX)
+		WARN_ON(ffa_host_unshare_ranges(buf, nr_ranges));
+
+out_unlock:
+	hyp_spin_unlock(&host_kvm.ffa.lock);
+out:
+	if (ret)
+		ffa_to_smccc_res(res, ret);
+
+	/*
+	 * If for any reason this did not succeed, we're in trouble as we have
+	 * now lost the content of the previous fragments and we can't rollback
+	 * the host stage-2 changes. The pages previously marked as shared will
+	 * remain stuck in that state forever, hence preventing the host from
+	 * sharing/donating them again and may possibly lead to subsequent
+	 * failures, but this will not compromise confidentiality.
+	 */
+	return;
+}
+
 static void do_ffa_mem_share(struct arm_smccc_res *res,
 			     struct kvm_cpu_context *ctxt)
 {
@@ -257,17 +313,12 @@ static void do_ffa_mem_share(struct arm_smccc_res *res,
 	DECLARE_REG(u64, addr_mbz, ctxt, 3);
 	DECLARE_REG(u32, npages_mbz, ctxt, 4);
 	struct ffa_composite_mem_region *reg;
+	u32 offset, nr_ranges, expected;
 	struct ffa_mem_region *buf;
 	int ret = 0;
-	u32 offset;
 
 	if (addr_mbz || npages_mbz || fraglen > len || fraglen > PAGE_SIZE) {
 		ret = FFA_RET_INVALID_PARAMETERS;
-		goto out;
-	}
-
-	if (fraglen < len) {
-		ret = FFA_RET_ABORTED;
 		goto out;
 	}
 
@@ -298,21 +349,22 @@ static void do_ffa_mem_share(struct arm_smccc_res *res,
 	}
 
 	reg = (void *)buf + offset;
-	if (fraglen < offset + sizeof(struct ffa_composite_mem_region) +
-		      reg->addr_range_cnt *
-		      sizeof(struct ffa_mem_region_addr_range)) {
+	nr_ranges = ((void *)buf + fraglen) - (void *)reg->constituents;
+	if (nr_ranges % sizeof(reg->constituents[0])) {
 		ret = FFA_RET_INVALID_PARAMETERS;
 		goto out_unlock;
 	}
 
-	ret = ffa_host_share_ranges(reg->constituents, reg->addr_range_cnt);
+	nr_ranges /= sizeof(reg->constituents[0]);
+	ret = ffa_host_share_ranges(reg->constituents, nr_ranges);
 	if (ret)
 		goto out_unlock;
 
 	spmd_mem_share(res, len, fraglen);
-	if (res->a0 != FFA_SUCCESS) {
+	expected = (fraglen == len) ? FFA_SUCCESS : FFA_MEM_FRAG_RX;
+	if (res->a0 != expected) {
 		WARN_ON(ffa_host_unshare_ranges(reg->constituents,
-						reg->addr_range_cnt));
+						nr_ranges));
 	}
 
 out_unlock:
@@ -409,9 +461,11 @@ bool kvm_host_ffa_handler(struct kvm_cpu_context *host_ctxt)
 	case FFA_MEM_RECLAIM:
 		do_ffa_mem_reclaim(&res, host_ctxt);
 		goto out_handled;
+	case FFA_MEM_FRAG_TX:
+		do_ffa_mem_frag_tx(&res, host_ctxt);
+		goto out_handled;
 	case FFA_MEM_LEND:
 	case FFA_FN64_MEM_LEND:
-	case FFA_MEM_FRAG_TX:
 		break;
 	/* Unsupported memory management calls */
 	case FFA_FN64_MEM_RETRIEVE_REQ:
