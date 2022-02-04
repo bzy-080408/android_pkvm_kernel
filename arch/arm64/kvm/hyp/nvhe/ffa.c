@@ -84,6 +84,15 @@ static void spmd_mem_frag_tx(struct arm_smccc_res *res, u32 handle_lo,
 			  res);
 }
 
+static void spmd_mem_frag_rx(struct arm_smccc_res *res, u32 handle_lo,
+			     u32 handle_hi, u32 fragoff)
+{
+	arm_smccc_1_1_smc(FFA_MEM_FRAG_RX,
+			  handle_lo, handle_hi, fragoff,
+			  0, 0, 0, 0,
+			  res);
+}
+
 static void spmd_mem_share(struct arm_smccc_res *res, u32 len, u32 fraglen)
 {
 	arm_smccc_1_1_smc(FFA_FN64_MEM_SHARE,
@@ -381,10 +390,10 @@ static void do_ffa_mem_reclaim(struct arm_smccc_res *res,
 	DECLARE_REG(u32, handle_lo, ctxt, 1);
 	DECLARE_REG(u32, handle_hi, ctxt, 2);
 	DECLARE_REG(u32, flags, ctxt, 3);
+	u32 offset, len, fraglen, fragoff, nr_ranges;
 	struct ffa_composite_mem_region *reg;
 	struct ffa_mem_region *buf;
 	int ret = 0;
-	u32 offset;
 	u64 handle;
 
 	handle = PACK_HANDLE(handle_lo, handle_hi);
@@ -402,11 +411,8 @@ static void do_ffa_mem_reclaim(struct arm_smccc_res *res,
 	if (res->a0 != FFA_MEM_RETRIEVE_RESP)
 		goto out_unlock;
 
-	/* Check for fragmentation */
-	if (res->a1 != res->a2) {
-		ret = FFA_RET_ABORTED;
-		goto out_unlock;
-	}
+	len = res->a1;
+	fraglen = res->a2;
 
 	offset = buf->ep_mem_access[0].composite_off;
 	/*
@@ -420,11 +426,38 @@ static void do_ffa_mem_reclaim(struct arm_smccc_res *res,
 	}
 
 	reg = (void *)buf + offset;
-	ret = ffa_host_unshare_ranges(reg->constituents, reg->addr_range_cnt);
+	nr_ranges = ((void *)buf + fraglen) - (void *)reg->constituents;
+	if (nr_ranges % sizeof(reg->constituents[0])) {
+		ret = FFA_RET_INVALID_PARAMETERS;
+		goto out_unlock;
+	}
+
+	nr_ranges /= sizeof(reg->constituents[0]);
+	ret = ffa_host_unshare_ranges(reg->constituents, nr_ranges);
 	if (ret)
 		goto out_unlock;
 
+	for (fragoff = fraglen; fragoff < len; fragoff += fraglen) {
+		struct ffa_mem_region_addr_range *ranges = ffa_buffers.rx;
+
+		spmd_mem_frag_rx(res, handle_lo, handle_hi, fragoff);
+		fraglen = res->a3;
+		nr_ranges = fraglen / sizeof(*ranges);
+
+		/*
+		 * There should be no reason for the SPMD to reply with anything
+		 * else than FRAG_TX, and by now we've lost the previous
+		 * fragments so we can't rollback the host stage-2 page-table
+		 * changes. We can't just bail out otherwise nothing will
+		 * prevent the host from sharing/donating these pages to guests,
+		 * which is a security problem, so this must be fatal.
+		 */
+		BUG_ON(res->a0 != FFA_MEM_FRAG_TX);
+		BUG_ON(ffa_host_unshare_ranges(ranges, nr_ranges));
+	}
+
 	spmd_mem_reclaim(res, handle_lo, handle_hi, flags);
+
 	if (res->a0 != FFA_SUCCESS) {
 		WARN_ON(ffa_host_share_ranges(reg->constituents,
 					      reg->addr_range_cnt));
