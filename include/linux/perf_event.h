@@ -1148,10 +1148,12 @@ static inline void perf_arch_fetch_caller_regs(struct pt_regs *regs, unsigned lo
  * NOTE: assumes @regs is otherwise already 0 filled; this is important for
  * things like PERF_SAMPLE_REGS_INTR.
  */
+#ifndef CBMC_PROVER
 static inline void perf_fetch_caller_regs(struct pt_regs *regs)
 {
 	perf_arch_fetch_caller_regs(regs, CALLER_ADDR0);
 }
+#endif
 
 static __always_inline void
 perf_sw_event(u32 event_id, u64 nr, struct pt_regs *regs, u64 addr)

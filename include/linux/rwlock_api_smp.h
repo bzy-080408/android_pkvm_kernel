@@ -170,12 +170,14 @@ static inline void __raw_read_lock_irq(rwlock_t *lock)
 	LOCK_CONTENDED(lock, do_raw_read_trylock, do_raw_read_lock);
 }
 
+#ifndef CBMC_PROVER
 static inline void __raw_read_lock_bh(rwlock_t *lock)
 {
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 	rwlock_acquire_read(&lock->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_read_trylock, do_raw_read_lock);
 }
+#endif
 
 static inline unsigned long __raw_write_lock_irqsave(rwlock_t *lock)
 {
@@ -197,12 +199,14 @@ static inline void __raw_write_lock_irq(rwlock_t *lock)
 	LOCK_CONTENDED(lock, do_raw_write_trylock, do_raw_write_lock);
 }
 
+#ifndef CBMC_PROVER
 static inline void __raw_write_lock_bh(rwlock_t *lock)
 {
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 	rwlock_acquire(&lock->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(lock, do_raw_write_trylock, do_raw_write_lock);
 }
+#endif
 
 static inline void __raw_write_lock(rwlock_t *lock)
 {
@@ -244,12 +248,14 @@ static inline void __raw_read_unlock_irq(rwlock_t *lock)
 	preempt_enable();
 }
 
+#ifndef CBMC_PROVER
 static inline void __raw_read_unlock_bh(rwlock_t *lock)
 {
 	rwlock_release(&lock->dep_map, _RET_IP_);
 	do_raw_read_unlock(lock);
 	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 }
+#endif
 
 static inline void __raw_write_unlock_irqrestore(rwlock_t *lock,
 					     unsigned long flags)
@@ -268,11 +274,13 @@ static inline void __raw_write_unlock_irq(rwlock_t *lock)
 	preempt_enable();
 }
 
+#ifndef CBMC_PROVER
 static inline void __raw_write_unlock_bh(rwlock_t *lock)
 {
 	rwlock_release(&lock->dep_map, _RET_IP_);
 	do_raw_write_unlock(lock);
 	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 }
+#endif
 
 #endif /* __LINUX_RWLOCK_API_SMP_H */

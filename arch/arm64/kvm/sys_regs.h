@@ -80,6 +80,7 @@ struct sys_reg_desc {
 #define REG_HIDDEN		(1 << 0) /* hidden from userspace and guest */
 #define REG_RAZ			(1 << 1) /* RAZ from userspace and guest */
 
+#ifndef CBMC_PROVER
 static __printf(2, 3)
 inline void print_sys_reg_msg(const struct sys_reg_params *p,
 				       char *fmt, ...)
@@ -99,6 +100,7 @@ static inline void print_sys_reg_instr(const struct sys_reg_params *p)
 	/* GCC warns on an empty format string */
 	print_sys_reg_msg(p, "%s", "");
 }
+#endif // CBMC_PROVER
 
 static inline bool ignore_write(struct kvm_vcpu *vcpu,
 				const struct sys_reg_params *p)

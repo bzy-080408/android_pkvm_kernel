@@ -183,6 +183,15 @@ archclean:
 	$(Q)$(MAKE) $(clean)=$(boot)
 
 ifeq ($(KBUILD_EXTMOD),)
+
+PHONY += kvm_el2
+kvm_el2: prepare
+	$(Q)$(MAKE) $(build)=arch/arm64/kvm/hyp/nvhe arch/arm64/kvm/hyp/nvhe/kvm_nvhe.o
+
+PHONY += kvm_el2_gb
+kvm_el2_gb: prepare
+	$(Q)$(MAKE) $(build)=arch/arm64/kvm/hyp/nvhe arch/arm64/kvm/hyp/nvhe/kvm_nvhe.gb
+
 # We need to generate vdso-offsets.h before compiling certain files in kernel/.
 # In order to do that, we should use the archprepare target, but we can't since
 # asm-offsets.h is included in some files used to generate vdso-offsets.h, and

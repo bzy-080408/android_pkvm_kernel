@@ -93,10 +93,12 @@ extern int ptrauth_set_enabled_keys(struct task_struct *tsk, unsigned long keys,
 				    unsigned long enabled);
 extern int ptrauth_get_enabled_keys(struct task_struct *tsk);
 
+#ifndef CBMC_PROVER
 static inline unsigned long ptrauth_strip_insn_pac(unsigned long ptr)
 {
 	return ptrauth_clear_pac(ptr);
 }
+#endif
 
 static __always_inline void ptrauth_enable(void)
 {

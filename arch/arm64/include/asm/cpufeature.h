@@ -540,6 +540,7 @@ cpuid_feature_extract_unsigned_field(u64 features, int field)
 	return cpuid_feature_extract_unsigned_field_width(features, field, 4);
 }
 
+#ifndef CBMC_PROVER
 /*
  * Fields that identify the version of the Performance Monitors Extension do
  * not follow the standard ID scheme. See ARM DDI 0487E.a page D13-2825,
@@ -567,6 +568,7 @@ static inline u64 arm64_ftr_mask(const struct arm64_ftr_bits *ftrp)
 {
 	return (u64)GENMASK(ftrp->shift + ftrp->width - 1, ftrp->shift);
 }
+#endif
 
 static inline u64 arm64_ftr_reg_user_value(const struct arm64_ftr_reg *reg)
 {

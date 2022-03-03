@@ -6,6 +6,14 @@
 asflags-y := -D__KVM_NVHE_HYPERVISOR__ -D__DISABLE_EXPORTS
 ccflags-y := -D__KVM_NVHE_HYPERVISOR__ -D__DISABLE_EXPORTS -D__DISABLE_TRACE_MMIO__
 
+incdir := $(srctree)/$(src)/../include
+asflags-y += 	-I$(incdir)
+ccflags-y += 	-I$(incdir)				\
+		-fno-stack-protector			\
+		-DDISABLE_BRANCH_PROFILING		\
+		$(DISABLE_STACKLEAK_PLUGIN)
+
+
 hostprogs := gen-hyprel
 HOST_EXTRACFLAGS += -I$(objtree)/include
 
@@ -71,6 +79,15 @@ $(obj)/kvm_nvhe.rel.o: $(obj)/kvm_nvhe.tmp.o $(obj)/hyp-reloc.o FORCE
 #    Prefixes names of ELF symbols with '__kvm_nvhe_'.
 $(obj)/kvm_nvhe.o: $(obj)/kvm_nvhe.rel.o FORCE
 	$(call if_changed,hypcopy)
+
+# A rule to build goto-program for CBMC formal verification.
+# For formal verification with CBMC we don't need relocations, thus,
+# compiling and linking the object files is sufficient.
+$(obj)/kvm_nvhe.gb: CC := goto-cc --native-compiler $(CC) --native-linker $(LD)
+$(obj)/kvm_nvhe.gb: LD := $(CC)
+$(obj)/kvm_nvhe.gb: ccflags-y := $(ccflags-y) -DCBMC_PROVER
+$(obj)/kvm_nvhe.gb: $(obj)/kvm_nvhe.tmp.o
+	cp $< $@
 
 # The HYPREL command calls `gen-hyprel` to generate an assembly file with
 # a list of relocations targeting hyp code/data.
