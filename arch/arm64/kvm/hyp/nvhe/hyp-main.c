@@ -896,7 +896,7 @@ static void handle___vgic_v3_restore_vmcr_aprs(struct kvm_cpu_context *host_ctxt
 	__vgic_v3_restore_vmcr_aprs(shadow_cpu_if);
 }
 
-static void handle___pkvm_init(struct kvm_cpu_context *host_ctxt)
+static void handle___pkvm_init(int host_ctxt)
 {
 	DECLARE_REG(phys_addr_t, phys, host_ctxt, 1);
 	DECLARE_REG(unsigned long, size, host_ctxt, 2);
@@ -910,7 +910,7 @@ static void handle___pkvm_init(struct kvm_cpu_context *host_ctxt)
 	 * will tail-call in __pkvm_init_finalise() which will have to deal
 	 * with the host context directly.
 	 */
-	cpu_reg(host_ctxt, 1) = __pkvm_init(phys, size, nr_cpus, per_cpu_base,
+	__pkvm_init(phys, size, nr_cpus, per_cpu_base,
 					    hyp_va_bits, iommu_driver);
 }
 
