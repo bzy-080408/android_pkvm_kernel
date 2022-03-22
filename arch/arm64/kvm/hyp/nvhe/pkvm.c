@@ -475,8 +475,7 @@ static int __insert_shadow_table(struct kvm *kvm, struct kvm_shadow_vm *vm,
 	if (vmid > 0xff)
 		return -ENOMEM;
 
-	mmu->vmid.vmid = vmid;
-	mmu->vmid.vmid_gen = 0;
+	atomic64_set(&mmu->vmid.id, vmid);
 	mmu->arch = &vm->arch;
 	mmu->pgt = &vm->pgt;
 

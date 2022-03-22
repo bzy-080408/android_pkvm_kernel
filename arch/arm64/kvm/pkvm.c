@@ -128,7 +128,7 @@ static int __create_el2_shadow(struct kvm *kvm)
 	void *pgd, *shadow_addr;
 	unsigned long idx;
 	int shadow_handle;
-	int ret, i;
+	int ret;
 
 	if (kvm->created_vcpus < 1)
 		return -EINVAL;
@@ -170,8 +170,8 @@ static int __create_el2_shadow(struct kvm *kvm)
 	kvm->arch.pkvm.shadow_handle = shadow_handle;
 
 	/* Adjust host's vcpu state as it doesn't control it anymore. */
-	for (i = 0; i < kvm->created_vcpus; i++)
-		update_vcpu_state(kvm->vcpus[i], shadow_handle);
+	kvm_for_each_vcpu(idx, vcpu, kvm)
+		update_vcpu_state(vcpu, shadow_handle);
 
 	return 0;
 

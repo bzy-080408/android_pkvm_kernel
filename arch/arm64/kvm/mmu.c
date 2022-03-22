@@ -202,7 +202,7 @@ static void pkvm_stage2_flush(struct kvm *kvm)
 	 */
 	list_for_each_entry(ppage, &kvm->arch.pkvm.pinned_pages, link) {
 		__clean_dcache_guest_page(page_address(ppage->page), PAGE_SIZE);
-		cond_resched_lock(&kvm->mmu_lock);
+		cond_resched_rwlock_write(&kvm->mmu_lock);
 	}
 }
 
@@ -1197,7 +1197,7 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		goto dec_account;
 	}
 
-	spin_lock(&kvm->mmu_lock);
+	write_lock(&kvm->mmu_lock);
 	pfn = page_to_pfn(page);
 	ret = pkvm_host_donate_guest(pfn, fault_ipa >> PAGE_SHIFT, vcpu);
 	if (ret) {
@@ -1209,12 +1209,12 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	ppage->page = page;
 	INIT_LIST_HEAD(&ppage->link);
 	list_add(&ppage->link, &kvm->arch.pkvm.pinned_pages);
-	spin_unlock(&kvm->mmu_lock);
+	write_unlock(&kvm->mmu_lock);
 
 	return 0;
 
 unpin:
-	spin_unlock(&kvm->mmu_lock);
+	write_unlock(&kvm->mmu_lock);
 	unpin_user_pages(&page, 1);
 dec_account:
 	account_locked_vm(mm, 1, false);

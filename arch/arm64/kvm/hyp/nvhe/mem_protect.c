@@ -33,8 +33,7 @@ const pkvm_id pkvm_host_poison	= pkvm_hyp_id + 1;
 
 static pkvm_id pkvm_guest_id(struct kvm_vcpu *vcpu)
 {
-	return vcpu->arch.hw_mmu->vmid.vmid;
-
+	return atomic64_read(&vcpu->arch.hw_mmu->vmid.id);
 }
 
 static DEFINE_PER_CPU(struct kvm_shadow_vm *, __current_vm);
