@@ -47,7 +47,7 @@ static void handle_pvm_entry_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *sh
 	}
 }
 
-static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+static void handle_pvm_entry_psci(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	u32 psci_fn = smccc_get_function(shadow_vcpu);
 	u64 ret = READ_ONCE(host_vcpu->arch.ctxt.regs.regs[0]);
@@ -81,6 +81,22 @@ static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *
 	}
 
 	vcpu_set_reg(shadow_vcpu, 0, ret);
+}
+
+static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+{
+	u32 fn = smccc_get_function(shadow_vcpu);
+
+	switch (fn) {
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
+		fallthrough;
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
+		vcpu_set_reg(shadow_vcpu, 0, SMCCC_RET_SUCCESS);
+		break;
+	default:
+		handle_pvm_entry_psci(host_vcpu, shadow_vcpu);
+		break;
+	}
 }
 
 static void handle_pvm_entry_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
@@ -231,6 +247,12 @@ static void handle_pvm_exit_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *s
 	case PSCI_0_2_FN_CPU_SUSPEND:
 	case PSCI_0_2_FN64_CPU_SUSPEND:
 		n = 1;
+		break;
+
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
+		fallthrough;
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
+		n = 4;
 		break;
 
 	case PSCI_1_1_FN_SYSTEM_RESET2:
