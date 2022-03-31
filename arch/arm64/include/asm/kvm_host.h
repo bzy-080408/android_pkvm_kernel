@@ -115,6 +115,10 @@ struct kvm_smccc_features {
 	unsigned long vendor_hyp_bmap;
 };
 
+struct kvm_protected_vm {
+	unsigned int shadow_handle;
+};
+
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
 
@@ -166,6 +170,8 @@ struct kvm_arch {
 
 	/* Hypercall features firmware registers' descriptor */
 	struct kvm_smccc_features smccc_feat;
+
+	struct kvm_protected_vm pkvm;
 };
 
 struct kvm_vcpu_fault_info {
