@@ -15,6 +15,7 @@
 
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
+#include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
 
 DEFINE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
@@ -191,6 +192,24 @@ static void handle___pkvm_vcpu_init_traps(struct kvm_cpu_context *host_ctxt)
 	__pkvm_vcpu_init_traps(kern_hyp_va(vcpu));
 }
 
+static void handle___pkvm_init_shadow(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(struct kvm *, host_kvm, host_ctxt, 1);
+	DECLARE_REG(unsigned long, host_shadow_va, host_ctxt, 2);
+	DECLARE_REG(size_t, shadow_size, host_ctxt, 3);
+	DECLARE_REG(unsigned long, pgd, host_ctxt, 4);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_init_shadow(host_kvm, host_shadow_va,
+						   shadow_size, pgd);
+}
+
+static void handle___pkvm_teardown_shadow(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(unsigned int, shadow_handle, host_ctxt, 1);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_teardown_shadow(shadow_handle);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -220,6 +239,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__vgic_v3_save_aprs),
 	HANDLE_FUNC(__vgic_v3_restore_aprs),
 	HANDLE_FUNC(__pkvm_vcpu_init_traps),
+	HANDLE_FUNC(__pkvm_init_shadow),
+	HANDLE_FUNC(__pkvm_teardown_shadow),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
