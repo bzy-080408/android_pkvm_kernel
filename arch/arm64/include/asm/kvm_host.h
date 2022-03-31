@@ -101,6 +101,10 @@ struct kvm_s2_mmu {
 struct kvm_arch_memory_slot {
 };
 
+struct kvm_protected_vm {
+	unsigned int shadow_handle;
+};
+
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;
 
@@ -140,6 +144,8 @@ struct kvm_arch {
 
 	u8 pfr0_csv2;
 	u8 pfr0_csv3;
+
+	struct kvm_protected_vm pkvm;
 };
 
 struct kvm_vcpu_fault_info {
