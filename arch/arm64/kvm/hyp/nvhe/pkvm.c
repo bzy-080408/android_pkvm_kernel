@@ -386,7 +386,19 @@ static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 
 	for (i = 0; i < nr_vcpus; i++) {
 		struct kvm_vcpu *host_vcpu = shadow_vcpu_states[i].host_vcpu;
+		struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_states[i].shadow_vcpu;
+		size_t sve_state_size;
+		void *sve_state;
+
 		hyp_unpin_shared_mem(host_vcpu, host_vcpu + 1);
+
+		if (!test_bit(KVM_ARM_VCPU_SVE, shadow_vcpu->arch.features))
+			continue;
+
+		sve_state = shadow_vcpu->arch.sve_state;
+		sve_state = kern_hyp_va(sve_state);
+		sve_state_size = vcpu_sve_state_size(shadow_vcpu);
+		hyp_unpin_shared_mem(sve_state, sve_state + sve_state_size);
 	}
 }
 
@@ -462,6 +474,27 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 		ret = init_ptrauth(shadow_vcpu);
 		if (ret)
 			return ret;
+
+		if (test_bit(KVM_ARM_VCPU_SVE, shadow_vcpu->arch.features)) {
+			size_t sve_state_size;
+			void *sve_state;
+
+			shadow_vcpu->arch.sve_state = READ_ONCE(host_vcpu->arch.sve_state);
+			shadow_vcpu->arch.sve_max_vl = READ_ONCE(host_vcpu->arch.sve_max_vl);
+
+			sve_state = kern_hyp_va(shadow_vcpu->arch.sve_state);
+			sve_state_size = vcpu_sve_state_size(shadow_vcpu);
+
+			if (!shadow_vcpu->arch.sve_state || !sve_state_size ||
+			    hyp_pin_shared_mem(sve_state,
+					       sve_state + sve_state_size)) {
+				clear_bit(KVM_ARM_VCPU_SVE,
+					  shadow_vcpu->arch.features);
+				shadow_vcpu->arch.sve_state = NULL;
+				shadow_vcpu->arch.sve_max_vl = 0;
+				return -EINVAL;
+			}
+		}
 
 		pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
 		kvm_reset_pvm_sys_regs(shadow_vcpu);
