@@ -380,9 +380,6 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 		if (vcpu_get_flag(host_vcpu, PKVM_HOST_STATE_DIRTY))
 			__flush_vcpu_state(shadow_state);
 
-		shadow_vcpu->arch.sve_state = kern_hyp_va(host_vcpu->arch.sve_state);
-		shadow_vcpu->arch.sve_max_vl = host_vcpu->arch.sve_max_vl;
-
 		shadow_vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
 		shadow_vcpu->arch.hcr_el2 |= READ_ONCE(host_vcpu->arch.hcr_el2);
 
@@ -451,7 +448,8 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state,
 		BUG();
 	}
 
-	vcpu_clear_flag(host_vcpu, PC_UPDATE_REQ);
+	if (shadow_state_is_protected(shadow_state))
+		vcpu_clear_flag(host_vcpu, PC_UPDATE_REQ);
 	shadow_state->exit_code = exit_reason;
 }
 
