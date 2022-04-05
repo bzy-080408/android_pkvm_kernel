@@ -13,6 +13,21 @@
  */
 #define HOST_PAGE_NEED_POISONING	BIT(0)
 #define HOST_PAGE_PENDING_RECLAIM	BIT(1)
+/* Reserved bits to store an enum_pkvm_page state */
+#define __PAGE_STATE_RES0		BIT(2)
+#define __PAGE_STATE_RES1		BIT(3)
+#define __PAGE_STATE_RES2		BIT(4)
+#define __PAGE_STATE_RES_MASK		(__PAGE_STATE_RES0 | \
+					 __PAGE_STATE_RES1 | \
+					 __PAGE_STATE_RES2)
+
+enum pkvm_page_state {
+	PKVM_PAGE_OWNED			= 0ULL,
+	PKVM_PAGE_SHARED_OWNED		= __PAGE_STATE_RES0,
+	PKVM_PAGE_SHARED_BORROWED	= __PAGE_STATE_RES1,
+	__PKVM_PAGE_RESERVED		= __PAGE_STATE_RES0 | __PAGE_STATE_RES1,
+	PKVM_NOPAGE			= __PAGE_STATE_RES2,
+};
 
 struct hyp_page {
 	unsigned short refcount;
