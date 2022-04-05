@@ -6,6 +6,7 @@
 
 #include <linux/kvm_host.h>
 #include <linux/memblock.h>
+#include <linux/mutex.h>
 #include <linux/sort.h>
 
 #include <asm/kvm_pkvm.h>
@@ -93,4 +94,115 @@ void __init kvm_hyp_reserve(void)
 
 	kvm_info("Reserved %lld MiB at 0x%llx\n", hyp_mem_size >> 20,
 		 hyp_mem_base);
+}
+
+/*
+ * Allocates and donates memory for EL2 shadow structs.
+ *
+ * Allocates space for the shadow state, which includes the shadow vm as well as
+ * the shadow vcpu states.
+ *
+ * Stores an opaque handler in the kvm struct for future reference.
+ *
+ * Return 0 on success, negative error code on failure.
+ */
+static int __kvm_shadow_create(struct kvm *kvm)
+{
+	struct kvm_vcpu *vcpu, **vcpu_array;
+	unsigned int shadow_handle;
+	size_t pgd_sz, shadow_sz;
+	void *pgd, *shadow_addr;
+	unsigned long idx;
+	int ret;
+
+	if (kvm->created_vcpus < 1)
+		return -EINVAL;
+
+	pgd_sz = kvm_pgtable_stage2_pgd_size(kvm->arch.vtcr);
+	/*
+	 * The PGD pages will be reclaimed using a hyp_memcache which implies
+	 * page granularity. So, use alloc_pages_exact() to get individual
+	 * refcounts.
+	 */
+	pgd = alloc_pages_exact(pgd_sz, GFP_KERNEL_ACCOUNT);
+	if (!pgd)
+		return -ENOMEM;
+
+	/* Allocate memory to donate to hyp for the kvm and vcpu state. */
+	shadow_sz = PAGE_ALIGN(KVM_SHADOW_VM_SIZE +
+			       KVM_SHADOW_VCPU_STATE_SIZE * kvm->created_vcpus);
+	shadow_addr = alloc_pages_exact(shadow_sz, GFP_KERNEL_ACCOUNT);
+	if (!shadow_addr) {
+		ret = -ENOMEM;
+		goto free_pgd;
+	}
+
+	/* Stash the vcpu pointers into the PGD */
+	BUILD_BUG_ON(KVM_MAX_VCPUS > (PAGE_SIZE / sizeof(u64)));
+	vcpu_array = pgd;
+	kvm_for_each_vcpu(idx, vcpu, kvm) {
+		/* Indexing of the vcpus to be sequential starting at 0. */
+		if (WARN_ON(vcpu->vcpu_idx != idx)) {
+			ret = -EINVAL;
+			goto free_shadow;
+		}
+
+		vcpu_array[idx] = vcpu;
+	}
+
+	/* Donate the shadow memory to hyp and let hyp initialize it. */
+	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow, kvm, shadow_addr, shadow_sz,
+				pgd);
+	if (ret < 0)
+		goto free_shadow;
+
+	shadow_handle = ret;
+
+	/* Store the shadow handle given by hyp for future call reference. */
+	kvm->arch.pkvm.shadow_handle = shadow_handle;
+	kvm->arch.pkvm.hyp_donations.pgd = pgd;
+	kvm->arch.pkvm.hyp_donations.shadow = shadow_addr;
+	return 0;
+
+free_shadow:
+	free_pages_exact(shadow_addr, shadow_sz);
+free_pgd:
+	free_pages_exact(pgd, pgd_sz);
+	return ret;
+}
+
+int kvm_shadow_create(struct kvm *kvm)
+{
+	int ret = 0;
+
+	mutex_lock(&kvm->arch.pkvm.shadow_lock);
+	if (!kvm->arch.pkvm.shadow_handle)
+		ret = __kvm_shadow_create(kvm);
+	mutex_unlock(&kvm->arch.pkvm.shadow_lock);
+
+	return ret;
+}
+
+void kvm_shadow_destroy(struct kvm *kvm)
+{
+	size_t pgd_sz, shadow_sz;
+
+	if (kvm->arch.pkvm.shadow_handle)
+		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_shadow,
+					  kvm->arch.pkvm.shadow_handle));
+
+	kvm->arch.pkvm.shadow_handle = 0;
+
+	shadow_sz = PAGE_ALIGN(KVM_SHADOW_VM_SIZE +
+			       KVM_SHADOW_VCPU_STATE_SIZE * kvm->created_vcpus);
+	pgd_sz = kvm_pgtable_stage2_pgd_size(kvm->arch.vtcr);
+
+	free_pages_exact(kvm->arch.pkvm.hyp_donations.shadow, shadow_sz);
+	free_pages_exact(kvm->arch.pkvm.hyp_donations.pgd, pgd_sz);
+}
+
+int kvm_init_pvm(struct kvm *kvm)
+{
+	mutex_init(&kvm->arch.pkvm.shadow_lock);
+	return 0;
 }
