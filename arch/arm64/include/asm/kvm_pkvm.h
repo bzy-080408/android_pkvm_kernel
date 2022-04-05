@@ -14,6 +14,10 @@
 
 #define HYP_MEMBLOCK_REGIONS 128
 
+int kvm_init_pvm(struct kvm *kvm);
+int kvm_shadow_create(struct kvm *kvm);
+void kvm_shadow_destroy(struct kvm *kvm);
+
 extern struct memblock_region kvm_nvhe_sym(hyp_memory)[];
 extern unsigned int kvm_nvhe_sym(hyp_memblock_nr);
 
