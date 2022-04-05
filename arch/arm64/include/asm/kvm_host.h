@@ -103,6 +103,12 @@ struct kvm_arch_memory_slot {
 
 struct kvm_protected_vm {
 	unsigned int shadow_handle;
+	struct mutex shadow_lock;
+
+	struct {
+		void *pgd;
+		void *shadow;
+	} hyp_donations;
 };
 
 struct kvm_arch {
