@@ -189,7 +189,6 @@ static int fix_host_ownership_walker(u64 addr, u64 end, u32 level,
 				     enum kvm_pgtable_walk_flags flag,
 				     void * const arg)
 {
-	enum kvm_pgtable_prot prot;
 	enum pkvm_page_state state;
 	kvm_pte_t pte = *ptep;
 	phys_addr_t phys;
@@ -213,16 +212,16 @@ static int fix_host_ownership_walker(u64 addr, u64 end, u32 level,
 	case PKVM_PAGE_OWNED:
 		return host_stage2_set_owner_locked(phys, PAGE_SIZE, pkvm_hyp_id);
 	case PKVM_PAGE_SHARED_OWNED:
-		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_BORROWED);
+		host_setstate(hyp_phys_to_page(phys), PKVM_PAGE_SHARED_BORROWED);
 		break;
 	case PKVM_PAGE_SHARED_BORROWED:
-		prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, PKVM_PAGE_SHARED_OWNED);
+		host_setstate(hyp_phys_to_page(phys), PKVM_PAGE_SHARED_OWNED);
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	return host_stage2_idmap_locked(phys, PAGE_SIZE, prot);
+	return 0;
 }
 
 static int fix_hyp_pgtable_refcnt_walker(u64 addr, u64 end, u32 level,

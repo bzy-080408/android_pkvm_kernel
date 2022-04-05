@@ -518,9 +518,6 @@ static int host_stage2_adjust_range(u64 addr, struct kvm_mem_range *range)
 	if (kvm_pte_valid(pte))
 		return -EAGAIN;
 
-	if (pte)
-		return -EPERM;
-
 	do {
 		u64 granule = kvm_granule_size(level);
 		cur.start = ALIGN_DOWN(addr, granule);
@@ -552,6 +549,8 @@ int host_stage2_set_owner_locked(phys_addr_t addr, u64 size,
 {
 	kvm_pte_t annotation = kvm_init_invalid_leaf_owner(owner_id);
 	enum kvm_pgtable_prot prot;
+	enum pkvm_page_state state;
+	u64 end = addr + size;
 	int ret;
 
 	ret = host_stage2_try(kvm_pgtable_stage2_annotate, &host_kvm.pgt,
@@ -559,8 +558,17 @@ int host_stage2_set_owner_locked(phys_addr_t addr, u64 size,
 	if (ret)
 		return ret;
 
-	prot = owner_id == pkvm_host_id ? PKVM_HOST_MEM_PROT : 0;
+	if (owner_id == pkvm_host_id) {
+		prot = PKVM_HOST_MEM_PROT;
+		state = PKVM_PAGE_OWNED;
+	} else {
+		prot = 0;
+		state = PKVM_NOPAGE;
+	}
 	pkvm_iommu_host_stage2_idmap(addr, addr + size, prot);
+	for (; addr < end; addr += PAGE_SIZE)
+		host_setstate(hyp_phys_to_page(addr), state);
+
 	return 0;
 }
 
@@ -591,6 +599,7 @@ static int host_stage2_idmap(u64 addr)
 	struct kvm_mem_range range;
 	bool is_memory = !!find_mem_range(addr, &range);
 	enum kvm_pgtable_prot prot;
+	struct hyp_page *page;
 	int ret;
 
 	hyp_assert_lock_held(&host_kvm.lock);
@@ -606,7 +615,11 @@ static int host_stage2_idmap(u64 addr)
 							  &range.end);
 		if (ret)
 			return ret;
-	}
+	 } else {
+		page = hyp_phys_to_page(addr);
+		if (host_getstate(page) == PKVM_NOPAGE)
+			return -EPERM;
+	 }
 
 	ret = host_stage2_adjust_range(addr, &range);
 	if (ret)
@@ -808,32 +821,34 @@ static int check_page_state_range(struct kvm_pgtable *pgt, u64 addr, u64 size,
 	return kvm_pgtable_walk(pgt, addr, size, &walker);
 }
 
-static enum pkvm_page_state host_get_page_state(kvm_pte_t pte)
-{
-	if (!kvm_pte_valid(pte) && pte)
-		return PKVM_NOPAGE;
-
-	return pkvm_getstate(kvm_pgtable_stage2_pte_prot(pte));
-}
-
 static int __host_check_page_state_range(u64 addr, u64 size,
 					 enum pkvm_page_state state)
 {
-	struct check_walk_data d = {
-		.desired	= state,
-		.get_page_state	= host_get_page_state,
-	};
+	struct hyp_page *page;
+	u64 end = addr + size;
 
 	hyp_assert_lock_held(&host_kvm.lock);
-	return check_page_state_range(&host_kvm.pgt, addr, size, &d);
+
+	for (; addr < end; addr += PAGE_SIZE) {
+		if (!addr_is_allowed_memory(addr))
+			return -EPERM;
+		page = hyp_phys_to_page(addr);
+		if (host_getstate(page) != state)
+			return -EPERM;
+	}
+
+	return 0;
 }
 
 static int __host_set_page_state_range(u64 addr, u64 size,
 				       enum pkvm_page_state state)
 {
-	enum kvm_pgtable_prot prot = pkvm_mkstate(PKVM_HOST_MEM_PROT, state);
+	u64 end = addr + size;
 
-	return host_stage2_idmap_locked(addr, size, prot);
+	for (; addr < end; addr += PAGE_SIZE)
+		host_setstate(hyp_phys_to_page(addr), state);
+
+	return 0;
 }
 
 static int host_request_owned_transition(u64 *completer_addr,
@@ -1922,19 +1937,17 @@ int __pkvm_host_reclaim_page(u64 pfn)
 {
 	u64 addr = hyp_pfn_to_phys(pfn);
 	struct hyp_page *page;
-	kvm_pte_t pte;
 	int ret;
+
+	if (!addr_is_memory(addr))
+		return -EPERM;
 
 	host_lock_component();
 
-	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, addr, &pte, NULL);
-	if (ret)
-		goto unlock;
-
-	if (host_get_page_state(pte) == PKVM_PAGE_OWNED)
-		goto unlock;
-
 	page = hyp_phys_to_page(addr);
+	if (host_getstate(page) == PKVM_PAGE_OWNED)
+		goto unlock;
+
 	if (!(page->flags & HOST_PAGE_PENDING_RECLAIM)) {
 		ret = -EPERM;
 		goto unlock;

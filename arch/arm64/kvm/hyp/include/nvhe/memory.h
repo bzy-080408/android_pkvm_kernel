@@ -35,6 +35,17 @@ struct hyp_page {
 	u8 flags;
 };
 
+static inline enum pkvm_page_state host_getstate(struct hyp_page *page)
+{
+	return page->flags & __PAGE_STATE_RES_MASK;
+}
+
+static inline void host_setstate(struct hyp_page *page, enum pkvm_page_state state)
+{
+	page->flags &= ~__PAGE_STATE_RES_MASK;
+	page->flags |= state;
+}
+
 extern s64 hyp_physvirt_offset;
 extern u64 __hyp_vmemmap;
 #define hyp_vmemmap ((struct hyp_page *)__hyp_vmemmap)
