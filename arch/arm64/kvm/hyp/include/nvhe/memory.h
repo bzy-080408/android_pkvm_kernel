@@ -7,16 +7,13 @@
 
 #include <linux/types.h>
 
-/*
- * Accesses to struct hyp_page flags must be serialized by the host stage-2
- * page-table lock due to the lack of atomics at EL2.
- */
-#define HOST_PAGE_NEED_POISONING	BIT(0)
-#define HOST_PAGE_PENDING_RECLAIM	BIT(1)
+#define __HYP_FLAGS_LOCKED		BIT(0)
+#define HOST_PAGE_NEED_POISONING	BIT(1)
+#define HOST_PAGE_PENDING_RECLAIM	BIT(2)
 /* Reserved bits to store an enum_pkvm_page state */
-#define __PAGE_STATE_RES0		BIT(2)
-#define __PAGE_STATE_RES1		BIT(3)
-#define __PAGE_STATE_RES2		BIT(4)
+#define __PAGE_STATE_RES0		BIT(3)
+#define __PAGE_STATE_RES1		BIT(4)
+#define __PAGE_STATE_RES2		BIT(5)
 #define __PAGE_STATE_RES_MASK		(__PAGE_STATE_RES0 | \
 					 __PAGE_STATE_RES1 | \
 					 __PAGE_STATE_RES2)
@@ -102,5 +99,19 @@ static inline void hyp_set_page_refcounted(struct hyp_page *p)
 {
 	BUG_ON(p->refcount);
 	p->refcount = 1;
+}
+
+static inline void hyp_page_lock(struct hyp_page *page)
+{
+	u8 flags;
+
+	do {
+		flags = smp_cond_load_relaxed(&page->flags, !(VAL & __HYP_FLAGS_LOCKED));
+	} while (cmpxchg_acquire(&page->flags, flags, flags | __HYP_FLAGS_LOCKED) != flags);
+}
+
+static inline void hyp_page_unlock(struct hyp_page *page)
+{
+	smp_store_release(&page->flags, READ_ONCE(page->flags) & ~__HYP_FLAGS_LOCKED);
 }
 #endif /* __KVM_HYP_MEMORY_H */
