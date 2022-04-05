@@ -335,7 +335,7 @@ static pkvm_handle_t insert_vm_table_entry(struct kvm *host_kvm,
 	if (idx < 0)
 		return idx;
 
-	hyp_vm->kvm.arch.pkvm_handle = idx_to_vm_handle(idx);
+	hyp_vm->kvm.arch.pkvm.handle = idx_to_vm_handle(idx);
 	hyp_vm->donated_memory_size = donated_memory_size;
 
 	/* VMID 0 is reserved for the host */
@@ -345,7 +345,7 @@ static pkvm_handle_t insert_vm_table_entry(struct kvm *host_kvm,
 	mmu->pgt = &hyp_vm->pgt;
 
 	vm_table[idx] = hyp_vm;
-	return hyp_vm->kvm.arch.pkvm_handle;
+	return hyp_vm->kvm.arch.pkvm.handle;
 }
 
 /*
@@ -470,10 +470,10 @@ int __pkvm_init_vm(struct kvm *host_kvm, unsigned long vm_hva,
 		goto err_remove_vm_table_entry;
 	hyp_spin_unlock(&vm_table_lock);
 
-	return hyp_vm->kvm.arch.pkvm_handle;
+	return hyp_vm->kvm.arch.pkvm.handle;
 
 err_remove_vm_table_entry:
-	remove_vm_table_entry(hyp_vm->kvm.arch.pkvm_handle);
+	remove_vm_table_entry(hyp_vm->kvm.arch.pkvm.handle);
 err_unlock:
 	hyp_spin_unlock(&vm_table_lock);
 err_remove_mappings:
@@ -539,6 +539,7 @@ unlock:
 int __pkvm_teardown_vm(pkvm_handle_t handle)
 {
 	struct pkvm_hyp_vm *hyp_vm;
+	unsigned int idx;
 	int err;
 
 	hyp_spin_lock(&vm_table_lock);
@@ -564,6 +565,12 @@ int __pkvm_teardown_vm(pkvm_handle_t handle)
 
 	/* Push the metadata pages to the teardown memcache */
 	hyp_unpin_shared_mem(hyp_vm->host_kvm, hyp_vm->host_kvm + 1);
+
+	for (idx = 0; idx < hyp_vm->nr_vcpus; ++idx) {
+		struct pkvm_hyp_vcpu *hyp_vcpu = hyp_vm->vcpus[idx];
+
+		unmap_donated_memory(hyp_vcpu, sizeof(*hyp_vcpu));
+	}
 
 	unmap_donated_memory(hyp_vm, hyp_vm->donated_memory_size);
 	return 0;
