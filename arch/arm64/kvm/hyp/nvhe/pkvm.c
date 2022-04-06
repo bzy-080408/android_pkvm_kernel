@@ -515,9 +515,11 @@ err_unpin_kvm:
 
 int __pkvm_teardown_shadow(unsigned int shadow_handle)
 {
+	struct kvm_hyp_memcache *mc;
 	struct kvm_shadow_vm *vm;
 	size_t shadow_size;
 	u64 nr_pages;
+	void *addr;
 	int err;
 
 	/* Lookup then remove entry from the shadow table. */
@@ -539,7 +541,8 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	hyp_spin_unlock(&shadow_lock);
 
 	/* Reclaim guest pages (including page-table pages) */
-	reclaim_guest_pages(vm);
+	mc = &vm->host_kvm->arch.pkvm.teardown_mc;
+	reclaim_guest_pages(vm, mc);
 	unpin_host_vcpus(vm->shadow_vcpu_states, vm->kvm.created_vcpus);
 
 	/* Push the metadata pages to the teardown memcache */
@@ -547,6 +550,9 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	hyp_unpin_shared_mem(vm->host_kvm, vm->host_kvm + 1);
 
 	memset(vm, 0, shadow_size);
+	for (addr = vm; addr < (void *)vm + shadow_size; addr += PAGE_SIZE)
+		push_hyp_memcache(mc, addr, hyp_virt_to_phys);
+
 	nr_pages = shadow_size >> PAGE_SHIFT;
 	WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn(vm), nr_pages));
 	return 0;
