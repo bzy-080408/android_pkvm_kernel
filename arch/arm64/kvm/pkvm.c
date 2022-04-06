@@ -160,8 +160,6 @@ static int __kvm_shadow_create(struct kvm *kvm)
 
 	/* Store the shadow handle given by hyp for future call reference. */
 	kvm->arch.pkvm.shadow_handle = shadow_handle;
-	kvm->arch.pkvm.hyp_donations.pgd = pgd;
-	kvm->arch.pkvm.hyp_donations.shadow = shadow_addr;
 	return 0;
 
 free_shadow:
@@ -185,20 +183,12 @@ int kvm_shadow_create(struct kvm *kvm)
 
 void kvm_shadow_destroy(struct kvm *kvm)
 {
-	size_t pgd_sz, shadow_sz;
-
 	if (kvm->arch.pkvm.shadow_handle)
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_shadow,
 					  kvm->arch.pkvm.shadow_handle));
 
 	kvm->arch.pkvm.shadow_handle = 0;
-
-	shadow_sz = PAGE_ALIGN(KVM_SHADOW_VM_SIZE +
-			       KVM_SHADOW_VCPU_STATE_SIZE * kvm->created_vcpus);
-	pgd_sz = kvm_pgtable_stage2_pgd_size(kvm->arch.vtcr);
-
-	free_pages_exact(kvm->arch.pkvm.hyp_donations.shadow, shadow_sz);
-	free_pages_exact(kvm->arch.pkvm.hyp_donations.pgd, pgd_sz);
+	free_hyp_memcache(&kvm->arch.pkvm.teardown_mc);
 }
 
 int kvm_init_pvm(struct kvm *kvm)
