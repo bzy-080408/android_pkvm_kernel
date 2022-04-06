@@ -260,15 +260,51 @@ int kvm_guest_prepare_stage2(struct kvm_shadow_vm *vm, void *pgd)
 	return 0;
 }
 
+static int reclaim_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
+		enum kvm_pgtable_walk_flags flag,
+		void * const arg)
+{
+	kvm_pte_t pte = *ptep;
+	struct hyp_page *page;
+
+	if (!kvm_pte_valid(pte))
+		return 0;
+
+	page = hyp_phys_to_page(kvm_pte_to_phys(pte));
+	switch (pkvm_getstate(kvm_pgtable_stage2_pte_prot(pte))) {
+	case PKVM_PAGE_OWNED:
+		page->flags |= HOST_PAGE_NEED_POISONING;
+		fallthrough;
+	case PKVM_PAGE_SHARED_BORROWED:
+	case PKVM_PAGE_SHARED_OWNED:
+		page->flags |= HOST_PAGE_PENDING_RECLAIM;
+		break;
+	default:
+		return -EPERM;
+	}
+
+	return 0;
+}
+
 void reclaim_guest_pages(struct kvm_shadow_vm *vm, struct kvm_hyp_memcache *mc)
 {
+
+	struct kvm_pgtable_walker walker = {
+		.cb     = reclaim_walker,
+		.flags  = KVM_PGTABLE_WALK_LEAF
+	};
 	void *addr;
 
-	/* Dump all pgtable pages in the hyp_pool */
+	host_lock_component();
 	guest_lock_component(vm);
+
+	/* Reclaim all guest pages and dump all pgtable pages in the hyp_pool */
+	BUG_ON(kvm_pgtable_walk(&vm->pgt, 0, BIT(vm->pgt.ia_bits), &walker));
 	kvm_pgtable_stage2_destroy(&vm->pgt);
 	vm->kvm.arch.mmu.pgd_phys = 0ULL;
+
 	guest_unlock_component(vm);
+	host_unlock_component();
 
 	/* Drain the hyp_pool into the memcache */
 	addr = hyp_alloc_pages(&vm->pool, 0);
@@ -1224,4 +1260,57 @@ void hyp_unpin_shared_mem(void *from, void *to)
 
 	hyp_unlock_component();
 	host_unlock_component();
+}
+
+static int hyp_zero_page(phys_addr_t phys)
+{
+	void *addr;
+
+	addr = hyp_fixmap_map(phys);
+	if (!addr)
+		return -EINVAL;
+	memset(addr, 0, PAGE_SIZE);
+	__clean_dcache_guest_page(addr, PAGE_SIZE);
+
+	return hyp_fixmap_unmap();
+}
+
+int __pkvm_host_reclaim_page(u64 pfn)
+{
+	u64 addr = hyp_pfn_to_phys(pfn);
+	struct hyp_page *page;
+	kvm_pte_t pte;
+	int ret;
+
+	host_lock_component();
+
+	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, addr, &pte, NULL);
+	if (ret)
+		goto unlock;
+
+	if (host_get_page_state(pte) == PKVM_PAGE_OWNED)
+		goto unlock;
+
+	page = hyp_phys_to_page(addr);
+	if (!(page->flags & HOST_PAGE_PENDING_RECLAIM)) {
+		ret = -EPERM;
+		goto unlock;
+	}
+
+	if (page->flags & HOST_PAGE_NEED_POISONING) {
+		ret = hyp_zero_page(addr);
+		if (ret)
+			goto unlock;
+		page->flags &= ~HOST_PAGE_NEED_POISONING;
+	}
+
+	ret = host_stage2_set_owner_locked(addr, PAGE_SIZE, PKVM_ID_HOST);
+	if (ret)
+		goto unlock;
+	page->flags &= ~HOST_PAGE_PENDING_RECLAIM;
+
+unlock:
+	host_unlock_component();
+
+	return ret;
 }
