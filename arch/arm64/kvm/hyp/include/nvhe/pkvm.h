@@ -9,6 +9,9 @@
 
 #include <asm/kvm_pkvm.h>
 
+#include <nvhe/gfp.h>
+#include <nvhe/spinlock.h>
+
 /*
  * Holds the relevant data for maintaining the vcpu state completely at hyp.
  */
@@ -26,6 +29,9 @@ struct kvm_shadow_vm {
 	struct kvm *host_kvm;
 	size_t shadow_area_size;
 	struct kvm_pgtable pgt;
+	struct kvm_pgtable_mm_ops mm_ops;
+	struct hyp_pool pool;
+	hyp_spinlock_t lock;
 
 	/* Array containing the shadow state for each vcpu. */
 	struct kvm_shadow_vcpu_state shadow_vcpu_states[0];
