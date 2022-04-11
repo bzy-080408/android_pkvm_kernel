@@ -533,8 +533,8 @@ static int host_stage2_adjust_range(u64 addr, struct kvm_mem_range *range)
 	return 0;
 }
 
-int host_stage2_idmap_locked(phys_addr_t addr, u64 size,
-			     enum kvm_pgtable_prot prot)
+static int host_stage2_idmap_locked(phys_addr_t addr, u64 size,
+				    enum kvm_pgtable_prot prot)
 {
 	return host_stage2_try(__host_stage2_idmap, addr, addr + size, prot);
 }
