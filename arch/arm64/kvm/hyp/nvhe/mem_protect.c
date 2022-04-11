@@ -763,8 +763,6 @@ struct pkvm_mem_transition {
 
 static void mem_transition_lock(const struct pkvm_mem_transition *tx)
 {
-	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
-		host_lock_component();
 	if (tx->initiator.id == PKVM_ID_HYP || tx->completer.id == PKVM_ID_HYP)
 		hyp_lock_component();
 	if (tx->initiator.id == PKVM_ID_GUEST)
@@ -772,10 +770,14 @@ static void mem_transition_lock(const struct pkvm_mem_transition *tx)
 	if (tx->completer.id == PKVM_ID_GUEST)
 		guest_lock_component(tx->completer.guest.vcpu);
 	/* No locks needed for PKVM_ID_FFA */
+	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
+		host_lock_component();
 }
 
 static void mem_transition_unlock(const struct pkvm_mem_transition *tx)
 {
+	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
+		host_unlock_component();
 	/* No locks needed for PKVM_ID_FFA */
 	if (tx->completer.id == PKVM_ID_GUEST)
 		guest_unlock_component(tx->completer.guest.vcpu);
@@ -783,8 +785,6 @@ static void mem_transition_unlock(const struct pkvm_mem_transition *tx)
 		guest_unlock_component(tx->initiator.guest.vcpu);
 	if (tx->initiator.id == PKVM_ID_HYP || tx->completer.id == PKVM_ID_HYP)
 		hyp_unlock_component();
-	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
-		host_unlock_component();
 }
 
 struct pkvm_mem_share {
@@ -1742,8 +1742,8 @@ int hyp_pin_shared_mem(void *from, void *to)
 	u64 size = end - start;
 	int ret;
 
-	host_lock_component();
 	hyp_lock_component();
+	host_lock_component();
 
 	ret = __host_check_page_state_range(__hyp_pa(start), size,
 					    PKVM_PAGE_SHARED_OWNED);
@@ -1759,8 +1759,8 @@ int hyp_pin_shared_mem(void *from, void *to)
 		hyp_page_ref_inc(hyp_virt_to_page(cur));
 
 unlock:
-	hyp_unlock_component();
 	host_unlock_component();
+	hyp_unlock_component();
 
 	return ret;
 }
@@ -1770,14 +1770,14 @@ void hyp_unpin_shared_mem(void *from, void *to)
 	u64 cur, start = ALIGN_DOWN((u64)from, PAGE_SIZE);
 	u64 end = PAGE_ALIGN((u64)to);
 
-	host_lock_component();
 	hyp_lock_component();
+	host_lock_component();
 
 	for (cur = start; cur < end; cur += PAGE_SIZE)
 		hyp_page_ref_dec(hyp_virt_to_page(cur));
 
-	hyp_unlock_component();
 	host_unlock_component();
+	hyp_unlock_component();
 }
 
 int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
