@@ -911,19 +911,10 @@ static int host_initiate_donation(u64 *completer_addr,
 	return host_stage2_set_owner_locked(tx->initiator.addr, size, owner_id);
 }
 
-static bool __host_ack_skip_pgtable_check(const struct pkvm_mem_transition *tx)
-{
-	return !(IS_ENABLED(CONFIG_NVHE_EL2_DEBUG) ||
-		 tx->initiator.id != PKVM_ID_HYP);
-}
-
 static int __host_ack_transition(u64 addr, const struct pkvm_mem_transition *tx,
 				 enum pkvm_page_state state)
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
-
-	if (__host_ack_skip_pgtable_check(tx))
-		return 0;
 
 	return __host_check_page_state_range(addr, size, state);
 }
