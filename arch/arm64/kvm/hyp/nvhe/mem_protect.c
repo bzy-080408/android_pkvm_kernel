@@ -761,6 +761,32 @@ struct pkvm_mem_transition {
 	} completer;
 };
 
+static void mem_transition_lock(const struct pkvm_mem_transition *tx)
+{
+	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
+		host_lock_component();
+	if (tx->initiator.id == PKVM_ID_HYP || tx->completer.id == PKVM_ID_HYP)
+		hyp_lock_component();
+	if (tx->initiator.id == PKVM_ID_GUEST)
+		guest_lock_component(tx->initiator.guest.vcpu);
+	if (tx->completer.id == PKVM_ID_GUEST)
+		guest_lock_component(tx->completer.guest.vcpu);
+	/* No locks needed for PKVM_ID_FFA */
+}
+
+static void mem_transition_unlock(const struct pkvm_mem_transition *tx)
+{
+	/* No locks needed for PKVM_ID_FFA */
+	if (tx->completer.id == PKVM_ID_GUEST)
+		guest_unlock_component(tx->completer.guest.vcpu);
+	if (tx->initiator.id == PKVM_ID_GUEST)
+		guest_unlock_component(tx->initiator.guest.vcpu);
+	if (tx->initiator.id == PKVM_ID_HYP || tx->completer.id == PKVM_ID_HYP)
+		hyp_unlock_component();
+	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
+		host_unlock_component();
+}
+
 struct pkvm_mem_share {
 	const struct pkvm_mem_transition	tx;
 	const enum kvm_pgtable_prot		completer_prot;
@@ -1368,11 +1394,13 @@ static int do_share(struct pkvm_mem_share *share)
 {
 	int ret;
 
+	mem_transition_lock(&share->tx);
 	ret = check_share(share);
-	if (ret)
-		return ret;
+	if (!ret)
+		ret = WARN_ON(__do_share(share));
+	mem_transition_unlock(&share->tx);
 
-	return WARN_ON(__do_share(share));
+	return ret;
 }
 
 static int check_unshare(struct pkvm_mem_share *share)
@@ -1464,11 +1492,13 @@ static int do_unshare(struct pkvm_mem_share *share)
 {
 	int ret;
 
+	mem_transition_lock(&share->tx);
 	ret = check_unshare(share);
-	if (ret)
-		return ret;
+	if (!ret)
+		ret = WARN_ON(__do_unshare(share));
+	mem_transition_unlock(&share->tx);
 
-	return WARN_ON(__do_unshare(share));
+	return ret;
 }
 
 static int check_donation(struct pkvm_mem_donation *donation)
@@ -1558,16 +1588,17 @@ static int do_donate(struct pkvm_mem_donation *donation)
 {
 	int ret;
 
+	mem_transition_lock(&donation->tx);
 	ret = check_donation(donation);
-	if (ret)
-		return ret;
+	if (!ret)
+		ret = WARN_ON(__do_donate(donation));
+	mem_transition_unlock(&donation->tx);
 
-	return WARN_ON(__do_donate(donation));
+	return ret;
 }
 
 int __pkvm_host_share_hyp(u64 pfn)
 {
-	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
 	u64 hyp_addr = (u64)__hyp_va(host_addr);
 	struct pkvm_mem_share share = {
@@ -1587,20 +1618,11 @@ int __pkvm_host_share_hyp(u64 pfn)
 		.completer_prot	= PAGE_HYP,
 	};
 
-	host_lock_component();
-	hyp_lock_component();
-
-	ret = do_share(&share);
-
-	hyp_unlock_component();
-	host_unlock_component();
-
-	return ret;
+	return do_share(&share);
 }
 
 int __pkvm_guest_share_host(struct kvm_vcpu *vcpu, u64 ipa)
 {
-	int ret;
 	struct pkvm_mem_share share = {
 		.tx	= {
 			.nr_pages	= 1,
@@ -1618,20 +1640,11 @@ int __pkvm_guest_share_host(struct kvm_vcpu *vcpu, u64 ipa)
 		.completer_prot	= PKVM_HOST_MEM_PROT,
 	};
 
-	host_lock_component();
-	guest_lock_component(vcpu);
-
-	ret = do_share(&share);
-
-	guest_unlock_component(vcpu);
-	host_unlock_component();
-
-	return ret;
+	return do_share(&share);
 }
 
 int __pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, u64 ipa)
 {
-	int ret;
 	struct pkvm_mem_share share = {
 		.tx	= {
 			.nr_pages	= 1,
@@ -1649,20 +1662,11 @@ int __pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, u64 ipa)
 		.completer_prot	= PKVM_HOST_MEM_PROT,
 	};
 
-	host_lock_component();
-	guest_lock_component(vcpu);
-
-	ret = do_unshare(&share);
-
-	guest_unlock_component(vcpu);
-	host_unlock_component();
-
-	return ret;
+	return do_unshare(&share);
 }
 
 int __pkvm_host_unshare_hyp(u64 pfn)
 {
-	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
 	u64 hyp_addr = (u64)__hyp_va(host_addr);
 	struct pkvm_mem_share share = {
@@ -1682,20 +1686,11 @@ int __pkvm_host_unshare_hyp(u64 pfn)
 		.completer_prot	= PAGE_HYP,
 	};
 
-	host_lock_component();
-	hyp_lock_component();
-
-	ret = do_unshare(&share);
-
-	hyp_unlock_component();
-	host_unlock_component();
-
-	return ret;
+	return do_unshare(&share);
 }
 
 int __pkvm_host_donate_hyp(u64 pfn, u64 nr_pages)
 {
-	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
 	u64 hyp_addr = (u64)__hyp_va(host_addr);
 	struct pkvm_mem_donation donation = {
@@ -1714,20 +1709,11 @@ int __pkvm_host_donate_hyp(u64 pfn, u64 nr_pages)
 		},
 	};
 
-	host_lock_component();
-	hyp_lock_component();
-
-	ret = do_donate(&donation);
-
-	hyp_unlock_component();
-	host_unlock_component();
-
-	return ret;
+	return do_donate(&donation);
 }
 
 int __pkvm_hyp_donate_host(u64 pfn, u64 nr_pages)
 {
-	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
 	u64 hyp_addr = (u64)__hyp_va(host_addr);
 	struct pkvm_mem_donation donation = {
@@ -1746,15 +1732,7 @@ int __pkvm_hyp_donate_host(u64 pfn, u64 nr_pages)
 		},
 	};
 
-	host_lock_component();
-	hyp_lock_component();
-
-	ret = do_donate(&donation);
-
-	hyp_unlock_component();
-	host_unlock_component();
-
-	return ret;
+	return do_donate(&donation);
 }
 
 int hyp_pin_shared_mem(void *from, void *to)
@@ -1804,7 +1782,6 @@ void hyp_unpin_shared_mem(void *from, void *to)
 
 int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 {
-	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
 	u64 guest_addr = hyp_pfn_to_phys(gfn);
 	struct pkvm_mem_share share = {
@@ -1828,20 +1805,11 @@ int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 		.completer_prot	= KVM_PGTABLE_PROT_RWX,
 	};
 
-	host_lock_component();
-	guest_lock_component(vcpu);
-
-	ret = do_share(&share);
-
-	guest_unlock_component(vcpu);
-	host_unlock_component();
-
-	return ret;
+	return do_share(&share);
 }
 
 int __pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 {
-	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
 	u64 guest_addr = hyp_pfn_to_phys(gfn);
 	struct pkvm_mem_donation donation = {
@@ -1864,20 +1832,11 @@ int __pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 		},
 	};
 
-	host_lock_component();
-	guest_lock_component(vcpu);
-
-	ret = do_donate(&donation);
-
-	guest_unlock_component(vcpu);
-	host_unlock_component();
-
-	return ret;
+	return do_donate(&donation);
 }
 
 int __pkvm_host_share_ffa(u64 pfn, u64 nr_pages)
 {
-	int ret;
 	struct pkvm_mem_share share = {
 		.tx	= {
 			.nr_pages	= nr_pages,
@@ -1891,16 +1850,11 @@ int __pkvm_host_share_ffa(u64 pfn, u64 nr_pages)
 		},
 	};
 
-	host_lock_component();
-	ret = do_share(&share);
-	host_unlock_component();
-
-	return ret;
+	return do_share(&share);
 }
 
 int __pkvm_host_unshare_ffa(u64 pfn, u64 nr_pages)
 {
-	int ret;
 	struct pkvm_mem_share share = {
 		.tx	= {
 			.nr_pages	= nr_pages,
@@ -1914,11 +1868,7 @@ int __pkvm_host_unshare_ffa(u64 pfn, u64 nr_pages)
 		},
 	};
 
-	host_lock_component();
-	ret = do_unshare(&share);
-	host_unlock_component();
-
-	return ret;
+	return do_unshare(&share);
 }
 
 static int hyp_zero_page(phys_addr_t phys)
