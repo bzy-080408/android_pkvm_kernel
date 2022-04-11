@@ -595,38 +595,17 @@ static bool host_stage2_force_pte_cb(u64 addr, u64 end, enum kvm_pgtable_prot pr
 		return prot != PKVM_HOST_MMIO_PROT;
 }
 
-static int host_stage2_idmap(u64 addr)
+static int host_stage2_idmap(u64 addr, struct kvm_mem_range *range, enum kvm_pgtable_prot prot)
 {
-	struct kvm_mem_range range;
-	bool is_memory = !!find_mem_range(addr, &range);
-	enum kvm_pgtable_prot prot;
-	struct hyp_page *page;
 	int ret;
 
 	hyp_assert_lock_held(&host_kvm.lock);
 
-	prot = is_memory ? PKVM_HOST_MEM_PROT : PKVM_HOST_MMIO_PROT;
-
-	/*
-	 * Adjust against IOMMU devices first. host_stage2_adjust_range() should
-	 * be called last for proper alignment.
-	 */
-	if (!is_memory) {
-		ret = pkvm_iommu_host_stage2_adjust_range(addr, &range.start,
-							  &range.end);
-		if (ret)
-			return ret;
-	 } else {
-		page = hyp_phys_to_page(addr);
-		if (host_getstate(page) == PKVM_NOPAGE)
-			return -EPERM;
-	 }
-
-	ret = host_stage2_adjust_range(addr, &range);
+	ret = host_stage2_adjust_range(addr, range);
 	if (ret)
 		return ret;
 
-	return host_stage2_idmap_locked(range.start, range.end - range.start, prot);
+	return host_stage2_idmap_locked(range->start, range->end - range->start, prot);
 }
 
 static bool is_dabt(u64 esr)
@@ -678,11 +657,49 @@ static void host_inject_abort(struct kvm_cpu_context *host_ctxt)
 	write_sysreg_el2(spsr, SYS_SPSR);
 }
 
-void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
+static int handle_host_mem_abort(struct kvm_cpu_context *host_ctxt, u64 addr,
+				 struct kvm_mem_range *range)
+{
+	enum kvm_pgtable_prot prot = PKVM_HOST_MEM_PROT;
+	struct hyp_page *page;
+	int ret = -EPERM;
+
+	host_lock_component();
+	page = hyp_phys_to_page(addr);
+	if (host_getstate(page) == PKVM_NOPAGE)
+		goto unlock;
+	ret = host_stage2_idmap(addr, range, prot);
+unlock:
+	host_unlock_component();
+
+	return ret;
+}
+
+static int handle_host_mmio_abort(struct kvm_cpu_context *host_ctxt, u64 addr,
+				  u64 esr, struct kvm_mem_range *range)
+{
+	enum kvm_pgtable_prot prot = PKVM_HOST_MMIO_PROT;
+	int ret = 0;
+
+	host_lock_component();
+	if (is_dabt(esr) && pkvm_iommu_host_dabt_handler(host_ctxt, esr, addr))
+		goto unlock;
+	ret = pkvm_iommu_host_stage2_adjust_range(addr, &range->start, &range->end);
+	if (ret)
+		goto unlock;
+	ret = host_stage2_idmap(addr, range, prot);
+unlock:
+	host_unlock_component();
+
+	return ret;
+}
+
+void handle_host_abort(struct kvm_cpu_context *host_ctxt)
 {
 	struct kvm_vcpu_fault_info fault;
+	struct kvm_mem_range range;
 	u64 esr, addr;
-	int ret = -EPERM;
+	int ret;
 
 	esr = read_sysreg_el2(SYS_ESR);
 	BUG_ON(!__get_fault_info(esr, &fault));
@@ -690,18 +707,10 @@ void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 	addr = (fault.hpfar_el2 & HPFAR_MASK) << 8;
 	addr |= fault.far_el2 & FAR_MASK;
 
-	host_lock_component();
-
-	/* Check if an IOMMU device can handle the DABT. */
-	if (is_dabt(esr) && !addr_is_memory(addr) &&
-	    pkvm_iommu_host_dabt_handler(host_ctxt, esr, addr))
-		ret = 0;
-
-	/* If not handled, attempt to map the page. */
-	if (ret == -EPERM)
-		ret = host_stage2_idmap(addr);
-
-	host_unlock_component();
+	if (!!find_mem_range(addr, &range))
+		ret = handle_host_mem_abort(host_ctxt, addr, &range);
+	else
+		ret = handle_host_mmio_abort(host_ctxt, addr, esr, &range);
 
 	if (ret == -EPERM)
 		host_inject_abort(host_ctxt);
