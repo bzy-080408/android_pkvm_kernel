@@ -664,14 +664,14 @@ static int handle_host_mem_abort(struct kvm_cpu_context *host_ctxt, u64 addr,
 	struct hyp_page *page;
 	int ret = -EPERM;
 
-	host_lock_component();
 	page = hyp_phys_to_page(addr);
 	hyp_page_lock(page);
 	if (host_getstate(page) == PKVM_NOPAGE)
 		goto unlock;
+	host_lock_component();
 	ret = host_stage2_idmap(addr, range, prot);
-unlock:
 	hyp_page_unlock(page);
+unlock:
 	host_unlock_component();
 
 	return ret;
@@ -772,14 +772,10 @@ static void mem_transition_lock(const struct pkvm_mem_transition *tx)
 	if (tx->completer.id == PKVM_ID_GUEST)
 		guest_lock_component(tx->completer.guest.vcpu);
 	/* No locks needed for PKVM_ID_FFA */
-	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
-		host_lock_component();
 }
 
 static void mem_transition_unlock(const struct pkvm_mem_transition *tx)
 {
-	if (tx->initiator.id == PKVM_ID_HOST || tx->completer.id == PKVM_ID_HOST)
-		host_unlock_component();
 	/* No locks needed for PKVM_ID_FFA */
 	if (tx->completer.id == PKVM_ID_GUEST)
 		guest_unlock_component(tx->completer.guest.vcpu);
@@ -864,8 +860,6 @@ static int __host_check_page_state_range(u64 addr, u64 size,
 {
 	u64 start = addr, end = addr + size;
 	struct hyp_page *page;
-
-	hyp_assert_lock_held(&host_kvm.lock);
 
 	for (; addr < end; addr += PAGE_SIZE) {
 		if (!addr_is_allowed_memory(addr))
@@ -961,7 +955,9 @@ static int host_initiate_donation(u64 *completer_addr,
 	int ret;
 
 	*completer_addr = tx->initiator.host.completer_addr;
+	host_lock_component();
 	ret = host_stage2_set_owner_locked(tx->initiator.addr, size, owner_id);
+	host_unlock_component();
 	__host_unlock_pages(tx->initiator.addr, size);
 
 	return ret;
@@ -1008,7 +1004,9 @@ static int host_complete_unshare(u64 addr, const struct pkvm_mem_transition *tx)
 	pkvm_id owner_id = initiator_owner_id(tx);
 	int ret;
 
+	host_lock_component();
 	ret = host_stage2_set_owner_locked(addr, size, owner_id);
+	host_unlock_component();
 	__host_unlock_pages(tx->initiator.addr, size);
 
 	return ret;
@@ -1020,7 +1018,9 @@ static int host_complete_donation(u64 addr, const struct pkvm_mem_transition *tx
 	pkvm_id host_id = completer_owner_id(tx);
 	int ret;
 
+	host_lock_component();
 	ret = host_stage2_set_owner_locked(addr, size, host_id);
+	host_unlock_component();
 	__host_unlock_pages(tx->initiator.addr, size);
 
 	return ret;
