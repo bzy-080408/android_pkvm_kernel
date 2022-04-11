@@ -287,11 +287,13 @@ static int reclaim_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 {
 	kvm_pte_t pte = *ptep;
 	struct hyp_page *page;
+	int ret = 0;
 
 	if (!kvm_pte_valid(pte))
 		return 0;
 
 	page = hyp_phys_to_page(kvm_pte_to_phys(pte));
+	hyp_page_lock(page);
 	switch (pkvm_getstate(kvm_pgtable_stage2_pte_prot(pte))) {
 	case PKVM_PAGE_OWNED:
 		page->flags |= HOST_PAGE_NEED_POISONING;
@@ -301,10 +303,11 @@ static int reclaim_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 		page->flags |= HOST_PAGE_PENDING_RECLAIM;
 		break;
 	default:
-		return -EPERM;
+		ret = -EPERM;
 	}
+	hyp_page_unlock(page);
 
-	return 0;
+	return ret;
 }
 
 void reclaim_guest_pages(struct kvm_shadow_vm *vm, struct kvm_hyp_memcache *mc)
@@ -315,7 +318,6 @@ void reclaim_guest_pages(struct kvm_shadow_vm *vm, struct kvm_hyp_memcache *mc)
 	};
 	void *addr;
 
-	host_lock_component();
 	__guest_lock(vm);
 
 	/* Reclaim all guest pages, and dump all pgtable pages in the hyp_pool */
@@ -324,7 +326,6 @@ void reclaim_guest_pages(struct kvm_shadow_vm *vm, struct kvm_hyp_memcache *mc)
 	vm->arch.mmu.pgd_phys = 0ULL;
 
 	__guest_unlock(vm);
-	host_unlock_component();
 
 	/* Drain the hyp_pool into the memcache */
 	addr = hyp_alloc_pages(&vm->pool, 0);
@@ -1942,9 +1943,8 @@ int __pkvm_host_reclaim_page(u64 pfn)
 	if (!addr_is_memory(addr))
 		return -EPERM;
 
-	host_lock_component();
-
 	page = hyp_phys_to_page(addr);
+	hyp_page_lock(page);
 	if (host_getstate(page) == PKVM_PAGE_OWNED)
 		goto unlock;
 
@@ -1961,13 +1961,15 @@ int __pkvm_host_reclaim_page(u64 pfn)
 		psci_mem_protect_dec();
 	}
 
+	host_lock_component();
 	ret = host_stage2_set_owner_locked(addr, PAGE_SIZE, pkvm_host_id);
+	host_unlock_component();
 	if (ret)
 		goto unlock;
 	page->flags &= ~HOST_PAGE_PENDING_RECLAIM;
 
 unlock:
-	host_unlock_component();
+	hyp_page_unlock(page);
 
 	return ret;
 }
