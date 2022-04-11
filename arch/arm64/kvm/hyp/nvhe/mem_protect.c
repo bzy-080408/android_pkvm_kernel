@@ -666,10 +666,12 @@ static int handle_host_mem_abort(struct kvm_cpu_context *host_ctxt, u64 addr,
 
 	host_lock_component();
 	page = hyp_phys_to_page(addr);
+	hyp_page_lock(page);
 	if (host_getstate(page) == PKVM_NOPAGE)
 		goto unlock;
 	ret = host_stage2_idmap(addr, range, prot);
 unlock:
+	hyp_page_unlock(page);
 	host_unlock_component();
 
 	return ret;
