@@ -1824,11 +1824,13 @@ int hyp_pin_shared_mem(void *from, void *to)
 	ret = __hyp_check_page_state_range(start, size,
 					   PKVM_PAGE_SHARED_BORROWED);
 	if (ret)
-		goto unlock;
+		goto unlock_pages;
 
 	for (cur = start; cur < end; cur += PAGE_SIZE)
 		hyp_page_ref_inc(hyp_virt_to_page(cur));
 
+unlock_pages:
+	__host_unlock_pages(__hyp_pa(start), size);
 unlock:
 	host_unlock_component();
 	hyp_unlock_component();
