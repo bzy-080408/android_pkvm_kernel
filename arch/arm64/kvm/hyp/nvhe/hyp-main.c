@@ -32,8 +32,6 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	shadow_vcpu->arch.sve_state	= kern_hyp_va(host_vcpu->arch.sve_state);
 	shadow_vcpu->arch.sve_max_vl	= host_vcpu->arch.sve_max_vl;
 
-	shadow_vcpu->arch.hw_mmu	= host_vcpu->arch.hw_mmu;
-
 	shadow_vcpu->arch.hcr_el2	= host_vcpu->arch.hcr_el2;
 	shadow_vcpu->arch.mdcr_el2	= host_vcpu->arch.mdcr_el2;
 	shadow_vcpu->arch.cptr_el2	= host_vcpu->arch.cptr_el2;
@@ -103,6 +101,52 @@ static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
 		ret = __kvm_vcpu_run(host_vcpu);
 	}
 
+out:
+	cpu_reg(host_ctxt, 1) =  ret;
+}
+
+static int pkvm_refill_memcache(struct kvm_vcpu *shadow_vcpu,
+				struct kvm_vcpu *host_vcpu)
+{
+	struct kvm_shadow_vcpu_state *shadow_vcpu_state = get_shadow_state(shadow_vcpu);
+	u64 nr_pages = VTCR_EL2_LVLS(shadow_vcpu_state->shadow_vm->kvm.arch.vtcr) - 1;
+
+	return refill_memcache(&shadow_vcpu->arch.pkvm_memcache, nr_pages,
+			       &host_vcpu->arch.pkvm_memcache);
+}
+
+static void handle___pkvm_host_map_guest(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(u64, pfn, host_ctxt, 1);
+	DECLARE_REG(u64, gfn, host_ctxt, 2);
+	DECLARE_REG(struct kvm_vcpu *, host_vcpu, host_ctxt, 3);
+	struct kvm_shadow_vcpu_state *shadow_state;
+	struct kvm_vcpu *shadow_vcpu;
+	struct kvm *host_kvm;
+	unsigned int handle;
+	int ret = -EINVAL;
+
+	if (!is_protected_kvm_enabled())
+		goto out;
+
+	host_vcpu = kern_hyp_va(host_vcpu);
+	host_kvm = kern_hyp_va(host_vcpu->kvm);
+	handle = host_kvm->arch.pkvm.shadow_handle;
+	shadow_state = pkvm_load_shadow_vcpu_state(handle, host_vcpu->vcpu_idx);
+	if (!shadow_state)
+		goto out;
+
+	host_vcpu = shadow_state->host_vcpu;
+	shadow_vcpu = &shadow_state->shadow_vcpu;
+
+	/* Topup shadow memcache with the host's */
+	ret = pkvm_refill_memcache(shadow_vcpu, host_vcpu);
+	if (ret)
+		goto out_put_state;
+
+	ret = __pkvm_host_share_guest(pfn, gfn, shadow_vcpu);
+out_put_state:
+	pkvm_put_shadow_vcpu_state(shadow_state);
 out:
 	cpu_reg(host_ctxt, 1) =  ret;
 }
@@ -297,6 +341,7 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_host_share_hyp),
 	HANDLE_FUNC(__pkvm_host_unshare_hyp),
 	HANDLE_FUNC(__pkvm_host_reclaim_page),
+	HANDLE_FUNC(__pkvm_host_map_guest),
 	HANDLE_FUNC(__kvm_adjust_pc),
 	HANDLE_FUNC(__kvm_vcpu_run),
 	HANDLE_FUNC(__kvm_flush_vm_context),
