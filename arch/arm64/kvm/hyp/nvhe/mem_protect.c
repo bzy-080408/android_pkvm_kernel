@@ -860,31 +860,55 @@ static int check_page_state_range(struct kvm_pgtable *pgt, u64 addr, u64 size,
 static int __host_check_page_state_range(u64 addr, u64 size,
 					 enum pkvm_page_state state)
 {
+	u64 start = addr, end = addr + size;
 	struct hyp_page *page;
-	u64 end = addr + size;
 
 	hyp_assert_lock_held(&host_kvm.lock);
 
 	for (; addr < end; addr += PAGE_SIZE) {
 		if (!addr_is_allowed_memory(addr))
-			return -EPERM;
+			goto fail;
 		page = hyp_phys_to_page(addr);
-		if (host_getstate(page) != state)
-			return -EPERM;
+		hyp_page_lock(page);
+		if (host_getstate(page) != state) {
+			hyp_page_unlock(page);
+			goto fail;
+		}
 	}
 
 	return 0;
+fail:
+	for (; start < addr; start += PAGE_SIZE)
+		hyp_page_unlock(hyp_phys_to_page(start));
+	return -EPERM;
+}
+
+static void __host_unlock_pages(u64 addr, u64 size)
+{
+	u64 end = addr + size;
+
+	for (; addr < end; addr += PAGE_SIZE)
+		hyp_page_unlock(hyp_phys_to_page(addr));
 }
 
 static int __host_set_page_state_range(u64 addr, u64 size,
 				       enum pkvm_page_state state)
 {
-	u64 end = addr + size;
+	u64 start = addr, end = addr + size;
 
 	for (; addr < end; addr += PAGE_SIZE)
 		host_setstate(hyp_phys_to_page(addr), state);
+	__host_unlock_pages(start, size);
 
 	return 0;
+}
+
+static void host_cancel_transition(const struct pkvm_mem_transition *tx)
+{
+	u64 size = tx->nr_pages * PAGE_SIZE;
+	u64 addr = tx->initiator.addr;
+
+	__host_unlock_pages(addr, size);
 }
 
 static int host_request_owned_transition(u64 *completer_addr,
@@ -932,9 +956,13 @@ static int host_initiate_donation(u64 *completer_addr,
 {
 	pkvm_id owner_id = completer_owner_id(tx);
 	u64 size = tx->nr_pages * PAGE_SIZE;
+	int ret;
 
 	*completer_addr = tx->initiator.host.completer_addr;
-	return host_stage2_set_owner_locked(tx->initiator.addr, size, owner_id);
+	ret = host_stage2_set_owner_locked(tx->initiator.addr, size, owner_id);
+	__host_unlock_pages(tx->initiator.addr, size);
+
+	return ret;
 }
 
 static int __host_ack_transition(u64 addr, const struct pkvm_mem_transition *tx,
@@ -976,16 +1004,24 @@ static int host_complete_unshare(u64 addr, const struct pkvm_mem_transition *tx)
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
 	pkvm_id owner_id = initiator_owner_id(tx);
+	int ret;
 
-	return host_stage2_set_owner_locked(addr, size, owner_id);
+	ret = host_stage2_set_owner_locked(addr, size, owner_id);
+	__host_unlock_pages(tx->initiator.addr, size);
+
+	return ret;
 }
 
 static int host_complete_donation(u64 addr, const struct pkvm_mem_transition *tx)
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
 	pkvm_id host_id = completer_owner_id(tx);
+	int ret;
 
-	return host_stage2_set_owner_locked(addr, size, host_id);
+	ret = host_stage2_set_owner_locked(addr, size, host_id);
+	__host_unlock_pages(tx->initiator.addr, size);
+
+	return ret;
 }
 
 static enum pkvm_page_state hyp_get_page_state(kvm_pte_t pte)
@@ -1334,6 +1370,17 @@ static int check_share(struct pkvm_mem_share *share)
 		ret = -EINVAL;
 	}
 
+	if (!ret)
+		return 0;
+
+	switch (tx->initiator.id) {
+	case PKVM_ID_HOST:
+		host_cancel_transition(tx);
+		break;
+	default:
+		WARN_ON(1);
+	}
+
 	return ret;
 }
 
@@ -1438,6 +1485,17 @@ static int check_unshare(struct pkvm_mem_share *share)
 		ret = -EINVAL;
 	}
 
+	if (!ret)
+		return 0;
+
+	switch (tx->initiator.id) {
+	case PKVM_ID_HOST:
+		host_cancel_transition(tx);
+		break;
+	default:
+		WARN_ON(1);
+	}
+
 	return ret;
 }
 
@@ -1533,6 +1591,17 @@ static int check_donation(struct pkvm_mem_donation *donation)
 		break;
 	default:
 		ret = -EINVAL;
+	}
+
+	if (!ret)
+		return 0;
+
+	switch (tx->initiator.id) {
+	case PKVM_ID_HOST:
+		host_cancel_transition(tx);
+		break;
+	default:
+		WARN_ON(1);
 	}
 
 	return ret;
