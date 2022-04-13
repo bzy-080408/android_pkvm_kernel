@@ -35,15 +35,15 @@ NOKPROBE_SYMBOL(save_return_addr);
 void *return_address(unsigned int level)
 {
 	struct return_address_data data;
-	struct stackframe frame;
+	struct unwind_state state;
 
 	data.level = level + 2;
 	data.addr = NULL;
 
-	unwind_init(&frame,
+	unwind_init(&state,
 			(unsigned long)__builtin_frame_address(0),
 			(unsigned long)return_address);
-	unwind(current, &frame, save_return_addr, &data);
+	unwind(current, &state, save_return_addr, &data);
 
 	if (!data.level)
 		return data.addr;

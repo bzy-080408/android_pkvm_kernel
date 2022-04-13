@@ -50,7 +50,7 @@ struct stack_info {
  * @graph:       When FUNCTION_GRAPH_TRACER is selected, holds the index of a
  *               replacement lr value in the ftrace graph stack.
  */
-struct stackframe {
+struct unwind_state {
 	unsigned long fp;
 	unsigned long pc;
 	DECLARE_BITMAP(stacks_done, __NR_STACK_TYPES);
@@ -61,8 +61,8 @@ struct stackframe {
 #endif
 };
 
-extern int unwind_next(struct task_struct *tsk, struct stackframe *frame);
-extern void unwind(struct task_struct *tsk, struct stackframe *frame,
+extern int unwind_next(struct task_struct *tsk, struct unwind_state *state);
+extern void unwind(struct task_struct *tsk, struct unwind_state *state,
 			    bool (*fn)(void *, unsigned long), void *data);
 extern void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
 			   const char *loglvl);
@@ -148,13 +148,13 @@ static inline bool on_accessible_stack(const struct task_struct *tsk,
 	return false;
 }
 
-static inline void unwind_init(struct stackframe *frame, unsigned long fp,
+static inline void unwind_init(struct unwind_state *state, unsigned long fp,
 				unsigned long pc)
 {
-	frame->fp = fp;
-	frame->pc = pc;
+	state->fp = fp;
+	state->pc = pc;
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	frame->graph = 0;
+	state->graph = 0;
 #endif
 
 	/*
@@ -166,9 +166,9 @@ static inline void unwind_init(struct stackframe *frame, unsigned long fp,
 	 * prev_fp value won't be used, but we set it to 0 such that it is
 	 * definitely not an accessible stack address.
 	 */
-	bitmap_zero(frame->stacks_done, __NR_STACK_TYPES);
-	frame->prev_fp = 0;
-	frame->prev_type = STACK_TYPE_UNKNOWN;
+	bitmap_zero(state->stacks_done, __NR_STACK_TYPES);
+	state->prev_fp = 0;
+	state->prev_type = STACK_TYPE_UNKNOWN;
 }
 
 #endif	/* __ASM_STACKTRACE_H */

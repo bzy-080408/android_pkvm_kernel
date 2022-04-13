@@ -598,7 +598,7 @@ __notrace_funcgraph struct task_struct *__switch_to(struct task_struct *prev,
 
 unsigned long get_wchan(struct task_struct *p)
 {
-	struct stackframe frame;
+	struct unwind_state state;
 	unsigned long stack_page, ret = 0;
 	int count = 0;
 	if (!p || p == current || p->state == TASK_RUNNING)
@@ -608,13 +608,13 @@ unsigned long get_wchan(struct task_struct *p)
 	if (!stack_page)
 		return 0;
 
-	unwind_init(&frame, thread_saved_fp(p), thread_saved_pc(p));
+	unwind_init(&state, thread_saved_fp(p), thread_saved_pc(p));
 
 	do {
-		if (unwind_next(p, &frame))
+		if (unwind_next(p, &state))
 			goto out;
-		if (!in_sched_functions(frame.pc)) {
-			ret = frame.pc;
+		if (!in_sched_functions(state.pc)) {
+			ret = state.pc;
 			goto out;
 		}
 	} while (count ++ < 16);

@@ -150,15 +150,15 @@ void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 			   struct pt_regs *regs)
 {
 	struct perf_guest_info_callbacks *guest_cbs = perf_get_guest_cbs();
-	struct stackframe frame;
+	struct unwind_state state;
 
 	if (guest_cbs && guest_cbs->is_in_guest()) {
 		/* We don't support guest os callchain now */
 		return;
 	}
 
-	unwind_init(&frame, regs->regs[29], regs->pc);
-	unwind(current, &frame, callchain_trace, entry);
+	unwind_init(&state, regs->regs[29], regs->pc);
+	unwind(current, &state, callchain_trace, entry);
 }
 
 unsigned long perf_instruction_pointer(struct pt_regs *regs)

@@ -34,20 +34,20 @@
 
 unsigned long profile_pc(struct pt_regs *regs)
 {
-	struct stackframe frame;
+	struct unwind_state state;
 
 	if (!in_lock_functions(regs->pc))
 		return regs->pc;
 
-	unwind_init(&frame, regs->regs[29], regs->pc);
+	unwind_init(&state, regs->regs[29], regs->pc);
 
 	do {
-		int ret = unwind_next(NULL, &frame);
+		int ret = unwind_next(NULL, &state);
 		if (ret < 0)
 			return 0;
-	} while (in_lock_functions(frame.pc));
+	} while (in_lock_functions(state.pc));
 
-	return frame.pc;
+	return state.pc;
 }
 EXPORT_SYMBOL(profile_pc);
 
