@@ -63,5 +63,9 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 		       size_t shadow_size, unsigned long pgd_hva);
 int __pkvm_teardown_shadow(unsigned int shadow_handle);
 
+struct kvm_shadow_vcpu_state *
+pkvm_load_shadow_vcpu_state(unsigned int shadow_handle, unsigned int vcpu_idx);
+void pkvm_put_shadow_vcpu_state(struct kvm_shadow_vcpu_state *shadow_state);
+
 #endif /* __ARM64_KVM_NVHE_PKVM_H__ */
 

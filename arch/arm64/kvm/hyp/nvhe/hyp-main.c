@@ -22,11 +22,89 @@ DEFINE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
 
 void __kvm_hyp_host_forward_smc(struct kvm_cpu_context *host_ctxt);
 
+static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
+
+	shadow_vcpu->arch.ctxt		= host_vcpu->arch.ctxt;
+
+	shadow_vcpu->arch.sve_state	= kern_hyp_va(host_vcpu->arch.sve_state);
+	shadow_vcpu->arch.sve_max_vl	= host_vcpu->arch.sve_max_vl;
+
+	shadow_vcpu->arch.hw_mmu	= host_vcpu->arch.hw_mmu;
+
+	shadow_vcpu->arch.hcr_el2	= host_vcpu->arch.hcr_el2;
+	shadow_vcpu->arch.mdcr_el2	= host_vcpu->arch.mdcr_el2;
+	shadow_vcpu->arch.cptr_el2	= host_vcpu->arch.cptr_el2;
+
+	shadow_vcpu->arch.flags		= host_vcpu->arch.flags;
+
+	shadow_vcpu->arch.debug_ptr	= kern_hyp_va(host_vcpu->arch.debug_ptr);
+	shadow_vcpu->arch.host_fpsimd_state = host_vcpu->arch.host_fpsimd_state;
+
+	shadow_vcpu->arch.vsesr_el2	= host_vcpu->arch.vsesr_el2;
+
+	shadow_vcpu->arch.vgic_cpu.vgic_v3 = host_vcpu->arch.vgic_cpu.vgic_v3;
+}
+
+static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
+	struct vgic_v3_cpu_if *shadow_cpu_if = &shadow_vcpu->arch.vgic_cpu.vgic_v3;
+	struct vgic_v3_cpu_if *host_cpu_if = &host_vcpu->arch.vgic_cpu.vgic_v3;
+	unsigned int i;
+
+	host_vcpu->arch.ctxt		= shadow_vcpu->arch.ctxt;
+
+	host_vcpu->arch.hcr_el2		= shadow_vcpu->arch.hcr_el2;
+	host_vcpu->arch.cptr_el2	= shadow_vcpu->arch.cptr_el2;
+
+	host_vcpu->arch.fault		= shadow_vcpu->arch.fault;
+
+	host_vcpu->arch.flags		= shadow_vcpu->arch.flags;
+
+	host_cpu_if->vgic_hcr		= shadow_cpu_if->vgic_hcr;
+	for (i = 0; i < shadow_cpu_if->used_lrs; ++i)
+		host_cpu_if->vgic_lr[i] = shadow_cpu_if->vgic_lr[i];
+}
+
 static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(struct kvm_vcpu *, vcpu, host_ctxt, 1);
+	DECLARE_REG(struct kvm_vcpu *, host_vcpu, host_ctxt, 1);
+	int ret;
 
-	cpu_reg(host_ctxt, 1) =  __kvm_vcpu_run(kern_hyp_va(vcpu));
+	host_vcpu = kern_hyp_va(host_vcpu);
+
+	if (unlikely(is_protected_kvm_enabled())) {
+		struct kvm_shadow_vcpu_state *shadow_state;
+		struct kvm_vcpu *shadow_vcpu;
+		struct kvm *host_kvm;
+		unsigned int handle;
+
+		host_kvm = kern_hyp_va(host_vcpu->kvm);
+		handle = host_kvm->arch.pkvm.shadow_handle;
+		shadow_state = pkvm_load_shadow_vcpu_state(handle,
+							   host_vcpu->vcpu_idx);
+		if (!shadow_state) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		shadow_vcpu = &shadow_state->shadow_vcpu;
+		flush_shadow_state(shadow_state);
+
+		ret = __kvm_vcpu_run(shadow_vcpu);
+
+		sync_shadow_state(shadow_state);
+		pkvm_put_shadow_vcpu_state(shadow_state);
+	} else {
+		ret = __kvm_vcpu_run(host_vcpu);
+	}
+
+out:
+	cpu_reg(host_ctxt, 1) =  ret;
 }
 
 static void handle___kvm_adjust_pc(struct kvm_cpu_context *host_ctxt)
