@@ -39,10 +39,10 @@ unsigned long profile_pc(struct pt_regs *regs)
 	if (!in_lock_functions(regs->pc))
 		return regs->pc;
 
-	start_backtrace(&frame, regs->regs[29], regs->pc);
+	unwind_init(&frame, regs->regs[29], regs->pc);
 
 	do {
-		int ret = unwind_frame(NULL, &frame);
+		int ret = unwind_next(NULL, &frame);
 		if (ret < 0)
 			return 0;
 	} while (in_lock_functions(frame.pc));

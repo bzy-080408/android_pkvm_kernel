@@ -25,7 +25,8 @@
  * records (e.g. a cycle), determined based on the location and fp value of A
  * and the location (but not the fp value) of B.
  */
-int notrace unwind_frame(struct task_struct *tsk, struct stackframe *frame)
+int notrace unwind_next(struct task_struct *tsk,
+			       struct stackframe *frame)
 {
 	unsigned long fp = frame->fp;
 	struct stack_info info;
@@ -64,7 +65,7 @@ int notrace unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 
 	/*
 	 * Record this frame record's values and location. The prev_fp and
-	 * prev_type are only meaningful to the next unwind_frame() invocation.
+	 * prev_type are only meaningful to the next unwind_next() invocation.
 	 */
 	frame->fp = READ_ONCE_NOCHECK(*(unsigned long *)(fp));
 	frame->pc = READ_ONCE_NOCHECK(*(unsigned long *)(fp + 8));
@@ -101,22 +102,23 @@ int notrace unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 
 	return 0;
 }
-NOKPROBE_SYMBOL(unwind_frame);
+NOKPROBE_SYMBOL(unwind_next);
 
-void notrace walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
-			     bool (*fn)(void *, unsigned long), void *data)
+void notrace unwind(struct task_struct *tsk,
+			   struct stackframe *frame,
+			   bool (*fn)(void *, unsigned long), void *data)
 {
 	while (1) {
 		int ret;
 
 		if (!fn(data, frame->pc))
 			break;
-		ret = unwind_frame(tsk, frame);
+		ret = unwind_next(tsk, frame);
 		if (ret < 0)
 			break;
 	}
 }
-NOKPROBE_SYMBOL(walk_stackframe);
+NOKPROBE_SYMBOL(unwind);
 
 static void dump_backtrace_entry(unsigned long where, const char *loglvl)
 {
@@ -144,14 +146,14 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
 		return;
 
 	if (tsk == current) {
-		start_backtrace(&frame,
+		unwind_init(&frame,
 				(unsigned long)__builtin_frame_address(0),
 				(unsigned long)dump_backtrace);
 	} else {
 		/*
 		 * task blocked in __switch_to
 		 */
-		start_backtrace(&frame,
+		unwind_init(&frame,
 				thread_saved_fp(tsk),
 				thread_saved_pc(tsk));
 	}
@@ -172,7 +174,7 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk,
 			 */
 			dump_backtrace_entry(regs->pc, loglvl);
 		}
-	} while (!unwind_frame(tsk, &frame));
+	} while (!unwind_next(tsk, &frame));
 
 	put_task_stack(tsk);
 }
@@ -193,16 +195,16 @@ noinline notrace void arch_stack_walk(stack_trace_consume_fn consume_entry,
 	struct stackframe frame;
 
 	if (regs)
-		start_backtrace(&frame, regs->regs[29], regs->pc);
+		unwind_init(&frame, regs->regs[29], regs->pc);
 	else if (task == current)
-		start_backtrace(&frame,
+		unwind_init(&frame,
 				(unsigned long)__builtin_frame_address(1),
 				(unsigned long)__builtin_return_address(0));
 	else
-		start_backtrace(&frame, thread_saved_fp(task),
+		unwind_init(&frame, thread_saved_fp(task),
 				thread_saved_pc(task));
 
-	walk_stackframe(task, &frame, consume_entry, cookie);
+	unwind(task, &frame, consume_entry, cookie);
 }
 
 #endif

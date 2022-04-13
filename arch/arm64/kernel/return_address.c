@@ -40,10 +40,10 @@ void *return_address(unsigned int level)
 	data.level = level + 2;
 	data.addr = NULL;
 
-	start_backtrace(&frame,
+	unwind_init(&frame,
 			(unsigned long)__builtin_frame_address(0),
 			(unsigned long)return_address);
-	walk_stackframe(current, &frame, save_return_addr, &data);
+	unwind(current, &frame, save_return_addr, &data);
 
 	if (!data.level)
 		return data.addr;

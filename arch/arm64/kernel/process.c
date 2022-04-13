@@ -608,10 +608,10 @@ unsigned long get_wchan(struct task_struct *p)
 	if (!stack_page)
 		return 0;
 
-	start_backtrace(&frame, thread_saved_fp(p), thread_saved_pc(p));
+	unwind_init(&frame, thread_saved_fp(p), thread_saved_pc(p));
 
 	do {
-		if (unwind_frame(p, &frame))
+		if (unwind_next(p, &frame))
 			goto out;
 		if (!in_sched_functions(frame.pc)) {
 			ret = frame.pc;

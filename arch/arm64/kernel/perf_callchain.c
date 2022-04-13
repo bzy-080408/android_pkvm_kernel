@@ -135,7 +135,7 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 }
 
 /*
- * Gets called by walk_stackframe() for every stackframe. This will be called
+ * Gets called by unwind() for every stackframe. This will be called
  * whist unwinding the stackframe and is like a subroutine return so we use
  * the PC.
  */
@@ -157,8 +157,8 @@ void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 		return;
 	}
 
-	start_backtrace(&frame, regs->regs[29], regs->pc);
-	walk_stackframe(current, &frame, callchain_trace, entry);
+	unwind_init(&frame, regs->regs[29], regs->pc);
+	unwind(current, &frame, callchain_trace, entry);
 }
 
 unsigned long perf_instruction_pointer(struct pt_regs *regs)
