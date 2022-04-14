@@ -18,9 +18,50 @@
 #include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
 
+#include <linux/irqchip/arm-gic-v3.h>
+
 DEFINE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
 
 void __kvm_hyp_host_forward_smc(struct kvm_cpu_context *host_ctxt);
+
+static void flush_vgic_state(struct kvm_vcpu *host_vcpu,
+			     struct kvm_vcpu *shadow_vcpu)
+{
+	struct vgic_v3_cpu_if *host_cpu_if, *shadow_cpu_if;
+	unsigned int used_lrs, max_lrs, i;
+
+	host_cpu_if	= &host_vcpu->arch.vgic_cpu.vgic_v3;
+	shadow_cpu_if	= &shadow_vcpu->arch.vgic_cpu.vgic_v3;
+
+	max_lrs = (read_gicreg(ICH_VTR_EL2) & 0xf) + 1;
+	used_lrs = READ_ONCE(host_cpu_if->used_lrs);
+	used_lrs = min(used_lrs, max_lrs);
+
+	shadow_cpu_if->vgic_hcr	= READ_ONCE(host_cpu_if->vgic_hcr);
+	/* Should be a one-off */
+	shadow_cpu_if->vgic_sre = (ICC_SRE_EL1_DIB |
+				   ICC_SRE_EL1_DFB |
+				   ICC_SRE_EL1_SRE);
+	shadow_cpu_if->used_lrs	= used_lrs;
+
+	for (i = 0; i < used_lrs; i++)
+		shadow_cpu_if->vgic_lr[i] = READ_ONCE(host_cpu_if->vgic_lr[i]);
+}
+
+static void sync_vgic_state(struct kvm_vcpu *host_vcpu,
+			    struct kvm_vcpu *shadow_vcpu)
+{
+	struct vgic_v3_cpu_if *host_cpu_if, *shadow_cpu_if;
+	unsigned int i;
+
+	host_cpu_if	= &host_vcpu->arch.vgic_cpu.vgic_v3;
+	shadow_cpu_if	= &shadow_vcpu->arch.vgic_cpu.vgic_v3;
+
+	WRITE_ONCE(host_cpu_if->vgic_hcr, shadow_cpu_if->vgic_hcr);
+
+	for (i = 0; i < shadow_cpu_if->used_lrs; i++)
+		WRITE_ONCE(host_cpu_if->vgic_lr[i], shadow_cpu_if->vgic_lr[i]);
+}
 
 static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 {
@@ -43,16 +84,13 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 
 	shadow_vcpu->arch.vsesr_el2	= host_vcpu->arch.vsesr_el2;
 
-	shadow_vcpu->arch.vgic_cpu.vgic_v3 = host_vcpu->arch.vgic_cpu.vgic_v3;
+	flush_vgic_state(host_vcpu, shadow_vcpu);
 }
 
 static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 {
 	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
 	struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
-	struct vgic_v3_cpu_if *shadow_cpu_if = &shadow_vcpu->arch.vgic_cpu.vgic_v3;
-	struct vgic_v3_cpu_if *host_cpu_if = &host_vcpu->arch.vgic_cpu.vgic_v3;
-	unsigned int i;
 
 	host_vcpu->arch.ctxt		= shadow_vcpu->arch.ctxt;
 
@@ -63,9 +101,7 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 
 	host_vcpu->arch.flags		= shadow_vcpu->arch.flags;
 
-	host_cpu_if->vgic_hcr		= shadow_cpu_if->vgic_hcr;
-	for (i = 0; i < shadow_cpu_if->used_lrs; ++i)
-		host_cpu_if->vgic_lr[i] = shadow_cpu_if->vgic_lr[i];
+	sync_vgic_state(host_vcpu, shadow_vcpu);
 }
 
 static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
