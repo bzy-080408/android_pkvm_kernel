@@ -63,6 +63,38 @@ static void sync_vgic_state(struct kvm_vcpu *host_vcpu,
 		WRITE_ONCE(host_cpu_if->vgic_lr[i], shadow_cpu_if->vgic_lr[i]);
 }
 
+static void flush_timer_state(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
+
+	if (!shadow_state_is_protected(shadow_state))
+		return;
+
+	/*
+	 * A shadow vcpu has no offset, and sees vtime == ptime. The
+	 * ptimer is fully emulated by EL1 and cannot be trusted.
+	 */
+	write_sysreg(0, cntvoff_el2);
+	isb();
+	write_sysreg_el0(__vcpu_sys_reg(shadow_vcpu, CNTV_CVAL_EL0), SYS_CNTV_CVAL);
+	write_sysreg_el0(__vcpu_sys_reg(shadow_vcpu, CNTV_CTL_EL0), SYS_CNTV_CTL);
+}
+
+static void sync_timer_state(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
+
+	if (!shadow_state_is_protected(shadow_state))
+		return;
+
+	/*
+	 * Preserve the vtimer state so that it is always correct,
+	 * even if the host tries to make a mess.
+	 */
+	__vcpu_sys_reg(shadow_vcpu, CNTV_CVAL_EL0) = read_sysreg_el0(SYS_CNTV_CVAL);
+	__vcpu_sys_reg(shadow_vcpu, CNTV_CTL_EL0) = read_sysreg_el0(SYS_CNTV_CTL);
+}
+
 static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 {
 	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
@@ -86,6 +118,7 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	shadow_vcpu->arch.vsesr_el2	= host_vcpu->arch.vsesr_el2;
 
 	flush_vgic_state(host_vcpu, shadow_vcpu);
+	flush_timer_state(shadow_state);
 }
 
 static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
@@ -104,6 +137,7 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	host_vcpu->arch.fp_state	= shadow_vcpu->arch.fp_state;
 
 	sync_vgic_state(host_vcpu, shadow_vcpu);
+	sync_timer_state(shadow_state);
 }
 
 static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
