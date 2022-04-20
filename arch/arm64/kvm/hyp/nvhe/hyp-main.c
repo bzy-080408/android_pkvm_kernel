@@ -246,9 +246,23 @@ out:
 
 static void handle___kvm_adjust_pc(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(struct kvm_vcpu *, vcpu, host_ctxt, 1);
+	DECLARE_REG(struct kvm_vcpu *, host_vcpu, host_ctxt, 1);
 
-	__kvm_adjust_pc(kern_hyp_va(vcpu));
+	host_vcpu = kern_hyp_va(host_vcpu);
+
+	if (unlikely(is_protected_kvm_enabled())) {
+		struct kvm_shadow_vcpu_state *shadow_state = pkvm_loaded_shadow_vcpu_state();
+
+		/*
+		 * A shadow vcpu can never be updated from EL1, and we
+		 * must have a vcpu loaded when protected mode is
+		 * enabled.
+		 */
+		if (!shadow_state || shadow_state_is_protected(shadow_state))
+			return;
+	}
+
+	__kvm_adjust_pc(host_vcpu);
 }
 
 static void handle___kvm_flush_vm_context(struct kvm_cpu_context *host_ctxt)
