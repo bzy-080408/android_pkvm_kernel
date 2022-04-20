@@ -138,40 +138,63 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	sync_timer_state(shadow_state);
 }
 
+static void handle___pkvm_vcpu_load(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(unsigned int, shadow_handle, host_ctxt, 1);
+	DECLARE_REG(unsigned int, vcpu_idx, host_ctxt, 2);
+	DECLARE_REG(u64, hcr_el2, host_ctxt, 3);
+	struct kvm_shadow_vcpu_state *shadow_state;
+	struct kvm_vcpu *shadow_vcpu;
+
+	if (!is_protected_kvm_enabled())
+		return;
+
+	shadow_state = pkvm_load_shadow_vcpu_state(shadow_handle, vcpu_idx);
+	if (!shadow_state)
+		return;
+
+	shadow_vcpu = &shadow_state->shadow_vcpu;
+
+	if (shadow_state_is_protected(shadow_state)) {
+		/* Propagate WFx trapping flags, trap ptrauth */
+		shadow_vcpu->arch.hcr_el2 &= ~(HCR_TWE | HCR_TWI |
+					       HCR_API | HCR_APK);
+		shadow_vcpu->arch.hcr_el2 |= hcr_el2 & (HCR_TWE | HCR_TWI);
+	}
+}
+
+static void handle___pkvm_vcpu_put(struct kvm_cpu_context *host_ctxt)
+{
+	struct kvm_shadow_vcpu_state *shadow_state;
+
+	if (!is_protected_kvm_enabled())
+		return;
+
+	shadow_state = pkvm_loaded_shadow_vcpu_state();
+
+	if (shadow_state) {
+		pkvm_put_shadow_vcpu_state(shadow_state);
+	}
+}
+
 static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(struct kvm_vcpu *, host_vcpu, host_ctxt, 1);
 	int ret;
 
-	host_vcpu = kern_hyp_va(host_vcpu);
-
 	if (unlikely(is_protected_kvm_enabled())) {
-		struct kvm_shadow_vcpu_state *shadow_state;
-		struct kvm_vcpu *shadow_vcpu;
-		struct kvm *host_kvm;
-		unsigned int handle;
+		struct kvm_shadow_vcpu_state *shadow_state = pkvm_loaded_shadow_vcpu_state();
+		struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
 
-		host_kvm = kern_hyp_va(host_vcpu->kvm);
-		handle = host_kvm->arch.pkvm.shadow_handle;
-		shadow_state = pkvm_load_shadow_vcpu_state(handle,
-							   host_vcpu->vcpu_idx);
-		if (!shadow_state) {
-			ret = -EINVAL;
-			goto out;
-		}
-
-		shadow_vcpu = &shadow_state->shadow_vcpu;
 		flush_shadow_state(shadow_state);
 
 		ret = __kvm_vcpu_run(shadow_vcpu);
 
 		sync_shadow_state(shadow_state);
-		pkvm_put_shadow_vcpu_state(shadow_state);
 	} else {
-		ret = __kvm_vcpu_run(host_vcpu);
+		ret = __kvm_vcpu_run(kern_hyp_va(host_vcpu));
 	}
 
-out:
 	cpu_reg(host_ctxt, 1) =  ret;
 }
 
@@ -414,6 +437,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__vgic_v3_restore_vmcr_aprs),
 	HANDLE_FUNC(__pkvm_init_shadow),
 	HANDLE_FUNC(__pkvm_teardown_shadow),
+	HANDLE_FUNC(__pkvm_vcpu_load),
+	HANDLE_FUNC(__pkvm_vcpu_put),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
