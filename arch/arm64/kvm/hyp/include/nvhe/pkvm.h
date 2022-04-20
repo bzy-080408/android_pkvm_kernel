@@ -58,6 +58,19 @@ static inline struct kvm_shadow_vm *get_shadow_vm(struct kvm_vcpu *shadow_vcpu)
 	return get_shadow_state(shadow_vcpu)->shadow_vm;
 }
 
+static inline bool shadow_state_is_protected(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	return shadow_state->shadow_vm->kvm.arch.pkvm.enabled;
+}
+
+static inline bool vcpu_is_protected(struct kvm_vcpu *vcpu)
+{
+	if (!is_protected_kvm_enabled())
+		return false;
+
+	return shadow_state_is_protected(get_shadow_state(vcpu));
+}
+
 void hyp_shadow_table_init(void *tbl);
 int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 		       size_t shadow_size, unsigned long pgd_hva);
