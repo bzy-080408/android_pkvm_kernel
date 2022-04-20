@@ -24,6 +24,12 @@ struct kvm_shadow_vcpu_state {
 
 	/* A pointer to the shadow vm. */
 	struct kvm_shadow_vm *shadow_vm;
+
+	/*
+	 * Points to the per-cpu pointer of the cpu where it's loaded, or NULL
+	 * if not loaded.
+	 */
+	struct kvm_shadow_vcpu_state **loaded_shadow_state;
 };
 
 /*
@@ -79,6 +85,7 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle);
 struct kvm_shadow_vcpu_state *
 pkvm_load_shadow_vcpu_state(unsigned int shadow_handle, unsigned int vcpu_idx);
 void pkvm_put_shadow_vcpu_state(struct kvm_shadow_vcpu_state *shadow_state);
+struct kvm_shadow_vcpu_state *pkvm_loaded_shadow_vcpu_state(void);
 
 u64 pvm_read_id_reg(const struct kvm_vcpu *vcpu, u32 id);
 bool kvm_handle_pvm_sysreg(struct kvm_vcpu *vcpu, u64 *exit_code);
