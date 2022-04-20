@@ -277,9 +277,22 @@ out:
 
 static void handle___kvm_adjust_pc(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(struct kvm_vcpu *, vcpu, host_ctxt, 1);
+	struct kvm_shadow_vcpu_state *shadow_state;
+	struct kvm_vcpu *vcpu;
 
-	__kvm_adjust_pc(kern_hyp_va(vcpu));
+	vcpu = get_current_vcpu(host_ctxt, 1, &shadow_state);
+	if (!vcpu)
+		return;
+
+	if (shadow_state) {
+		/* This only applies to non-protected VMs */
+		if (shadow_state_is_protected(shadow_state))
+			return;
+
+		vcpu = &shadow_state->shadow_vcpu;
+	}
+
+	__kvm_adjust_pc(vcpu);
 }
 
 static void handle___kvm_flush_vm_context(struct kvm_cpu_context *host_ctxt)
