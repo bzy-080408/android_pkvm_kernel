@@ -411,12 +411,10 @@ int __pkvm_iommu_register(unsigned long dev_id,
 		goto out_free;
 
 	/* Create EL2 mapping for the device. Do it last as it is irreversible. */
-	dev->va = (void *)__pkvm_create_private_mapping(dev_pa, dev_size,
-							PAGE_HYP_DEVICE);
-	if (IS_ERR(dev->va)) {
-		ret = PTR_ERR(dev->va);
+	ret = __pkvm_create_private_mapping(dev_pa, dev_size, PAGE_HYP_DEVICE,
+				    (unsigned long *)&dev->va);
+	if (ret)
 		goto out_free;
-	}
 
 	/* Register device and prevent host from mapping the MMIO range. */
 	list_add_tail(&dev->list, &iommu_list);
