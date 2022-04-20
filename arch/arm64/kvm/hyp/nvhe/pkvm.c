@@ -18,6 +18,12 @@ unsigned long __icache_flags;
 unsigned int kvm_arm_vmid_bits;
 
 /*
+ * The shadow state for the currently loaded vcpu. Used only when protected KVM
+ * is enabled for both protected and non-protected VMs.
+ */
+static DEFINE_PER_CPU(struct kvm_shadow_vcpu_state *, loaded_shadow_state);
+
+/*
  * Set trap register values based on features in ID_AA64PFR0.
  */
 static void pvm_init_traps_aa64pfr0(struct kvm_vcpu *vcpu)
@@ -252,15 +258,30 @@ pkvm_load_shadow_vcpu_state(unsigned int shadow_handle, unsigned int vcpu_idx)
 	struct kvm_shadow_vcpu_state *shadow_state = NULL;
 	struct kvm_shadow_vm *vm;
 
+	/* Cannot load a new vcpu without putting the old one first. */
+	if (__this_cpu_read(loaded_shadow_state))
+		return NULL;
+
 	hyp_spin_lock(&shadow_lock);
 	vm = find_shadow_by_handle(shadow_handle);
 	if (!vm || vm->kvm.created_vcpus <= vcpu_idx)
 		goto unlock;
 
 	shadow_state = &vm->shadow_vcpu_states[vcpu_idx];
+
+	/* Ensure vcpu isn't loaded on more than one cpu simultaneously. */
+	if (unlikely(shadow_state->loaded_shadow_state)) {
+		shadow_state = NULL;
+		goto unlock;
+	}
+	shadow_state->loaded_shadow_state = this_cpu_ptr(&loaded_shadow_state);
+
 	hyp_page_ref_inc(hyp_virt_to_page(vm));
 unlock:
 	hyp_spin_unlock(&shadow_lock);
+
+	__this_cpu_write(loaded_shadow_state, shadow_state);
+
 	return shadow_state;
 }
 
@@ -269,8 +290,15 @@ void pkvm_put_shadow_vcpu_state(struct kvm_shadow_vcpu_state *shadow_state)
 	struct kvm_shadow_vm *vm = shadow_state->shadow_vm;
 
 	hyp_spin_lock(&shadow_lock);
+	shadow_state->loaded_shadow_state = NULL;
+	__this_cpu_write(loaded_shadow_state, NULL);
 	hyp_page_ref_dec(hyp_virt_to_page(vm));
 	hyp_spin_unlock(&shadow_lock);
+}
+
+struct kvm_shadow_vcpu_state *pkvm_loaded_shadow_vcpu_state(void)
+{
+	return __this_cpu_read(loaded_shadow_state);
 }
 
 static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
