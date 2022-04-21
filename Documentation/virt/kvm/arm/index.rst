@@ -9,6 +9,7 @@ ARM
 
    hyp-abi
    hypercalls
+   pkvm
    psci
    pvtime
    ptp_kvm
