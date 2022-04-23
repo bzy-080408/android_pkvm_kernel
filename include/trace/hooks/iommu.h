@@ -9,6 +9,7 @@
 
 #include <linux/types.h>
 
+#include <linux/tracepoint.h>
 #include <trace/hooks/vendor_hooks.h>
 
 #if defined(CONFIG_TRACEPOINTS) && defined(CONFIG_ANDROID_VENDOR_HOOKS)
