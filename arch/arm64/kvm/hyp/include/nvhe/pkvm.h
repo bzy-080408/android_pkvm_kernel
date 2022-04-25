@@ -25,6 +25,9 @@ struct kvm_shadow_vcpu_state {
 	/* A pointer to the shadow vm. */
 	struct kvm_shadow_vm *shadow_vm;
 
+	/* Tracks exit code for the protected guest. */
+	u32 exit_code;
+
 	/*
 	 * Points to the per-cpu pointer of the cpu where it's loaded, or NULL
 	 * if not loaded.
