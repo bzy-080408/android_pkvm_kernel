@@ -16,7 +16,7 @@
 
 #define HYP_MEMBLOCK_REGIONS 128
 
-int kvm_init_pvm(struct kvm *kvm);
+int kvm_init_pvm(struct kvm *kvm, unsigned long type);
 int kvm_shadow_create(struct kvm *kvm);
 void kvm_shadow_destroy(struct kvm *kvm);
 
