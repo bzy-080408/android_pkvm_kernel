@@ -140,6 +140,38 @@ static void sync_timer_state(struct kvm_shadow_vcpu_state *shadow_state)
 	__vcpu_sys_reg(shadow_vcpu, CNTV_CTL_EL0) = read_sysreg_el0(SYS_CNTV_CTL);
 }
 
+static void __copy_vcpu_state(const struct kvm_vcpu *from_vcpu,
+			      struct kvm_vcpu *to_vcpu)
+{
+	int i;
+
+	to_vcpu->arch.ctxt.regs		= from_vcpu->arch.ctxt.regs;
+	to_vcpu->arch.ctxt.spsr_abt	= from_vcpu->arch.ctxt.spsr_abt;
+	to_vcpu->arch.ctxt.spsr_und	= from_vcpu->arch.ctxt.spsr_und;
+	to_vcpu->arch.ctxt.spsr_irq	= from_vcpu->arch.ctxt.spsr_irq;
+	to_vcpu->arch.ctxt.spsr_fiq	= from_vcpu->arch.ctxt.spsr_fiq;
+
+	/*
+	 * Copy the sysregs, but don't mess with the timer state which
+	 * is directly handled by EL1 and is expected to be preserved.
+	 */
+	for (i = 1; i < NR_SYS_REGS; i++) {
+		if (i >= CNTVOFF_EL2 && i <= CNTP_CTL_EL0)
+			continue;
+		to_vcpu->arch.ctxt.sys_regs[i] = from_vcpu->arch.ctxt.sys_regs[i];
+	}
+}
+
+static void __sync_vcpu_state(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	__copy_vcpu_state(&shadow_state->shadow_vcpu, shadow_state->host_vcpu);
+}
+
+static void __flush_vcpu_state(struct kvm_shadow_vcpu_state *shadow_state)
+{
+	__copy_vcpu_state(shadow_state->host_vcpu, &shadow_state->shadow_vcpu);
+}
+
 static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 {
 	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
@@ -147,7 +179,14 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	shadow_entry_exit_handler_fn ec_handler;
 	u8 esr_ec;
 
-	shadow_vcpu->arch.ctxt		= host_vcpu->arch.ctxt;
+	/*
+	 * If we deal with a non-protected guest and that the state is dirty
+	 * (from a host perspective), copy the state back into the shadow.
+	 */
+	if (!shadow_state_is_protected(shadow_state)) {
+		if (READ_ONCE(host_vcpu->arch.flags) & KVM_ARM64_PKVM_STATE_DIRTY)
+			__flush_vcpu_state(shadow_state);
+	}
 
 	shadow_vcpu->arch.sve_state	= kern_hyp_va(host_vcpu->arch.sve_state);
 	shadow_vcpu->arch.sve_max_vl	= host_vcpu->arch.sve_max_vl;
@@ -256,8 +295,29 @@ static void handle___pkvm_vcpu_put(struct kvm_cpu_context *host_ctxt)
 	shadow_state = pkvm_loaded_shadow_vcpu_state();
 
 	if (shadow_state) {
+		struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
+
+		if (!shadow_state_is_protected(shadow_state) &&
+			!(READ_ONCE(host_vcpu->arch.flags) & KVM_ARM64_PKVM_STATE_DIRTY))
+			__sync_vcpu_state(shadow_state);
+
 		pkvm_put_shadow_vcpu_state(shadow_state);
 	}
+}
+
+static void handle___pkvm_vcpu_sync_state(struct kvm_cpu_context *host_ctxt)
+{
+	struct kvm_shadow_vcpu_state *shadow_state;
+
+	if (!is_protected_kvm_enabled())
+		return;
+
+	shadow_state = pkvm_loaded_shadow_vcpu_state();
+
+	if (!shadow_state || shadow_state_is_protected(shadow_state))
+		return;
+
+	__sync_vcpu_state(shadow_state);
 }
 
 static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
@@ -536,6 +596,7 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_teardown_shadow),
 	HANDLE_FUNC(__pkvm_vcpu_load),
 	HANDLE_FUNC(__pkvm_vcpu_put),
+	HANDLE_FUNC(__pkvm_vcpu_sync_state),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
