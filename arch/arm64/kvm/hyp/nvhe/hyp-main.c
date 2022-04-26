@@ -4,6 +4,8 @@
  * Author: Andrew Scull <ascull@google.com>
  */
 
+#include <kvm/arm_hypercalls.h>
+
 #include <hyp/adjust_pc.h>
 
 #include <asm/pgtable-types.h>
@@ -40,6 +42,13 @@ static void handle_pvm_entry_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *sh
 {
 	shadow_vcpu->arch.flags |= READ_ONCE(host_vcpu->arch.flags) &
 				   KVM_ARM64_INCREMENT_PC;
+}
+
+static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+{
+	u64 ret = READ_ONCE(host_vcpu->arch.ctxt.regs.regs[0]);
+
+	vcpu_set_reg(shadow_vcpu, 0, ret);
 }
 
 static void handle_pvm_entry_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
@@ -195,6 +204,19 @@ static void handle_pvm_exit_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *s
 	}
 }
 
+static void handle_pvm_exit_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+{
+	int i;
+
+	WRITE_ONCE(host_vcpu->arch.fault.esr_el2,
+		   shadow_vcpu->arch.fault.esr_el2);
+
+	/* Pass the hvc function id (r0) as well as any potential arguments. */
+	for (i = 0; i < 8; i++)
+		WRITE_ONCE(host_vcpu->arch.ctxt.regs.regs[i],
+			   vcpu_get_reg(shadow_vcpu, i));
+}
+
 static void handle_pvm_exit_iabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	WRITE_ONCE(host_vcpu->arch.fault.esr_el2,
@@ -273,6 +295,7 @@ static void handle_vm_exit_abt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shad
 static const shadow_entry_exit_handler_fn entry_pvm_shadow_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
 	[ESR_ELx_EC_WFx]		= handle_pvm_entry_wfx,
+	[ESR_ELx_EC_HVC64]		= handle_pvm_entry_hvc64,
 	[ESR_ELx_EC_SYS64]		= handle_pvm_entry_sys64,
 	[ESR_ELx_EC_IABT_LOW]		= handle_pvm_entry_iabt,
 	[ESR_ELx_EC_DABT_LOW]		= handle_pvm_entry_dabt,
@@ -281,6 +304,7 @@ static const shadow_entry_exit_handler_fn entry_pvm_shadow_handlers[] = {
 static const shadow_entry_exit_handler_fn exit_pvm_shadow_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]		= NULL,
 	[ESR_ELx_EC_WFx]		= handle_pvm_exit_wfx,
+	[ESR_ELx_EC_HVC64]		= handle_pvm_exit_hvc64,
 	[ESR_ELx_EC_SYS64]		= handle_pvm_exit_sys64,
 	[ESR_ELx_EC_IABT_LOW]		= handle_pvm_exit_iabt,
 	[ESR_ELx_EC_DABT_LOW]		= handle_pvm_exit_dabt,
