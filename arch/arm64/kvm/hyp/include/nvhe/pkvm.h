@@ -29,6 +29,15 @@ struct kvm_shadow_vcpu_state {
 	u32 exit_code;
 
 	/*
+	 * Track the power state transition of a protected vcpu.
+	 * Can be in one of three states:
+	 * PSCI_0_2_AFFINITY_LEVEL_ON
+	 * PSCI_0_2_AFFINITY_LEVEL_OFF
+	 * PSCI_0_2_AFFINITY_LEVEL_PENDING
+	 */
+	int power_state;
+
+	/*
 	 * Points to the per-cpu pointer of the cpu where it's loaded, or NULL
 	 * if not loaded.
 	 */
@@ -101,6 +110,10 @@ bool kvm_handle_pvm_restricted(struct kvm_vcpu *vcpu, u64 *exit_code);
 void kvm_reset_pvm_sys_regs(struct kvm_vcpu *vcpu);
 int kvm_check_pvm_sysreg_table(void);
 
+void pkvm_reset_vcpu(struct kvm_shadow_vcpu_state *shadow_state);
+
 bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code);
+
+struct kvm_shadow_vcpu_state *pkvm_mpidr_to_vcpu_state(struct kvm_shadow_vm *vm, unsigned long mpidr);
 
 #endif /* __ARM64_KVM_NVHE_PKVM_H__ */
