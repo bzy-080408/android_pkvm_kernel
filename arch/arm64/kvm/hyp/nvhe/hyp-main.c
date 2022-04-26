@@ -579,6 +579,17 @@ static struct kvm_vcpu *__get_current_vcpu(struct kvm_vcpu *vcpu,
 		__get_current_vcpu(__vcpu, statepp);			\
 	})
 
+#define get_current_vcpu_from_cpu_if(ctxt, regnr, statepp)		\
+	({								\
+		DECLARE_REG(struct vgic_v3_cpu_if *, cif, ctxt, regnr); \
+		struct kvm_vcpu *__vcpu;				\
+		__vcpu = container_of(cif,				\
+				      struct kvm_vcpu,			\
+				      arch.vgic_cpu.vgic_v3);		\
+									\
+		__get_current_vcpu(__vcpu, statepp);			\
+	})
+
 static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
 {
 	struct kvm_shadow_vcpu_state *shadow_state;
@@ -738,16 +749,62 @@ static void handle___kvm_get_mdcr_el2(struct kvm_cpu_context *host_ctxt)
 
 static void handle___vgic_v3_save_vmcr_aprs(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(struct vgic_v3_cpu_if *, cpu_if, host_ctxt, 1);
+	struct kvm_shadow_vcpu_state *shadow_state;
+	struct kvm_vcpu *vcpu;
 
-	__vgic_v3_save_vmcr_aprs(kern_hyp_va(cpu_if));
+	vcpu = get_current_vcpu_from_cpu_if(host_ctxt, 1, &shadow_state);
+	if (!vcpu)
+		return;
+
+	if (shadow_state) {
+		struct vgic_v3_cpu_if *shadow_cpu_if, *cpu_if;
+		int i;
+
+		shadow_cpu_if = &shadow_state->shadow_vcpu.arch.vgic_cpu.vgic_v3;
+		__vgic_v3_save_vmcr_aprs(shadow_cpu_if);
+
+		cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
+
+		cpu_if->vgic_vmcr = shadow_cpu_if->vgic_vmcr;
+		for (i = 0; i < ARRAY_SIZE(cpu_if->vgic_ap0r); i++) {
+			cpu_if->vgic_ap0r[i] = shadow_cpu_if->vgic_ap0r[i];
+			cpu_if->vgic_ap1r[i] = shadow_cpu_if->vgic_ap1r[i];
+		}
+	} else {
+		__vgic_v3_save_vmcr_aprs(&vcpu->arch.vgic_cpu.vgic_v3);
+	}
 }
 
 static void handle___vgic_v3_restore_vmcr_aprs(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(struct vgic_v3_cpu_if *, cpu_if, host_ctxt, 1);
+	struct kvm_shadow_vcpu_state *shadow_state;
+	struct kvm_vcpu *vcpu;
 
-	__vgic_v3_restore_vmcr_aprs(kern_hyp_va(cpu_if));
+	vcpu = get_current_vcpu_from_cpu_if(host_ctxt, 1, &shadow_state);
+	if (!vcpu)
+		return;
+
+	if (shadow_state) {
+		struct vgic_v3_cpu_if *shadow_cpu_if, *cpu_if;
+		int i;
+
+		shadow_cpu_if = &shadow_state->shadow_vcpu.arch.vgic_cpu.vgic_v3;
+		cpu_if = &vcpu->arch.vgic_cpu.vgic_v3;
+
+		shadow_cpu_if->vgic_vmcr = cpu_if->vgic_vmcr;
+		/* Should be a one-off */
+		shadow_cpu_if->vgic_sre = (ICC_SRE_EL1_DIB |
+					   ICC_SRE_EL1_DFB |
+					   ICC_SRE_EL1_SRE);
+		for (i = 0; i < ARRAY_SIZE(cpu_if->vgic_ap0r); i++) {
+			shadow_cpu_if->vgic_ap0r[i] = cpu_if->vgic_ap0r[i];
+			shadow_cpu_if->vgic_ap1r[i] = cpu_if->vgic_ap1r[i];
+		}
+
+		__vgic_v3_restore_vmcr_aprs(shadow_cpu_if);
+	} else {
+		__vgic_v3_restore_vmcr_aprs(&vcpu->arch.vgic_cpu.vgic_v3);
+	}
 }
 
 static void handle___pkvm_init(struct kvm_cpu_context *host_ctxt)
