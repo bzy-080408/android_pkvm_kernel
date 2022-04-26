@@ -429,20 +429,15 @@ static void handle___pkvm_host_map_guest(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(u64, pfn, host_ctxt, 1);
 	DECLARE_REG(u64, gfn, host_ctxt, 2);
-	DECLARE_REG(struct kvm_vcpu *, host_vcpu, host_ctxt, 3);
-	struct kvm_shadow_vcpu_state *shadow_state;
+	struct kvm_vcpu *host_vcpu;
 	struct kvm_vcpu *shadow_vcpu;
-	struct kvm *host_kvm;
-	unsigned int handle;
+	struct kvm_shadow_vcpu_state *shadow_state;
 	int ret = -EINVAL;
 
 	if (!is_protected_kvm_enabled())
 		goto out;
 
-	host_vcpu = kern_hyp_va(host_vcpu);
-	host_kvm = kern_hyp_va(host_vcpu->kvm);
-	handle = host_kvm->arch.pkvm.shadow_handle;
-	shadow_state = pkvm_load_shadow_vcpu_state(handle, host_vcpu->vcpu_idx);
+	shadow_state = pkvm_loaded_shadow_vcpu_state();
 	if (!shadow_state)
 		goto out;
 
@@ -452,11 +447,9 @@ static void handle___pkvm_host_map_guest(struct kvm_cpu_context *host_ctxt)
 	/* Topup shadow memcache with the host's */
 	ret = pkvm_refill_memcache(shadow_vcpu, host_vcpu);
 	if (ret)
-		goto out_put_state;
+		goto out;
 
 	ret = __pkvm_host_share_guest(pfn, gfn, shadow_vcpu);
-out_put_state:
-	pkvm_put_shadow_vcpu_state(shadow_state);
 out:
 	cpu_reg(host_ctxt, 1) =  ret;
 }
