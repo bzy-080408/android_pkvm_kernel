@@ -6,6 +6,9 @@
 
 #include <linux/kvm_host.h>
 #include <linux/mm.h>
+
+#include <asm/kvm_emulate.h>
+
 #include <nvhe/mem_protect.h>
 #include <nvhe/memory.h>
 #include <nvhe/pkvm.h>
@@ -315,6 +318,53 @@ struct kvm_shadow_vcpu_state *pkvm_loaded_shadow_vcpu_state(void)
 	return __this_cpu_read(loaded_shadow_state);
 }
 
+/* Check and copy the supported features for the vcpu from the host. */
+static void copy_features(struct kvm_vcpu *shadow_vcpu, struct kvm_vcpu *host_vcpu)
+{
+	DECLARE_BITMAP(allowed_features, KVM_VCPU_MAX_FEATURES);
+
+	/* No restrictions for non-protected VMs. */
+	if (!kvm_vm_is_protected(shadow_vcpu->kvm)) {
+		bitmap_copy(shadow_vcpu->arch.features,
+			    host_vcpu->arch.features,
+			    KVM_VCPU_MAX_FEATURES);
+		return;
+	}
+
+	bitmap_zero(allowed_features, KVM_VCPU_MAX_FEATURES);
+
+	/*
+	 * For protected vms, always allow:
+	 * - CPU starting in poweroff state
+	 * - PSCI v0.2
+	 */
+	set_bit(KVM_ARM_VCPU_POWER_OFF, allowed_features);
+	set_bit(KVM_ARM_VCPU_PSCI_0_2, allowed_features);
+
+	/*
+	 * Check if remaining features are allowed:
+	 * - Performance Monitoring
+	 * - Scalable Vectors
+	 * - Pointer Authentication
+	 */
+	if (FIELD_GET(ARM64_FEATURE_MASK(ID_AA64DFR0_PMUVER), PVM_ID_AA64DFR0_ALLOW))
+		set_bit(KVM_ARM_VCPU_PMU_V3, allowed_features);
+
+	if (FIELD_GET(ARM64_FEATURE_MASK(ID_AA64PFR0_SVE), PVM_ID_AA64PFR0_ALLOW))
+		set_bit(KVM_ARM_VCPU_SVE, allowed_features);
+
+	if (FIELD_GET(ARM64_FEATURE_MASK(ID_AA64ISAR1_API), PVM_ID_AA64ISAR1_ALLOW) &&
+	    FIELD_GET(ARM64_FEATURE_MASK(ID_AA64ISAR1_APA), PVM_ID_AA64ISAR1_ALLOW))
+		set_bit(KVM_ARM_VCPU_PTRAUTH_ADDRESS, allowed_features);
+
+	if (FIELD_GET(ARM64_FEATURE_MASK(ID_AA64ISAR1_GPI), PVM_ID_AA64ISAR1_ALLOW) &&
+	    FIELD_GET(ARM64_FEATURE_MASK(ID_AA64ISAR1_GPA), PVM_ID_AA64ISAR1_ALLOW))
+		set_bit(KVM_ARM_VCPU_PTRAUTH_GENERIC, allowed_features);
+
+	bitmap_and(shadow_vcpu->arch.features, host_vcpu->arch.features,
+		   allowed_features, KVM_VCPU_MAX_FEATURES);
+}
+
 static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 			     unsigned int nr_vcpus)
 {
@@ -350,6 +400,17 @@ static int set_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 	return 0;
 }
 
+static int init_ptrauth(struct kvm_vcpu *shadow_vcpu)
+{
+	int ret = 0;
+
+	if (test_bit(KVM_ARM_VCPU_PTRAUTH_ADDRESS, shadow_vcpu->arch.features) ||
+	    test_bit(KVM_ARM_VCPU_PTRAUTH_GENERIC, shadow_vcpu->arch.features))
+		ret = kvm_vcpu_enable_ptrauth(shadow_vcpu);
+
+	return ret;
+}
+
 static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 			       struct kvm_vcpu **vcpu_array,
 			       int *last_ran,
@@ -357,10 +418,12 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 			       unsigned int nr_vcpus)
 {
 	int i;
+	int ret;
 
 	vm->host_kvm = kvm;
 	vm->kvm.created_vcpus = nr_vcpus;
 	vm->kvm.arch.vtcr = host_kvm.arch.vtcr;
+	vm->kvm.arch.pkvm.enabled = READ_ONCE(kvm->arch.pkvm.enabled);
 	vm->kvm.arch.mmu.last_vcpu_ran = last_ran;
 	vm->last_ran_size = last_ran_size;
 	memset(vm->kvm.arch.mmu.last_vcpu_ran, -1, sizeof(int) * hyp_nr_cpus);
@@ -378,8 +441,16 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 
 		shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
 		shadow_vcpu->arch.cflags = READ_ONCE(host_vcpu->arch.cflags);
+		shadow_vcpu->arch.power_off = true;
+
+		copy_features(shadow_vcpu, host_vcpu);
+
+		ret = init_ptrauth(shadow_vcpu);
+		if (ret)
+			return ret;
 
 		pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
+		kvm_reset_pvm_sys_regs(shadow_vcpu);
 	}
 
 	return 0;
