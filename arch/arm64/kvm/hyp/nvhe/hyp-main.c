@@ -194,17 +194,18 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	if (!shadow_state_is_protected(shadow_state)) {
 		if (READ_ONCE(host_vcpu->arch.flags) & KVM_ARM64_PKVM_STATE_DIRTY)
 			__flush_vcpu_state(shadow_state);
+
+		shadow_vcpu->arch.sve_state = kern_hyp_va(host_vcpu->arch.sve_state);
+		shadow_vcpu->arch.sve_max_vl = host_vcpu->arch.sve_max_vl;
+
+		shadow_vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
+		shadow_vcpu->arch.hcr_el2 |= READ_ONCE(host_vcpu->arch.hcr_el2);
+
+		shadow_vcpu->arch.mdcr_el2 = host_vcpu->arch.mdcr_el2;
+		shadow_vcpu->arch.debug_ptr = kern_hyp_va(host_vcpu->arch.debug_ptr);
 	}
 
-	shadow_vcpu->arch.sve_state	= kern_hyp_va(host_vcpu->arch.sve_state);
-	shadow_vcpu->arch.sve_max_vl	= host_vcpu->arch.sve_max_vl;
-
-	shadow_vcpu->arch.hcr_el2	= host_vcpu->arch.hcr_el2;
-	shadow_vcpu->arch.mdcr_el2	= host_vcpu->arch.mdcr_el2;
-
-	shadow_vcpu->arch.debug_ptr	= kern_hyp_va(host_vcpu->arch.debug_ptr);
-
-	shadow_vcpu->arch.vsesr_el2	= host_vcpu->arch.vsesr_el2;
+	shadow_vcpu->arch.vsesr_el2 = host_vcpu->arch.vsesr_el2;
 
 	flush_vgic_state(host_vcpu, shadow_vcpu);
 	flush_timer_state(shadow_state);
@@ -236,10 +237,10 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state,
 	unsigned long host_flags;
 	u8 esr_ec;
 
-	host_vcpu->arch.ctxt		= shadow_vcpu->arch.ctxt;
-
-	host_vcpu->arch.hcr_el2		= shadow_vcpu->arch.hcr_el2;
-
+	/*
+	 * Don't sync the vcpu GPR/sysreg state after a run. Instead,
+	 * leave it in the shadow until someone actually requires it.
+	 */
 	sync_vgic_state(host_vcpu, shadow_vcpu);
 	sync_timer_state(shadow_state);
 
