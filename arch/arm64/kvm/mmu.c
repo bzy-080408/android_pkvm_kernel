@@ -1807,11 +1807,14 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 			change != KVM_MR_FLAGS_ONLY)
 		return 0;
 
-	/* In protected mode, cannot modify memslots once a VM has run. */
-	if (is_protected_kvm_enabled() &&
-	    (change == KVM_MR_DELETE || change == KVM_MR_MOVE) &&
-	    kvm->arch.pkvm.shadow_handle) {
-		return -EPERM;
+	if (is_protected_kvm_enabled()) {
+		/* In protected mode, cannot modify memslots once a VM has run. */
+		if ((change == KVM_MR_DELETE || change == KVM_MR_MOVE) &&
+		    kvm->arch.pkvm.shadow_handle) {
+			return -EPERM;
+		}
+		if (new->flags & (KVM_MEM_LOG_DIRTY_PAGES | KVM_MEM_READONLY))
+			return -EPERM;
 	}
 
 	/*
