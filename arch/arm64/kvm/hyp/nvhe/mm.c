@@ -39,22 +39,10 @@ static int __pkvm_create_mappings(unsigned long start, unsigned long size,
 	return err;
 }
 
-/**
- * pkvm_alloc_private_va_range - Allocates a private VA range.
- * @size:	The size of the VA range to reserve.
- * @haddr:	The hypervisor virtual start address of the allocation.
- *
- * The private virtual address (VA) range is allocated above __io_map_base
- * and aligned based on the order of @size.
- *
- * Return: 0 on success or negative error code on failure.
- */
-int pkvm_alloc_private_va_range(size_t size, unsigned long *haddr)
+static int pkvm_alloc_private_va_range_locked(size_t size, unsigned long *haddr)
 {
 	unsigned long base, addr;
 	int ret = 0;
-
-	hyp_spin_lock(&pkvm_pgd_lock);
 
 	/* Align the allocation based on the order of its size */
 	addr = ALIGN(__io_map_base, PAGE_SIZE << get_order(size));
@@ -69,6 +57,27 @@ int pkvm_alloc_private_va_range(size_t size, unsigned long *haddr)
 		__io_map_base = base;
 		*haddr = addr;
 	}
+
+	return ret;
+}
+
+/**
+ * pkvm_alloc_private_va_range - Allocates a private VA range.
+ * @size:	The size of the VA range to reserve.
+ * @haddr:	The hypervisor virtual start address of the allocation.
+ *
+ * The private virtual address (VA) range is allocated above __io_map_base
+ * and aligned based on the order of @size.
+ *
+ * Return: 0 on success or negative error code on failure.
+ */
+int pkvm_alloc_private_va_range(size_t size, unsigned long *haddr)
+{
+	int ret = 0;
+
+	hyp_spin_lock(&pkvm_pgd_lock);
+
+	ret = pkvm_alloc_private_va_range_locked(size, haddr);
 
 	hyp_spin_unlock(&pkvm_pgd_lock);
 
@@ -254,16 +263,14 @@ int hyp_create_pcpu_fixmap(void)
 {
 	unsigned long i;
 	int ret = 0;
-	u64 addr;
+	unsigned long addr;
 
 	hyp_spin_lock(&pkvm_pgd_lock);
 
 	for (i = 0; i < hyp_nr_cpus; i++) {
-		addr = hyp_alloc_private_va_range(PAGE_SIZE);
-		if (IS_ERR((void *)addr)) {
-			ret = -ENOMEM;
+		ret = pkvm_alloc_private_va_range_locked(PAGE_SIZE, &addr);
+		if (ret)
 			goto unlock;
-		}
 
 		/*
 		 * Create a dummy mapping, to get the intermediate page-table
