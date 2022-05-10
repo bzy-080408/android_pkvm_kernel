@@ -111,8 +111,8 @@ static int __kvm_shadow_create(struct kvm *kvm)
 {
 	struct kvm_vcpu *vcpu, **vcpu_array;
 	unsigned int shadow_handle;
-	size_t pgd_sz, shadow_sz;
-	void *pgd, *shadow_addr;
+	size_t pgd_sz, shadow_sz, last_ran_sz;
+	void *pgd, *shadow_addr, *last_ran;
 	unsigned long idx;
 	int ret;
 
@@ -138,6 +138,14 @@ static int __kvm_shadow_create(struct kvm *kvm)
 		goto free_pgd;
 	}
 
+	/* Allocate memory to donate to hyp for tracking mmu->last_vcpu_ran. */
+	last_ran_sz = PAGE_ALIGN(num_possible_cpus() * sizeof(int));
+	last_ran = alloc_pages_exact(last_ran_sz, GFP_KERNEL_ACCOUNT);
+	if (!last_ran) {
+		ret = -ENOMEM;
+		goto free_shadow;
+	}
+
 	/* Stash the vcpu pointers into the PGD */
 	BUILD_BUG_ON(KVM_MAX_VCPUS > (PAGE_SIZE / sizeof(u64)));
 	vcpu_array = pgd;
@@ -145,7 +153,7 @@ static int __kvm_shadow_create(struct kvm *kvm)
 		/* Indexing of the vcpus to be sequential starting at 0. */
 		if (WARN_ON(vcpu->vcpu_idx != idx)) {
 			ret = -EINVAL;
-			goto free_shadow;
+			goto free_last_ran;
 		}
 
 		vcpu_array[idx] = vcpu;
@@ -153,9 +161,9 @@ static int __kvm_shadow_create(struct kvm *kvm)
 
 	/* Donate the shadow memory to hyp and let hyp initialize it. */
 	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow, kvm, shadow_addr, shadow_sz,
-				pgd);
+				pgd, last_ran, last_ran_sz);
 	if (ret < 0)
-		goto free_shadow;
+		goto free_last_ran;
 
 	shadow_handle = ret;
 
@@ -163,6 +171,8 @@ static int __kvm_shadow_create(struct kvm *kvm)
 	kvm->arch.pkvm.shadow_handle = shadow_handle;
 	return 0;
 
+free_last_ran:
+	free_pages_exact(last_ran, last_ran_sz);
 free_shadow:
 	free_pages_exact(shadow_addr, shadow_sz);
 free_pgd:

@@ -338,6 +338,8 @@ static int set_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 
 static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 			       struct kvm_vcpu **vcpu_array,
+			       int *last_ran,
+			       size_t last_ran_size,
 			       unsigned int nr_vcpus)
 {
 	int i;
@@ -345,6 +347,9 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 	vm->host_kvm = kvm;
 	vm->kvm.created_vcpus = nr_vcpus;
 	vm->kvm.arch.vtcr = host_kvm.arch.vtcr;
+	vm->kvm.arch.mmu.last_vcpu_ran = last_ran;
+	vm->last_ran_size = last_ran_size;
+	memset(vm->kvm.arch.mmu.last_vcpu_ran, -1, sizeof(int) * hyp_nr_cpus);
 
 	for (i = 0; i < nr_vcpus; i++) {
 		struct kvm_shadow_vcpu_state *shadow_vcpu_state = &vm->shadow_vcpu_states[i];
@@ -472,6 +477,15 @@ static int check_shadow_size(unsigned int nr_vcpus, size_t shadow_size)
 	return 0;
 }
 
+/*
+ * Check whether the size of the area donated by the host is sufficient for
+ * tracking the last vcpu that has run a physical cpu on this vm.
+ */
+static int check_last_ran_size(size_t size)
+{
+	return size >= (hyp_nr_cpus * sizeof(int)) ? 0 : -ENOMEM;
+}
+
 static void *map_donated_memory_noclear(unsigned long host_va, size_t size)
 {
 	void *va = (void *)kern_hyp_va(host_va);
@@ -531,6 +545,10 @@ static void unmap_donated_memory_noclear(void *va, size_t size)
  * pgd_hva: The host va of the area being donated for the stage-2 PGD for
  *	    the VM. Must be page aligned. Its size is implied by the VM's
  *	    VTCR.
+ * last_ran_hva: The host va of the area being donated for hyp to use to track
+ *		 the most recent physical cpu on which each vcpu has run.
+ * last_ran_size: The size of the area being donated at last_ran_hva.
+ *	          Must be a multiple of the page size.
  * Note: An array to the host KVM VCPUs (host VA) is passed via the pgd, as to
  *	 not to be dependent on how the VCPU's are layed out in struct kvm.
  *
@@ -538,9 +556,11 @@ static void unmap_donated_memory_noclear(void *va, size_t size)
  * negative error code on failure.
  */
 int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
-		       size_t shadow_size, unsigned long pgd_hva)
+		       size_t shadow_size, unsigned long pgd_hva,
+		       unsigned long last_ran_hva, size_t last_ran_size)
 {
 	struct kvm_shadow_vm *vm = NULL;
+	void *last_ran = NULL;
 	unsigned int nr_vcpus;
 	size_t pgd_size = 0;
 	void *pgd = NULL;
@@ -556,10 +576,18 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 	if (ret)
 		goto err_unpin_kvm;
 
+	ret = check_last_ran_size(last_ran_size);
+	if (ret)
+		goto err_unpin_kvm;
+
 	ret = -ENOMEM;
 
 	vm = map_donated_memory(shadow_hva, shadow_size);
 	if (!vm)
+		goto err_remove_mappings;
+
+	last_ran = map_donated_memory(last_ran_hva, last_ran_size);
+	if (!last_ran)
 		goto err_remove_mappings;
 
 	pgd_size = kvm_pgtable_stage2_pgd_size(host_kvm.arch.vtcr);
@@ -571,7 +599,7 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 	if (ret)
 		goto err_remove_mappings;
 
-	ret = init_shadow_structs(kvm, vm, pgd, nr_vcpus);
+	ret = init_shadow_structs(kvm, vm, pgd, last_ran, last_ran_size, nr_vcpus);
 	if (ret < 0)
 		goto err_unpin_host_vcpus;
 
@@ -596,6 +624,7 @@ err_unpin_host_vcpus:
 	unpin_host_vcpus(vm->shadow_vcpu_states, nr_vcpus);
 err_remove_mappings:
 	unmap_donated_memory(vm, shadow_size);
+	unmap_donated_memory(last_ran, last_ran_size);
 	unmap_donated_memory_noclear(pgd, pgd_size);
 err_unpin_kvm:
 	hyp_unpin_shared_mem(kvm, kvm + 1);
@@ -637,6 +666,7 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	shadow_size = vm->shadow_area_size;
 	hyp_unpin_shared_mem(vm->host_kvm, vm->host_kvm + 1);
 
+	unmap_donated_memory(vm->kvm.arch.mmu.last_vcpu_ran, vm->last_ran_size);
 	memset(vm, 0, shadow_size);
 	for (addr = vm; addr < (void *)vm + shadow_size; addr += PAGE_SIZE)
 		push_hyp_memcache(mc, addr, hyp_virt_to_phys);

@@ -45,6 +45,9 @@ struct kvm_shadow_vm {
 	/* The total size of the donated shadow area. */
 	size_t shadow_area_size;
 
+	/* The total size of the donated area for last_ran. */
+	size_t last_ran_size;
+
 	struct kvm_pgtable pgt;
 	struct kvm_pgtable_mm_ops mm_ops;
 	struct hyp_pool pool;
@@ -78,8 +81,10 @@ static inline bool vcpu_is_protected(struct kvm_vcpu *vcpu)
 }
 
 void hyp_shadow_table_init(void *tbl);
-int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
-		       size_t shadow_size, unsigned long pgd_hva);
+int __pkvm_init_shadow(struct kvm *kvm,
+		       unsigned long shadow_hva, size_t shadow_size,
+		       unsigned long pgd_hva,
+		       unsigned long last_ran_hva, size_t last_ran_size);
 int __pkvm_teardown_shadow(unsigned int shadow_handle);
 
 struct kvm_shadow_vcpu_state *
