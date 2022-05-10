@@ -147,6 +147,7 @@ static void handle___pkvm_vcpu_load(struct kvm_cpu_context *host_ctxt)
 	DECLARE_REG(u64, hcr_el2, host_ctxt, 3);
 	struct kvm_shadow_vcpu_state *shadow_state;
 	struct kvm_vcpu *shadow_vcpu;
+	int *last_ran;
 
 	if (!is_protected_kvm_enabled())
 		return;
@@ -156,6 +157,17 @@ static void handle___pkvm_vcpu_load(struct kvm_cpu_context *host_ctxt)
 		return;
 
 	shadow_vcpu = &shadow_state->shadow_vcpu;
+
+	/*
+	 * Guarantee that both TLBs and I-cache are private to each vcpu. If a
+	 * vcpu from the same VM has previously run on the same physical CPU,
+	 * nuke the relevant contexts.
+	 */
+	last_ran = &shadow_vcpu->arch.hw_mmu->last_vcpu_ran[hyp_smp_processor_id()];
+	if (*last_ran != shadow_vcpu->vcpu_id) {
+		__kvm_flush_cpu_context(shadow_vcpu->arch.hw_mmu);
+		*last_ran = shadow_vcpu->vcpu_id;
+	}
 
 	if (shadow_state_is_protected(shadow_state)) {
 		/* Propagate WFx trapping flags, trap ptrauth */
@@ -454,9 +466,12 @@ static void handle___pkvm_init_shadow(struct kvm_cpu_context *host_ctxt)
 	DECLARE_REG(unsigned long, host_shadow_va, host_ctxt, 2);
 	DECLARE_REG(size_t, shadow_size, host_ctxt, 3);
 	DECLARE_REG(unsigned long, pgd, host_ctxt, 4);
+	DECLARE_REG(unsigned long, last_ran, host_ctxt, 5);
+	DECLARE_REG(size_t, last_ran_size, host_ctxt, 6);
 
 	cpu_reg(host_ctxt, 1) = __pkvm_init_shadow(host_kvm, host_shadow_va,
-						   shadow_size, pgd);
+						   shadow_size, pgd,
+						   last_ran, last_ran_size);
 }
 
 static void handle___pkvm_teardown_shadow(struct kvm_cpu_context *host_ctxt)
