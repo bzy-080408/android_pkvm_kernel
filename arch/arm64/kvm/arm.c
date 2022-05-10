@@ -854,6 +854,19 @@ static bool vcpu_mode_is_bad_32bit(struct kvm_vcpu *vcpu)
 		static_branch_unlikely(&arm64_mismatched_32bit_el0);
 }
 
+/*
+ * Updates the vcpu's view of the pmu events for this cpu.
+ * Must be called before every vcpu run after disabling interrupts, to ensure
+ * that an interrupt cannot fire and update the structure.
+ */
+static void kvm_pmu_update_vcpu_events(struct kvm_vcpu *vcpu)
+{
+	if (has_vhe() || !kvm_vcpu_has_pmu(vcpu))
+		return;
+
+	vcpu->arch.pmu.events = *kvm_get_pmu_events();
+}
+
 /**
  * kvm_arch_vcpu_ioctl_run - the main VCPU run function to execute guest code
  * @vcpu:	The VCPU pointer
@@ -908,6 +921,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		local_irq_disable();
 
 		kvm_vgic_flush_hwstate(vcpu);
+
+		kvm_pmu_update_vcpu_events(vcpu);
 
 		/*
 		 * Exit if we have a signal pending so that we can deliver the
