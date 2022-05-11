@@ -36,8 +36,7 @@ static unsigned long io_map_base;
  * Release kvm_mmu_lock periodically if the memory region is large. Otherwise,
  * we may see kernel panics with CONFIG_DETECT_HUNG_TASK,
  * CONFIG_LOCKUP_DETECTOR, CONFIG_LOCKDEP. Additionally, holding the lock too
- * long will also starve other vCPUs. We have to also make sure that the page
- * tables are not freed while we released the lock.
+ * long will also starve other vCPUs.
  */
 static int stage2_apply_range(struct kvm *kvm, phys_addr_t addr,
 			      phys_addr_t end,
@@ -48,12 +47,8 @@ static int stage2_apply_range(struct kvm *kvm, phys_addr_t addr,
 	u64 next;
 
 	do {
-		struct kvm_pgtable *pgt = kvm->arch.mmu.pgt;
-		if (!pgt)
-			return -EINVAL;
-
 		next = stage2_pgd_addr_end(kvm, addr, end);
-		ret = fn(pgt, addr, next - addr);
+		ret = fn(kvm->arch.mmu.pgt, addr, next - addr);
 		if (ret)
 			break;
 
@@ -187,6 +182,9 @@ static void __unmap_stage2_range(struct kvm_s2_mmu *mmu, phys_addr_t start, u64 
 
 static void unmap_stage2_range(struct kvm_s2_mmu *mmu, phys_addr_t start, u64 size)
 {
+	if (is_protected_kvm_enabled())
+		return;
+
 	__unmap_stage2_range(mmu, start, size, true);
 }
 
@@ -1671,7 +1669,7 @@ out_unlock:
 
 bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	if (!kvm->arch.mmu.pgt)
+	if (is_protected_kvm_enabled())
 		return false;
 
 	__unmap_stage2_range(&kvm->arch.mmu, range->start << PAGE_SHIFT,
@@ -1686,7 +1684,7 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	kvm_pfn_t pfn = pte_pfn(range->pte);
 	int ret;
 
-	if (!kvm->arch.mmu.pgt)
+	if (is_protected_kvm_enabled())
 		return false;
 
 	WARN_ON(range->end - range->start != 1);
@@ -1718,7 +1716,7 @@ bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	kvm_pte_t kpte;
 	pte_t pte;
 
-	if (!kvm->arch.mmu.pgt)
+	if (is_protected_kvm_enabled())
 		return false;
 
 	WARN_ON(size != PAGE_SIZE && size != PMD_SIZE && size != PUD_SIZE);
@@ -1731,7 +1729,7 @@ bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 
 bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	if (!kvm->arch.mmu.pgt)
+	if (is_protected_kvm_enabled())
 		return false;
 
 	return kvm_pgtable_stage2_is_young(kvm->arch.mmu.pgt,
@@ -1945,7 +1943,9 @@ void kvm_arch_memslots_updated(struct kvm *kvm, u64 gen)
 
 void kvm_arch_flush_shadow_all(struct kvm *kvm)
 {
-	kvm_free_stage2_pgd(&kvm->arch.mmu);
+	write_lock(&kvm->mmu_lock);
+	unmap_stage2_range(&kvm->arch.mmu, 0, BIT(kvm->arch.mmu.pgt->ia_bits));
+	write_unlock(&kvm->mmu_lock);
 }
 
 void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
