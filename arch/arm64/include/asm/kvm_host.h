@@ -881,6 +881,27 @@ void kvm_arm_vcpu_init_debug(struct kvm_vcpu *vcpu);
 void kvm_arm_setup_debug(struct kvm_vcpu *vcpu);
 void kvm_arm_clear_debug(struct kvm_vcpu *vcpu);
 void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu);
+
+static inline void vcpu_arch_save_guest_debug_regs(struct kvm_vcpu_arch *vcpu_arch)
+{
+	u64 val = vcpu_arch_read_sys_reg(vcpu_arch, MDSCR_EL1);
+
+	vcpu_arch->guest_debug_preserved.mdscr_el1 = val;
+}
+
+static inline void vcpu_arch_restore_guest_debug_regs(struct kvm_vcpu_arch *vcpu_arch)
+{
+	u64 val = vcpu_arch->guest_debug_preserved.mdscr_el1;
+
+	vcpu_arch_write_sys_reg(vcpu_arch, val, MDSCR_EL1);
+}
+
+#define __vcpu_save_guest_debug_regs(vcpu) vcpu_arch_save_guest_debug_regs(&((vcpu)->arch))
+#define __vcpu_restore_guest_debug_regs(vcpu) vcpu_arch_restore_guest_debug_regs(&((vcpu)->arch))
+
+#define kvm_vcpu_needs_debug_regs(vcpu)		\
+	(!!((vcpu)->guest_debug))
+
 int kvm_arm_vcpu_arch_set_attr(struct kvm_vcpu *vcpu,
 			       struct kvm_device_attr *attr);
 int kvm_arm_vcpu_arch_get_attr(struct kvm_vcpu *vcpu,
