@@ -471,6 +471,7 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 		shadow_vcpu->arch.hw_mmu = &vm->arch.mmu;
 		shadow_vcpu->arch.pkvm.shadow_vm = vm;
 		shadow_vcpu->arch.power_off = true;
+		shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.vcpu_debug_state;
 
 		if (vm->arch.pkvm.enabled)
 			pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
