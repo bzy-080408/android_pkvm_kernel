@@ -519,6 +519,60 @@ static void __flush_vcpu_state(struct kvm_vcpu *shadow_vcpu)
 	__copy_vcpu_state(host_vcpu, shadow_vcpu);
 }
 
+static void __flush_debug_state(struct pkvm_loaded_state *state)
+{
+	struct kvm_vcpu *shadow_vcpu = state->vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
+	u64 mdcr_el2 = READ_ONCE(host_vcpu->arch.mdcr_el2);
+
+	/*
+	 * Propagate the monitor debug configuration of the vcpu from host.
+	 * Preserve HPMN, which is set-up by some knowledgeable bootcode.
+	 * Ensure that MDCR_EL2_E2PB_MASK and MDCR_EL2_E2TB_MASK are clear,
+	 * as guests should not be able to access profiling and trace buffers.
+	 * Ensure that RES0 bits are clear.
+	 */
+	mdcr_el2 &= ~(MDCR_EL2_RES0 |
+		      MDCR_EL2_HPMN_MASK |
+	              (MDCR_EL2_E2PB_MASK << MDCR_EL2_E2PB_SHIFT) |
+	              (MDCR_EL2_E2TB_MASK << MDCR_EL2_E2TB_SHIFT));
+	shadow_vcpu->arch.mdcr_el2 = read_sysreg(mdcr_el2) & MDCR_EL2_HPMN_MASK;
+	shadow_vcpu->arch.mdcr_el2 |= mdcr_el2;
+
+	/* Propagate the debug control field of the vcpu from host. */
+	shadow_vcpu->guest_debug = READ_ONCE(host_vcpu->guest_debug);
+
+	/* Propagate PMU state. */
+	shadow_vcpu->arch.pmu = host_vcpu->arch.pmu;
+
+	/* Check if the debug registers are used. */
+	if (!kvm_vcpu_needs_debug_regs(shadow_vcpu))
+		return;
+
+	__vcpu_save_guest_debug_regs(shadow_vcpu);
+
+	/* Switch debug_ptr to the external_debug_state if done by the host. */
+	if (kern_hyp_va(READ_ONCE(host_vcpu->arch.debug_ptr)) == &host_vcpu->arch.external_debug_state)
+		shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.external_debug_state;
+
+	/* Propagate any special handling for single step from host. */
+	vcpu_write_sys_reg(shadow_vcpu, vcpu_read_sys_reg(host_vcpu, MDSCR_EL1), MDSCR_EL1);
+	*vcpu_cpsr(shadow_vcpu) = *vcpu_cpsr(host_vcpu);
+}
+
+static void __sync_debug_state(struct pkvm_loaded_state *state)
+{
+	struct kvm_vcpu *shadow_vcpu = state->vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
+
+	/* Check if the debug registers are used. */
+	if (!kvm_vcpu_needs_debug_regs(shadow_vcpu))
+		return;
+
+	__vcpu_restore_guest_debug_regs(shadow_vcpu);
+	shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.vcpu_debug_state;
+}
+
 static void flush_shadow_state(struct pkvm_loaded_state *state)
 {
 	struct kvm_vcpu *shadow_vcpu = state->vcpu;
@@ -542,8 +596,10 @@ static void flush_shadow_state(struct pkvm_loaded_state *state)
 		if (host_flags & KVM_ARM64_PKVM_STATE_DIRTY)
 			__flush_vcpu_state(shadow_vcpu);
 
-		state->vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
-		state->vcpu->arch.hcr_el2 |= host_vcpu->arch.hcr_el2;
+		__flush_debug_state(state);
+
+		shadow_vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
+		shadow_vcpu->arch.hcr_el2 |= READ_ONCE(host_vcpu->arch.hcr_el2);
 	}
 
 	flush_vgic_state(host_vcpu, shadow_vcpu);
@@ -578,6 +634,9 @@ static void sync_shadow_state(struct pkvm_loaded_state *state, u32 exit_reason)
 	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
 	u8 esr_ec;
 	shadow_entry_exit_handler_fn ec_handler;
+
+	if (!state->is_protected)
+		__sync_debug_state(state);
 
 	/*
 	 * Don't sync the vcpu GPR/sysreg state after a run. Instead,
