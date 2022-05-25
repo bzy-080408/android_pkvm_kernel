@@ -477,6 +477,7 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 
 		shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
 		shadow_vcpu->arch.power_off = true;
+		shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.vcpu_debug_state;
 
 		copy_features(shadow_vcpu, host_vcpu);
 
