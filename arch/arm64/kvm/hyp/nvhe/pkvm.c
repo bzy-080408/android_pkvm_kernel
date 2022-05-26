@@ -1305,6 +1305,35 @@ out_guest_err:
 	return true;
 }
 
+static bool pkvm_memrelinquish_call(struct kvm_vcpu *vcpu)
+{
+	u64 ipa = smccc_get_arg1(vcpu);
+	u64 arg2 = smccc_get_arg2(vcpu);
+	u64 arg3 = smccc_get_arg3(vcpu);
+	phys_addr_t pa;
+	int ret;
+
+	if (arg2 || arg3)
+		goto out_guest_err;
+
+	ret = __pkvm_guest_relinquish_to_host(vcpu, ipa, &pa);
+	if (ret)
+		goto out_guest_err;
+
+	if (pa != 0) {
+		/* Now pass to host. */
+		return false;
+	}
+
+	/* This was a NOP as no page was actually mapped at the IPA. */
+	smccc_set_retval(vcpu, 0, 0, 0, 0);
+	return true;
+
+out_guest_err:
+	smccc_set_retval(vcpu, SMCCC_RET_INVALID_PARAMETER, 0, 0, 0);
+	return true;
+}
+
 static bool pkvm_install_ioguard_page(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 	u64 retval = SMCCC_RET_SUCCESS;
@@ -1390,6 +1419,7 @@ bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_ENROLL);
 		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_MAP);
 		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_UNMAP);
+		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MEM_RELINQUISH);
 		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MMIO_GUARD_ENROLL_FUNC_ID:
 		set_bit(KVM_ARCH_FLAG_MMIO_GUARD, &vcpu->arch.pkvm.shadow_vm->arch.flags);
@@ -1417,6 +1447,8 @@ bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 		return pkvm_memshare_call(vcpu, exit_code);
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
 		return pkvm_memunshare_call(vcpu);
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
+		return pkvm_memrelinquish_call(vcpu);
 	case ARM_SMCCC_TRNG_VERSION ... ARM_SMCCC_TRNG_RND32:
 	case ARM_SMCCC_TRNG_RND64:
 		if (smccc_trng_available)
@@ -1428,4 +1460,15 @@ bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 
 	smccc_set_retval(vcpu, val[0], val[1], val[2], val[3]);
 	return true;
+}
+
+/* XXX This is used to hook the MEM_RELINQUISH hypercall only. */
+bool kvm_hyp_handle_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	u32 fn = smccc_get_function(vcpu);
+	switch (fn) {
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
+		return pkvm_memrelinquish_call(vcpu);
+	}
+	return false;
 }

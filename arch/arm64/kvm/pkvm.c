@@ -235,6 +235,47 @@ void kvm_shadow_destroy(struct kvm *kvm)
 	}
 }
 
+static struct kvm_pinned_page *ppage_find(struct rb_root *root, phys_addr_t ipa)
+{
+	struct rb_node *node = root->rb_node;
+
+	while (node) {
+		struct kvm_pinned_page *ppage = container_of(
+			node, struct kvm_pinned_page, node);
+
+		if (ipa < ppage->ipa)
+			node = node->rb_left;
+		else if (ipa > ppage->ipa)
+			node = node->rb_right;
+		else
+			return ppage;
+	}
+	return NULL;
+}
+
+void pkvm_host_reclaim_page(struct kvm *kvm, phys_addr_t ipa)
+{
+	struct kvm_pinned_page *ppage;
+	struct mm_struct *mm = current->mm;
+
+	spin_lock(&kvm->mmu_lock);
+	ppage = ppage_find(&kvm->arch.pkvm.pinned_pages, ipa);
+	if (ppage)
+		rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
+	spin_unlock(&kvm->mmu_lock);
+
+	WARN_ON(!ppage);
+	if (!ppage)
+		return;
+
+	WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
+				  page_to_pfn(ppage->page)));
+
+	account_locked_vm(mm, 1, false);
+	unpin_user_pages_dirty_lock(&ppage->page, 1, true);
+	kfree(ppage);
+}
+
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,
 					 const char *reason)
 {
