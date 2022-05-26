@@ -214,6 +214,30 @@ void kvm_shadow_destroy(struct kvm *kvm)
 	}
 }
 
+void kvm_shadow_reclaim_one(struct kvm *kvm, phys_addr_t pa)
+{
+	struct kvm_pinned_page *ppage;
+	struct mm_struct *mm = current->mm;
+	struct list_head *ppages;
+
+	ppages = &kvm->arch.pkvm.pinned_pages;
+	list_for_each_entry(ppage, ppages, link) {
+		u64 pfn = page_to_pfn(ppage->page);
+		if (pfn != PHYS_PFN(pa))
+			continue;
+
+		/* Found the page. Reclaim it. */
+		WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page, pfn));
+		cond_resched();
+
+		account_locked_vm(mm, 1, false);
+		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
+		list_del(&ppage->link);
+		kfree(ppage);
+		break;
+	}
+}
+
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,
 					 const char *reason)
 {
