@@ -129,6 +129,18 @@ static void prepare_host_vtcr(void)
 
 static bool host_stage2_force_pte_cb(u64 addr, u64 end, enum kvm_pgtable_prot prot);
 
+int host_stage2_pgt_map_readonly(phys_addr_t host_s2_pa)
+{
+	unsigned long nr_pages;
+	int ret;
+
+	nr_pages = host_s2_pgtable_pages();
+	ret = kvm_pgtable_stage2_map(&host_kvm.pgt, host_s2_pa,
+				     nr_pages * PAGE_SIZE, host_s2_pa,
+				     KVM_PGTABLE_PROT_R, &host_s2_pool);
+	return ret;
+}
+
 int kvm_host_prepare_stage2(void *pgt_pool_base)
 {
 	struct kvm_s2_mmu *mmu = &host_kvm.arch.mmu;
