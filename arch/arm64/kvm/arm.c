@@ -23,6 +23,8 @@
 #include <linux/sched/stat.h>
 #include <linux/psci.h>
 #include <trace/events/kvm.h>
+#include <linux/printk.h>
+#include <linux/memremap.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace_arm.h"
@@ -44,6 +46,31 @@
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
+#include <asm/ptdump.h>
+
+#ifdef CONFIG_PTDUMP_CORE
+# define S2_MAP_PGT_BASE	(0x0)
+# define S2_MAP_PGT_END		(BIT(48) - 1)
+
+static struct addr_marker address_markers[] = {
+	{ S2_MAP_PGT_BASE, "Stage2 mapping start"},
+	{ S2_MAP_PGT_END, "Stage2 mapping end"},
+	{-1, NULL},
+};
+
+static struct mm_struct stage2_init_mm = {
+	.mm_rb		= RB_ROOT,
+	.mm_users	= ATOMIC_INIT(2),
+	.mm_count	= ATOMIC_INIT(1),
+	.write_protect_seq = SEQCNT_ZERO(stage2_init_mm.write_protect_seq),
+	MMAP_LOCK_INITIALIZER(init_mm)
+	.page_table_lock =  __SPIN_LOCK_UNLOCKED(stage2_init_mm.page_table_lock),
+	.arg_lock	=  __SPIN_LOCK_UNLOCKED(stage2_init_mm.arg_lock),
+	.mmlist		= LIST_HEAD_INIT(stage2_init_mm.mmlist),
+	.user_ns	= &init_user_ns,
+	.cpu_bitmap	= CPU_BITS_NONE,
+};
+#endif /* CONFIG_PTDUMP_CORE */
 
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
 DEFINE_STATIC_KEY_FALSE(kvm_protected_mode_initialized);
@@ -1901,12 +1928,21 @@ static int do_pkvm_init(u32 hyp_va_bits)
 {
 	void *per_cpu_base = kvm_ksym_ref(kvm_nvhe_sym(kvm_arm_hyp_percpu_base));
 	int ret;
+	struct arm_smccc_res res = {0};
 
 	preempt_disable();
 	cpu_hyp_init_context();
-	ret = kvm_call_hyp_nvhe(__pkvm_init, hyp_mem_base, hyp_mem_size,
-				num_possible_cpus(), kern_hyp_va(per_cpu_base),
-				hyp_va_bits);
+	ret = kvm_call_hyp_nvhe_res(__pkvm_init, res, hyp_mem_base,
+				    hyp_mem_size, num_possible_cpus(),
+				    kern_hyp_va(per_cpu_base),
+				    hyp_va_bits);
+#ifdef CONFIG_PTDUMP_CORE
+	/* Verify that we can use the ptdump sysfs core */
+	stage2_init_mm.pgd = phys_to_virt(res.a2);;
+	ptdump_stage2_setinfo(S2_MAP_PGT_BASE, &address_markers[0],
+			      &stage2_init_mm);
+#endif
+
 	cpu_hyp_init_features();
 
 	/*
