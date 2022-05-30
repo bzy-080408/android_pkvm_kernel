@@ -23,6 +23,8 @@
 #include <linux/sched/stat.h>
 #include <linux/psci.h>
 #include <trace/events/kvm.h>
+#include <linux/printk.h>
+#include <linux/memremap.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace_arm.h"
@@ -45,6 +47,12 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_psci.h>
 
+struct kvm_s2_mem_inspector {
+	struct work_struct work;
+	void *host_stage2_virt_addr;
+	size_t sz;
+};
+
 static enum kvm_mode kvm_mode = KVM_MODE_DEFAULT;
 DEFINE_STATIC_KEY_FALSE(kvm_protected_mode_initialized);
 
@@ -58,6 +66,9 @@ static bool vgic_present;
 
 static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 DEFINE_STATIC_KEY_FALSE(userspace_irqchip_in_use);
+
+/* The host stage2 pagetable address with read only access */
+static struct kvm_s2_mem_inspector s2_mem_inspector;
 
 int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
 {
@@ -1901,12 +1912,18 @@ static int do_pkvm_init(u32 hyp_va_bits)
 {
 	void *per_cpu_base = kvm_ksym_ref(kvm_nvhe_sym(kvm_arm_hyp_percpu_base));
 	int ret;
+	struct arm_smccc_res res = {0};
 
 	preempt_disable();
 	cpu_hyp_init_context();
-	ret = kvm_call_hyp_nvhe(__pkvm_init, hyp_mem_base, hyp_mem_size,
-				num_possible_cpus(), kern_hyp_va(per_cpu_base),
-				hyp_va_bits);
+	ret = kvm_call_hyp_nvhe_res(__pkvm_init, res, hyp_mem_base,
+				    hyp_mem_size, num_possible_cpus(),
+				    kern_hyp_va(per_cpu_base),
+				    hyp_va_bits);
+
+	s2_mem_inspector.host_stage2_virt_addr = phys_to_virt(res.a2);
+	s2_mem_inspector.sz = host_s2_pgtable_pages() * PAGE_SIZE;
+
 	cpu_hyp_init_features();
 
 	/*
