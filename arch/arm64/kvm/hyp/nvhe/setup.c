@@ -297,12 +297,15 @@ void __noreturn __pkvm_init_finalise(void)
 		goto out;
 
 	hyp_shadow_table_init(shadow_table_base);
+	host_stage2_pgt_map_readonly(hyp_virt_to_phys(host_s2_pgt_base));
 out:
 	/*
 	 * We tail-called to here from handle___pkvm_init() and will not return,
-	 * so make sure to propagate the return value to the host.
+	 * so make sure to propagate the return value to the host. Propagate
+	 * the host stage2 pagetable hypervisor address and the size of it.
 	 */
 	cpu_reg(host_ctxt, 1) = ret;
+	cpu_reg(host_ctxt, 2) = (__u64)hyp_virt_to_phys(host_kvm.pgt.pgd);
 
 	__host_enter(host_ctxt);
 }
