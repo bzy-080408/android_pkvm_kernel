@@ -30,7 +30,6 @@ static int notrace __unwind_next(struct task_struct *tsk,
 				 struct stack_info *info)
 {
 	unsigned long fp = state->fp;
-	struct stack_info info;
 
 	if (fp & 0x7)
 		return -EINVAL;
@@ -96,6 +95,7 @@ void notrace unwind(struct task_struct *tsk,
 }
 NOKPROBE_SYMBOL(unwind);
 
+#ifndef __KVM_NVHE_HYPERVISOR__
 int notrace unwind_next(struct task_struct *tsk,
 			       struct unwind_state *state)
 {
@@ -230,3 +230,4 @@ noinline notrace void arch_stack_walk(stack_trace_consume_fn consume_entry,
 }
 
 #endif
+#endif /* !__KVM_NVHE_HYPERVISOR__ */
