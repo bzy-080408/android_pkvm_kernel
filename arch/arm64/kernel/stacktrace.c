@@ -25,8 +25,9 @@
  * records (e.g. a cycle), determined based on the location and fp value of A
  * and the location (but not the fp value) of B.
  */
-int notrace unwind_next(struct task_struct *tsk,
-			       struct unwind_state *state)
+static int notrace __unwind_next(struct task_struct *tsk,
+				 struct unwind_state *state,
+				 struct stack_info *info)
 {
 	unsigned long fp = state->fp;
 	struct stack_info info;
@@ -37,10 +38,10 @@ int notrace unwind_next(struct task_struct *tsk,
 	if (!tsk)
 		tsk = current;
 
-	if (!on_accessible_stack(tsk, fp, 16, &info))
+	if (!on_accessible_stack(tsk, fp, 16, info))
 		return -EINVAL;
 
-	if (test_bit(info.type, state->stacks_done))
+	if (test_bit(info->type, state->stacks_done))
 		return -EINVAL;
 
 	/*
@@ -56,7 +57,7 @@ int notrace unwind_next(struct task_struct *tsk,
 	 * stack to another, it's never valid to unwind back to that first
 	 * stack.
 	 */
-	if (info.type == state->prev_type) {
+	if (info->type == state->prev_type) {
 		if (fp <= state->prev_fp)
 			return -EINVAL;
 	} else {
@@ -70,7 +71,44 @@ int notrace unwind_next(struct task_struct *tsk,
 	state->fp = READ_ONCE_NOCHECK(*(unsigned long *)(fp));
 	state->pc = READ_ONCE_NOCHECK(*(unsigned long *)(fp + 8));
 	state->prev_fp = fp;
-	state->prev_type = info.type;
+	state->prev_type = info->type;
+
+	return 0;
+}
+NOKPROBE_SYMBOL(__unwind_next);
+
+int notrace unwind_next(struct task_struct *tsk,
+			       struct unwind_state *state);
+
+void notrace unwind(struct task_struct *tsk,
+			   struct unwind_state *state,
+			   bool (*fn)(void *, unsigned long), void *data)
+{
+	while (1) {
+		int ret;
+
+		if (!fn(data, state->pc))
+			break;
+		ret = unwind_next(tsk, state);
+		if (ret < 0)
+			break;
+	}
+}
+NOKPROBE_SYMBOL(unwind);
+
+int notrace unwind_next(struct task_struct *tsk,
+			       struct unwind_state *state)
+{
+	struct stack_info info;
+	int err;
+
+	/* Final frame; nothing to unwind */
+	if (state->fp == (unsigned long)task_pt_regs(tsk)->stackframe)
+		return -ENOENT;
+
+	err = __unwind_next(tsk, state, &info);
+	if (err)
+		return err;
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 	if (tsk->ret_stack &&
@@ -103,22 +141,6 @@ int notrace unwind_next(struct task_struct *tsk,
 	return 0;
 }
 NOKPROBE_SYMBOL(unwind_next);
-
-void notrace unwind(struct task_struct *tsk,
-			   struct unwind_state *state,
-			   bool (*fn)(void *, unsigned long), void *data)
-{
-	while (1) {
-		int ret;
-
-		if (!fn(data, state->pc))
-			break;
-		ret = unwind_next(tsk, state);
-		if (ret < 0)
-			break;
-	}
-}
-NOKPROBE_SYMBOL(unwind);
 
 static void dump_backtrace_entry(unsigned long where, const char *loglvl)
 {
