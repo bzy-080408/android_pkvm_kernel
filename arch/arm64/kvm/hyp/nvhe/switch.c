@@ -25,6 +25,7 @@
 #include <asm/fpsimd.h>
 #include <asm/debug-monitors.h>
 #include <asm/processor.h>
+#include <asm/stacktrace.h>
 
 #include <nvhe/mem_protect.h>
 #include <nvhe/pkvm.h>
@@ -363,6 +364,9 @@ asmlinkage void __noreturn hyp_panic(void)
 		__load_host_stage2();
 		__sysreg_restore_state_nvhe(host_ctxt);
 	}
+
+	/* Save the hypervisor stacktrace */
+	hyp_save_backtrace();
 
 	__hyp_do_panic(host_ctxt, spsr, elr, par);
 	unreachable();
