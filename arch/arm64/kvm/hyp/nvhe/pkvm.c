@@ -328,6 +328,7 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 		shadow_vcpu->vcpu_idx = i;
 
 		shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
+		shadow_vcpu->arch.cflags = READ_ONCE(host_vcpu->arch.cflags);
 	}
 
 	return 0;

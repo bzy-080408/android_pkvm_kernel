@@ -38,7 +38,8 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	shadow_vcpu->arch.mdcr_el2	= host_vcpu->arch.mdcr_el2;
 	shadow_vcpu->arch.cptr_el2	= host_vcpu->arch.cptr_el2;
 
-	shadow_vcpu->arch.flags		= host_vcpu->arch.flags;
+	shadow_vcpu->arch.iflags	= host_vcpu->arch.iflags;
+	shadow_vcpu->arch.fp_state	= host_vcpu->arch.fp_state;
 
 	shadow_vcpu->arch.debug_ptr	= kern_hyp_va(host_vcpu->arch.debug_ptr);
 	shadow_vcpu->arch.host_fpsimd_state = host_vcpu->arch.host_fpsimd_state;
@@ -63,7 +64,8 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 
 	host_vcpu->arch.fault		= shadow_vcpu->arch.fault;
 
-	host_vcpu->arch.flags		= shadow_vcpu->arch.flags;
+	host_vcpu->arch.iflags		= shadow_vcpu->arch.iflags;
+	host_vcpu->arch.fp_state	= shadow_vcpu->arch.fp_state;
 
 	host_cpu_if->vgic_hcr		= shadow_cpu_if->vgic_hcr;
 	for (i = 0; i < shadow_cpu_if->used_lrs; ++i)
