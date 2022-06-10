@@ -781,32 +781,27 @@ static inline bool __vcpu_write_sys_reg_to_cpu(u64 val, int reg)
 	return true;
 }
 
-static inline u64 vcpu_arch_read_sys_reg(const struct kvm_vcpu_arch *vcpu_arch,
-					 int reg)
-{
-	u64 val = 0x8badf00d8badf00d;
+#define vcpu_read_sys_reg(__vcpu, reg)					\
+	({								\
+		u64 __val = 0x8badf00d8badf00d;				\
+									\
+		/* SYSREGS_ON_CPU is only used in VHE */		\
+		((!is_nvhe_hyp_code() &&				\
+		  vcpu_get_flag(__vcpu, SYSREGS_ON_CPU) &&		\
+		  __vcpu_read_sys_reg_from_cpu(reg, &__val))) ?		\
+		 __val							\
+		 :							\
+		 ctxt_sys_reg(&__vcpu->arch.ctxt, reg);			\
+	 })
 
-	/* sysregs_loaded_on_cpu is only used in VHE */
-	if (!is_nvhe_hyp_code() && vcpu_get_flag(vcpu, SYSREGS_ON_CPU) &&
-	    __vcpu_read_sys_reg_from_cpu(reg, &val))
-		return val;
-
-	return ctxt_sys_reg(&vcpu_arch->ctxt, reg);
-}
-
-static inline void vcpu_arch_write_sys_reg(struct kvm_vcpu_arch *vcpu_arch,
-					   u64 val, int reg)
-{
-	/* sysregs_loaded_on_cpu is only used in VHE */
-	if (!is_nvhe_hyp_code() && vcpu_get_flag(vcpu, SYSREGS_ON_CPU) &&
-	    __vcpu_write_sys_reg_to_cpu(val, reg))
-		return;
-
-	 ctxt_sys_reg(&vcpu_arch->ctxt, reg) = val;
-}
-
-#define vcpu_read_sys_reg(vcpu, reg) vcpu_arch_read_sys_reg(&((vcpu)->arch), reg)
-#define vcpu_write_sys_reg(vcpu, val, reg) vcpu_arch_write_sys_reg(&((vcpu)->arch), val, reg)
+#define vcpu_write_sys_reg(__vcpu, __val, reg)				\
+	do {								\
+		/* SYSREGS_ON_CPU is only used in VHE */		\
+		if (is_nvhe_hyp_code() ||				\
+		    !vcpu_get_flag(__vcpu, SYSREGS_ON_CPU) ||		\
+		    !__vcpu_write_sys_reg_to_cpu(__val, reg))		\
+			ctxt_sys_reg(&__vcpu->arch.ctxt, reg) = __val;	\
+	} while (0)
 
 struct kvm_vm_stat {
 	struct kvm_vm_stat_generic generic;
