@@ -458,7 +458,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 
 		/* __pkvm_vcpu_put implies a sync of the state */
 		if (!kvm_vm_is_protected(vcpu->kvm))
-			vcpu->arch.flags |= KVM_ARM64_PKVM_STATE_DIRTY;
+			vcpu_set_flag(vcpu, PKVM_HOST_STATE_DIRTY);
 	}
 
 	kvm_arch_vcpu_put_debug_state_flags(vcpu);
@@ -605,7 +605,7 @@ int kvm_arch_vcpu_run_pid_change(struct kvm_vcpu *vcpu)
 	if (is_protected_kvm_enabled()) {
 		/* Start with the vcpu in a dirty state */
 		if (!kvm_vm_is_protected(vcpu->kvm))
-			vcpu->arch.flags |= KVM_ARM64_PKVM_STATE_DIRTY;
+			vcpu_set_flag(vcpu, PKVM_HOST_STATE_DIRTY);
 		ret = kvm_shadow_create(kvm);
 		if (ret)
 			return ret;

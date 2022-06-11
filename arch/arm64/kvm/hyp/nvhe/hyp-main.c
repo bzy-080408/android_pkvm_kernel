@@ -173,12 +173,9 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	 * If we deal with a non-protected guest and the state is potentially
 	 * dirty (from a host perspective), copy the state back into the shadow.
 	 */
-	if (!shadow_state_is_protected(shadow_state)) {
-		unsigned long host_flags = READ_ONCE(host_vcpu->arch.flags);
-
-		if (host_flags & KVM_ARM64_PKVM_STATE_DIRTY)
-			__flush_vcpu_state(shadow_state);
-	}
+	if (!shadow_state_is_protected(shadow_state) &&
+	    vcpu_get_flag(host_vcpu, PKVM_HOST_STATE_DIRTY))
+		__flush_vcpu_state(shadow_state);
 
 	shadow_vcpu->arch.sve_state	= kern_hyp_va(host_vcpu->arch.sve_state);
 	shadow_vcpu->arch.sve_max_vl	= host_vcpu->arch.sve_max_vl;
@@ -303,7 +300,7 @@ static void handle___pkvm_vcpu_put(struct kvm_cpu_context *host_ctxt)
 		struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
 
 		if (!shadow_state_is_protected(shadow_state) &&
-			!(READ_ONCE(host_vcpu->arch.flags) & KVM_ARM64_PKVM_STATE_DIRTY))
+		    !vcpu_get_flag(host_vcpu, PKVM_HOST_STATE_DIRTY))
 			__sync_vcpu_state(shadow_state);
 
 		pkvm_put_shadow_vcpu_state(shadow_state);

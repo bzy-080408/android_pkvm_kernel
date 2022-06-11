@@ -241,9 +241,9 @@ static int handle_trap_exceptions(struct kvm_vcpu *vcpu)
 	 */
 	if (is_protected_kvm_enabled() && !kvm_vm_is_protected(vcpu->kvm)) {
 		preempt_disable();
-		if (!(vcpu->arch.flags & KVM_ARM64_PKVM_STATE_DIRTY)) {
+		if (!(vcpu_get_flag(vcpu, PKVM_HOST_STATE_DIRTY))) {
 			kvm_call_hyp_nvhe(__pkvm_vcpu_sync_state);
-			vcpu->arch.flags |= KVM_ARM64_PKVM_STATE_DIRTY;
+			vcpu_set_flag(vcpu, PKVM_HOST_STATE_DIRTY);
 		}
 		preempt_enable();
 	}
@@ -320,7 +320,7 @@ void handle_exit_early(struct kvm_vcpu *vcpu, int exception_index)
 	 * perspective.
 	 */
 	if (is_protected_kvm_enabled())
-		vcpu->arch.flags &= ~KVM_ARM64_PKVM_STATE_DIRTY;
+		vcpu_clear_flag(vcpu, PKVM_HOST_STATE_DIRTY);
 
 	if (ARM_SERROR_PENDING(exception_index)) {
 		if (this_cpu_has_cap(ARM64_HAS_RAS_EXTN)) {
