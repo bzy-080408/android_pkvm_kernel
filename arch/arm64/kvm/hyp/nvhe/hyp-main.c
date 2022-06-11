@@ -24,7 +24,7 @@
  * Host FPSIMD state. Written to when the guest accesses its own FPSIMD state,
  * and read when the guest state is live and we need to switch back to the host.
  *
- * Only valid when the KVM_ARM64_FP_ENABLED flag is set in the shadow structure.
+ * Only valid when (fp_state == FP_STATE_GUEST_OWNED) in the shadow structure.
  */
 static DEFINE_PER_CPU(struct user_fpsimd_state, loaded_host_fpsimd_state);
 
@@ -191,8 +191,6 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	shadow_vcpu->arch.hcr_el2	= host_vcpu->arch.hcr_el2;
 	shadow_vcpu->arch.mdcr_el2	= host_vcpu->arch.mdcr_el2;
 
-	shadow_vcpu->arch.fp_state	= host_vcpu->arch.fp_state;
-
 	shadow_vcpu->arch.debug_ptr	= kern_hyp_va(host_vcpu->arch.debug_ptr);
 
 	shadow_vcpu->arch.vsesr_el2	= host_vcpu->arch.vsesr_el2;
@@ -230,8 +228,6 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state,
 
 	host_vcpu->arch.hcr_el2		= shadow_vcpu->arch.hcr_el2;
 
-	host_vcpu->arch.fp_state	= shadow_vcpu->arch.fp_state;
-
 	sync_vgic_state(host_vcpu, shadow_vcpu);
 	sync_timer_state(shadow_state);
 
@@ -268,8 +264,7 @@ static void fpsimd_host_restore(void)
 		__fpsimd_save_state(&shadow_vcpu->arch.ctxt.fp_regs);
 		__fpsimd_restore_state(host_fpsimd_state);
 
-		shadow_vcpu->arch.flags &= ~KVM_ARM64_FP_ENABLED;
-		shadow_vcpu->arch.flags |= KVM_ARM64_FP_HOST;
+		shadow_vcpu->arch.fp_state = FP_STATE_HOST_OWNED;
 	}
 
 	if (system_supports_sve())
@@ -306,7 +301,7 @@ static void handle___pkvm_vcpu_load(struct kvm_cpu_context *host_ctxt)
 	}
 
 	shadow_vcpu->arch.host_fpsimd_state = this_cpu_ptr(&loaded_host_fpsimd_state);
-	shadow_vcpu->arch.flags |= KVM_ARM64_FP_HOST;
+	shadow_vcpu->arch.fp_state = FP_STATE_HOST_OWNED;
 
 	if (shadow_state_is_protected(shadow_state)) {
 		/* Propagate WFx trapping flags, trap ptrauth */
@@ -329,7 +324,7 @@ static void handle___pkvm_vcpu_put(struct kvm_cpu_context *host_ctxt)
 		struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
 		struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
 
-		if (shadow_vcpu->arch.flags & KVM_ARM64_FP_ENABLED)
+		if (shadow_vcpu->arch.fp_state == FP_STATE_GUEST_OWNED)
 			fpsimd_host_restore();
 
 		if (!shadow_state_is_protected(shadow_state) &&
@@ -399,7 +394,7 @@ static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
 
 		sync_shadow_state(shadow_state, ret);
 
-		if (shadow_state->shadow_vcpu.arch.flags & KVM_ARM64_FP_ENABLED) {
+		if (shadow_state->shadow_vcpu.arch.fp_state == FP_STATE_GUEST_OWNED) {
 			/*
 			 * The guest has used the FP, trap all accesses
 			 * from the host (both FP and SVE).
