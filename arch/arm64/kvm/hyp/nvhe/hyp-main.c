@@ -38,35 +38,28 @@ typedef void (*shadow_entry_exit_handler_fn)(struct kvm_vcpu *, struct kvm_vcpu 
 
 static void handle_pvm_entry_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
-	shadow_vcpu->arch.flags |= READ_ONCE(host_vcpu->arch.flags) &
-				   KVM_ARM64_INCREMENT_PC;
+	if (vcpu_get_flag(host_vcpu, INCREMENT_PC)) {
+		vcpu_clear_flag(shadow_vcpu, PC_UPDATE_REQ);
+		kvm_incr_pc(shadow_vcpu);
+	}
 }
 
 static void handle_pvm_entry_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
-	unsigned long host_flags;
-
-	host_flags = READ_ONCE(host_vcpu->arch.flags);
-
 	/* Exceptions have priority on anything else */
-	if (host_flags & KVM_ARM64_PENDING_EXCEPTION) {
+	if (vcpu_get_flag(host_vcpu, PENDING_EXCEPTION)) {
 		/* Exceptions caused by this should be undef exceptions. */
 		u32 esr = (ESR_ELx_EC_UNKNOWN << ESR_ELx_EC_SHIFT);
 
 		__vcpu_sys_reg(shadow_vcpu, ESR_EL1) = esr;
-		shadow_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
-					     KVM_ARM64_EXCEPT_MASK);
-		shadow_vcpu->arch.flags |= (KVM_ARM64_PENDING_EXCEPTION |
-					    KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
-					    KVM_ARM64_EXCEPT_AA64_EL1);
+		kvm_pend_exception(shadow_vcpu, EXCEPT_AA64_EL1_SYNC);
 
 		return;
 	}
 
-	if (host_flags & KVM_ARM64_INCREMENT_PC) {
-		shadow_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
-					     KVM_ARM64_EXCEPT_MASK);
-		shadow_vcpu->arch.flags |= KVM_ARM64_INCREMENT_PC;
+	if (vcpu_get_flag(host_vcpu, INCREMENT_PC)) {
+		vcpu_clear_flag(shadow_vcpu, PC_UPDATE_REQ);
+		kvm_incr_pc(shadow_vcpu);
 	}
 
 	if (!esr_sys64_to_params(shadow_vcpu->arch.fault.esr_el2).is_write) {
@@ -81,12 +74,9 @@ static void handle_pvm_entry_sys64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *
 static void handle_pvm_entry_iabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	unsigned long cpsr = *vcpu_cpsr(shadow_vcpu);
-	unsigned long host_flags;
 	u32 esr = ESR_ELx_IL;
 
-	host_flags = READ_ONCE(host_vcpu->arch.flags);
-
-	if (!(host_flags & KVM_ARM64_PENDING_EXCEPTION))
+	if (!vcpu_get_flag(host_vcpu, PENDING_EXCEPTION))
 		return;
 
 	/*
@@ -104,22 +94,15 @@ static void handle_pvm_entry_iabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *s
 	__vcpu_sys_reg(shadow_vcpu, FAR_EL1) = kvm_vcpu_get_hfar(shadow_vcpu);
 
 	/* Tell the run loop that we want to inject something */
-	shadow_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
-				     KVM_ARM64_EXCEPT_MASK);
-	shadow_vcpu->arch.flags |= (KVM_ARM64_PENDING_EXCEPTION |
-				    KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
-				    KVM_ARM64_EXCEPT_AA64_EL1);
+	kvm_pend_exception(shadow_vcpu, EXCEPT_AA64_EL1_SYNC);
 }
 
 static void handle_pvm_entry_dabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
-	unsigned long host_flags;
-	bool rd_update;
-
-	host_flags = READ_ONCE(host_vcpu->arch.flags);
+	bool pc_update;
 
 	/* Exceptions have priority over anything else */
-	if (host_flags & KVM_ARM64_PENDING_EXCEPTION) {
+	if (vcpu_get_flag(host_vcpu, PENDING_EXCEPTION)) {
 		unsigned long cpsr = *vcpu_cpsr(shadow_vcpu);
 		u32 esr = ESR_ELx_IL;
 
@@ -133,11 +116,7 @@ static void handle_pvm_entry_dabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *s
 		__vcpu_sys_reg(shadow_vcpu, ESR_EL1) = esr;
 		__vcpu_sys_reg(shadow_vcpu, FAR_EL1) = kvm_vcpu_get_hfar(shadow_vcpu);
 		/* Tell the run loop that we want to inject something */
-		shadow_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
-					     KVM_ARM64_EXCEPT_MASK);
-		shadow_vcpu->arch.flags |= (KVM_ARM64_PENDING_EXCEPTION |
-					    KVM_ARM64_EXCEPT_AA64_ELx_SYNC |
-					    KVM_ARM64_EXCEPT_AA64_EL1);
+		kvm_pend_exception(shadow_vcpu, EXCEPT_AA64_EL1_SYNC);
 
 		/* Cancel potential in-flight MMIO */
 		shadow_vcpu->mmio_needed = false;
@@ -145,18 +124,15 @@ static void handle_pvm_entry_dabt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *s
 	}
 
 	/* Handle PC increment on MMIO */
-	if ((host_flags & KVM_ARM64_INCREMENT_PC) && shadow_vcpu->mmio_needed) {
-		shadow_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION |
-					     KVM_ARM64_EXCEPT_MASK);
-		shadow_vcpu->arch.flags |= KVM_ARM64_INCREMENT_PC;
+	pc_update = (shadow_vcpu->mmio_needed &&
+		     vcpu_get_flag(host_vcpu, INCREMENT_PC));
+	if (pc_update) {
+		vcpu_clear_flag(shadow_vcpu, PC_UPDATE_REQ);
+		kvm_incr_pc(shadow_vcpu);
 	}
 
 	/* If we were doing an MMIO read access, update the register*/
-	rd_update = (shadow_vcpu->mmio_needed &&
-		     (host_flags & KVM_ARM64_INCREMENT_PC));
-	rd_update &= !kvm_vcpu_dabt_iswrite(shadow_vcpu);
-
-	if (rd_update) {
+	if (pc_update && !kvm_vcpu_dabt_iswrite(shadow_vcpu)) {
 		/* r0 as transfer register between the guest and the host. */
 		u64 rd_val = READ_ONCE(host_vcpu->arch.ctxt.regs.regs[0]);
 		int rd = kvm_vcpu_dabt_get_rd(shadow_vcpu);
