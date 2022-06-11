@@ -24,6 +24,41 @@ DEFINE_PER_CPU(struct kvm_nvhe_init_params, kvm_init_params);
 
 void __kvm_hyp_host_forward_smc(struct kvm_cpu_context *host_ctxt);
 
+typedef void (*shadow_entry_exit_handler_fn)(struct kvm_vcpu *, struct kvm_vcpu *);
+
+static void handle_vm_entry_generic(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+{
+	vcpu_copy_flag(shadow_vcpu, host_vcpu, PC_UPDATE_REQ);
+}
+
+static void handle_vm_exit_generic(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+{
+	WRITE_ONCE(host_vcpu->arch.fault.esr_el2,
+		   shadow_vcpu->arch.fault.esr_el2);
+}
+
+static void handle_vm_exit_abt(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
+{
+	WRITE_ONCE(host_vcpu->arch.fault.esr_el2,
+		   shadow_vcpu->arch.fault.esr_el2);
+	WRITE_ONCE(host_vcpu->arch.fault.far_el2,
+		   shadow_vcpu->arch.fault.far_el2);
+	WRITE_ONCE(host_vcpu->arch.fault.hpfar_el2,
+		   shadow_vcpu->arch.fault.hpfar_el2);
+	WRITE_ONCE(host_vcpu->arch.fault.disr_el1,
+		   shadow_vcpu->arch.fault.disr_el1);
+}
+
+static const shadow_entry_exit_handler_fn entry_vm_shadow_handlers[] = {
+	[0 ... ESR_ELx_EC_MAX]		= handle_vm_entry_generic,
+};
+
+static const shadow_entry_exit_handler_fn exit_vm_shadow_handlers[] = {
+	[0 ... ESR_ELx_EC_MAX]		= handle_vm_exit_generic,
+	[ESR_ELx_EC_IABT_LOW]		= handle_vm_exit_abt,
+	[ESR_ELx_EC_DABT_LOW]		= handle_vm_exit_abt,
+};
+
 static void flush_vgic_state(struct kvm_vcpu *host_vcpu,
 			     struct kvm_vcpu *shadow_vcpu)
 {
@@ -99,6 +134,8 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 {
 	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
 	struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
+	shadow_entry_exit_handler_fn ec_handler;
+	u8 esr_ec;
 
 	shadow_vcpu->arch.ctxt		= host_vcpu->arch.ctxt;
 
@@ -109,7 +146,6 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 	shadow_vcpu->arch.mdcr_el2	= host_vcpu->arch.mdcr_el2;
 	shadow_vcpu->arch.cptr_el2	= host_vcpu->arch.cptr_el2;
 
-	shadow_vcpu->arch.iflags	= host_vcpu->arch.iflags;
 	shadow_vcpu->arch.fp_state	= host_vcpu->arch.fp_state;
 
 	shadow_vcpu->arch.debug_ptr	= kern_hyp_va(host_vcpu->arch.debug_ptr);
@@ -119,25 +155,61 @@ static void flush_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
 
 	flush_vgic_state(host_vcpu, shadow_vcpu);
 	flush_timer_state(shadow_state);
+
+	switch (ARM_EXCEPTION_CODE(shadow_state->exit_code)) {
+	case ARM_EXCEPTION_IRQ:
+	case ARM_EXCEPTION_EL1_SERROR:
+	case ARM_EXCEPTION_IL:
+		break;
+	case ARM_EXCEPTION_TRAP:
+		esr_ec = ESR_ELx_EC(kvm_vcpu_get_esr(shadow_vcpu));
+		ec_handler = entry_vm_shadow_handlers[esr_ec];
+		if (ec_handler)
+			ec_handler(host_vcpu, shadow_vcpu);
+		break;
+	default:
+		BUG();
+	}
+
+	shadow_state->exit_code = 0;
 }
 
-static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state)
+static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state,
+			      u32 exit_reason)
 {
 	struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
 	struct kvm_vcpu *host_vcpu = shadow_state->host_vcpu;
+	shadow_entry_exit_handler_fn ec_handler;
+	u8 esr_ec;
 
 	host_vcpu->arch.ctxt		= shadow_vcpu->arch.ctxt;
 
 	host_vcpu->arch.hcr_el2		= shadow_vcpu->arch.hcr_el2;
 	host_vcpu->arch.cptr_el2	= shadow_vcpu->arch.cptr_el2;
 
-	host_vcpu->arch.fault		= shadow_vcpu->arch.fault;
-
-	host_vcpu->arch.iflags		= shadow_vcpu->arch.iflags;
 	host_vcpu->arch.fp_state	= shadow_vcpu->arch.fp_state;
 
 	sync_vgic_state(host_vcpu, shadow_vcpu);
 	sync_timer_state(shadow_state);
+
+	switch (ARM_EXCEPTION_CODE(exit_reason)) {
+	case ARM_EXCEPTION_IRQ:
+		break;
+	case ARM_EXCEPTION_TRAP:
+		esr_ec = ESR_ELx_EC(kvm_vcpu_get_esr(shadow_vcpu));
+		ec_handler = exit_vm_shadow_handlers[esr_ec];
+		if (ec_handler)
+			ec_handler(host_vcpu, shadow_vcpu);
+		break;
+	case ARM_EXCEPTION_EL1_SERROR:
+	case ARM_EXCEPTION_IL:
+		break;
+	default:
+		BUG();
+	}
+
+	vcpu_clear_flag(host_vcpu, PC_UPDATE_REQ);
+	shadow_state->exit_code = exit_reason;
 }
 
 static void handle___pkvm_vcpu_load(struct kvm_cpu_context *host_ctxt)
@@ -233,7 +305,7 @@ static void handle___kvm_vcpu_run(struct kvm_cpu_context *host_ctxt)
 
 		ret = __kvm_vcpu_run(&shadow_state->shadow_vcpu);
 
-		sync_shadow_state(shadow_state);
+		sync_shadow_state(shadow_state, ret);
 	} else {
 		ret = __kvm_vcpu_run(vcpu);
 	}
