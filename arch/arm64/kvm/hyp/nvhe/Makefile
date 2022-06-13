@@ -12,14 +12,14 @@ HOST_EXTRACFLAGS += -I$(objtree)/include
 lib-objs := clear_page.o copy_page.o memcpy.o memset.o
 lib-objs := $(addprefix ../../../lib/, $(lib-objs))
 
-obj-y := timer-sr.o sysreg-sr.o debug-sr.o switch.o tlb.o hyp-init.o host.o \
+hyp-obj-y := timer-sr.o sysreg-sr.o debug-sr.o switch.o tlb.o hyp-init.o host.o \
 	 hyp-main.o hyp-smp.o psci-relay.o early_alloc.o stub.o page_alloc.o \
 	 cache.o ffa.o setup.o mm.o mem_protect.o sys_regs.o pkvm.o iommu.o
-obj-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
+hyp-obj-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
 	 ../fpsimd.o ../hyp-entry.o ../exception.o ../pgtable.o
-obj-y += $(lib-objs)
+hyp-obj-y += $(lib-objs)
 
-obj-$(CONFIG_KVM_S2MPU) += iommu/s2mpu.o
+hyp-obj-$(CONFIG_KVM_S2MPU) += iommu/s2mpu.o
 
 ##
 ## Build rules for compiling nVHE hyp code
@@ -27,7 +27,7 @@ obj-$(CONFIG_KVM_S2MPU) += iommu/s2mpu.o
 ## file containing all nVHE hyp code and data.
 ##
 
-hyp-obj := $(patsubst %.o,%.nvhe.o,$(obj-y))
+hyp-obj := $(patsubst %.o,%.nvhe.o,$(hyp-obj-y))
 obj-y := kvm_nvhe.o
 extra-y := $(hyp-obj) kvm_nvhe.tmp.o kvm_nvhe.rel.o hyp.lds hyp-reloc.S hyp-reloc.o
 
