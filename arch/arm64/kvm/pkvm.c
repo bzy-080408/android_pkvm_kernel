@@ -20,6 +20,8 @@ static unsigned int *hyp_memblock_nr_ptr = &kvm_nvhe_sym(hyp_memblock_nr);
 phys_addr_t hyp_mem_base;
 phys_addr_t hyp_mem_size;
 
+void kvm_schedule_stage2_lookup(void);
+
 static int cmp_hyp_memblock(const void *p1, const void *p2)
 {
 	const struct memblock_region *r1 = p1;
@@ -216,6 +218,8 @@ void kvm_shadow_destroy(struct kvm *kvm)
 		list_del(&ppage->link);
 		kfree(ppage);
 	}
+
+	kvm_schedule_stage2_lookup();
 }
 
 int kvm_init_pvm(struct kvm *kvm, unsigned long type)

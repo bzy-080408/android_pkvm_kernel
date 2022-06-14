@@ -1908,6 +1908,45 @@ static void teardown_hyp_mode(void)
 	}
 }
 
+static int host_stage2_coalesce_walker(u64 addr, u64 end, u32 level,
+				       kvm_pte_t *ptep,
+				       enum kvm_pgtable_walk_flags flag,
+				       void * const arg)
+{
+	pr_info("stage2_mem_coalesce: node %llx end %llx\n", addr, end);
+	return 0;
+}
+
+static inline void *host_phys_to_virt(phys_addr_t phys)
+{
+	return phys_to_virt(phys);
+}
+
+static void stage2_coalesce_work(struct work_struct *work)
+{
+	struct kvm_s2_mem_inspector *mem_inspector =
+		container_of(work, struct kvm_s2_mem_inspector, work);
+	struct kvm_pgtable_walker walker = {
+		.cb	= host_stage2_coalesce_walker,
+		.flags  = KVM_PGTABLE_WALK_LEAF,
+	};
+	struct kvm_pgtable_mm_ops my_ops = { NULL };
+	struct kvm_pgtable pgt = { 0 };
+	int ret;
+
+	my_ops.phys_to_virt = host_phys_to_virt;
+
+	pgt.ia_bits	= 48;
+	pgt.start_level = 0;
+	pgt.mm_ops	= &my_ops;
+	pgt.pgd		= mem_inspector->host_stage2_virt_addr;
+
+	pr_info("stage2_mem_coalesce: scheduled\n");
+
+	ret = kvm_pgtable_walk(&pgt, 0, BIT(pgt.ia_bits), &walker);
+	pr_info("stage2_mem_coalesce: walker %d\n", ret);
+}
+
 static int do_pkvm_init(u32 hyp_va_bits)
 {
 	void *per_cpu_base = kvm_ksym_ref(kvm_nvhe_sym(kvm_arm_hyp_percpu_base));
@@ -1924,6 +1963,8 @@ static int do_pkvm_init(u32 hyp_va_bits)
 	s2_mem_inspector.host_stage2_virt_addr = phys_to_virt(res.a2);
 	s2_mem_inspector.sz = host_s2_pgtable_pages() * PAGE_SIZE;
 
+	WARN_ON(s2_mem_inspector.host_stage2_virt_addr == NULL);
+	INIT_WORK(&s2_mem_inspector.work, stage2_coalesce_work);
 	cpu_hyp_init_features();
 
 	/*
@@ -2286,6 +2327,11 @@ out_hyp:
 out_err:
 	kvm_arm_vmid_alloc_free();
 	return err;
+}
+
+void kvm_schedule_stage2_lookup(void)
+{
+	schedule_work(&s2_mem_inspector.work);
 }
 
 /* NOP: Compiling as a module not supported */
