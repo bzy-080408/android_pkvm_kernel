@@ -450,6 +450,8 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state,
 
 	if (shadow_state_is_protected(shadow_state))
 		vcpu_clear_flag(host_vcpu, PC_UPDATE_REQ);
+	else
+		host_vcpu->arch.iflags = shadow_vcpu->arch.iflags;
 	shadow_state->exit_code = exit_reason;
 }
 
