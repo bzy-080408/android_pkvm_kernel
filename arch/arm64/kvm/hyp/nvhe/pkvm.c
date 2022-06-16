@@ -363,6 +363,20 @@ static void copy_features(struct kvm_vcpu *shadow_vcpu, struct kvm_vcpu *host_vc
 
 	bitmap_and(shadow_vcpu->arch.features, host_vcpu->arch.features,
 		   allowed_features, KVM_VCPU_MAX_FEATURES);
+
+	/*
+	 * Now sanitise the configuration flags that we have inherited
+	 * from the host, as they may refer to features that protected
+	 * mode doesn't support.
+	 */
+	if (!vcpu_has_feature(shadow_vcpu,(KVM_ARM_VCPU_SVE))) {
+		vcpu_clear_flag(shadow_vcpu, GUEST_HAS_SVE);
+		vcpu_clear_flag(shadow_vcpu, VCPU_SVE_FINALIZED);
+	}
+
+	if (!vcpu_has_feature(shadow_vcpu, KVM_ARM_VCPU_PTRAUTH_ADDRESS) ||
+	    !vcpu_has_feature(shadow_vcpu, KVM_ARM_VCPU_PTRAUTH_GENERIC))
+		vcpu_clear_flag(shadow_vcpu, GUEST_HAS_PTRAUTH);
 }
 
 static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
