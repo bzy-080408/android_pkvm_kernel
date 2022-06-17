@@ -794,12 +794,20 @@ err_unpin_kvm:
 	return ret;
 }
 
+void __pkvm_teardown_shadow_memory(struct kvm_hyp_memcache *mc, void *start, size_t size)
+{
+	void *addr = start;
+
+	memset(start, 0, size);
+	for (; addr < start + size; addr += PAGE_SIZE)
+		push_hyp_memcache(mc, addr, hyp_virt_to_phys);
+	unmap_donated_memory_noclear(start, size);
+}
+
 int __pkvm_teardown_shadow(unsigned int shadow_handle)
 {
 	struct kvm_hyp_memcache *mc;
 	struct kvm_shadow_vm *vm;
-	size_t shadow_size;
-	void *addr;
 	int err;
 
 	/* Lookup then remove entry from the shadow table. */
@@ -826,15 +834,10 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	unpin_host_vcpus(vm->shadow_vcpu_states, vm->kvm.created_vcpus);
 
 	/* Push the metadata pages to the teardown memcache */
-	shadow_size = vm->shadow_area_size;
 	hyp_unpin_shared_mem(vm->host_kvm, vm->host_kvm + 1);
+	__pkvm_teardown_shadow_memory(mc, vm->kvm.arch.mmu.last_vcpu_ran, vm->last_ran_size);
+	__pkvm_teardown_shadow_memory(mc, vm, vm->shadow_area_size);
 
-	unmap_donated_memory(vm->kvm.arch.mmu.last_vcpu_ran, vm->last_ran_size);
-	memset(vm, 0, shadow_size);
-	for (addr = vm; addr < (void *)vm + shadow_size; addr += PAGE_SIZE)
-		push_hyp_memcache(mc, addr, hyp_virt_to_phys);
-
-	unmap_donated_memory_noclear(vm, shadow_size);
 	return 0;
 
 err_unlock:
