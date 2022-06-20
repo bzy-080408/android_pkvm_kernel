@@ -49,6 +49,9 @@
 #define KVM_INVALID_PTE_OWNER_MASK	GENMASK(9, 2)
 #define KVM_MAX_OWNER_ID		FIELD_MAX(KVM_INVALID_PTE_OWNER_MASK)
 
+#define DEFAULT_PTE_ATTR		(0x7FC)
+#define PTE_LOW_MASK			((1 << 11) - 1)
+
 struct kvm_pgtable_walk_data {
 	struct kvm_pgtable		*pgt;
 	struct kvm_pgtable_walker	*walker;
@@ -674,12 +677,11 @@ static bool stage2_pte_needs_update(kvm_pte_t old, kvm_pte_t new)
 
 static bool stage2_pte_is_counted(kvm_pte_t pte)
 {
-	/*
-	 * The refcount tracks valid entries as well as invalid entries if they
-	 * encode ownership of a page to another entity than the page-table
-	 * owner, whose id is 0.
-	 */
-	return !!pte;
+	/* Keep track of non-default PTEs */
+	if (pte != 0 && ((pte & PTE_LOW_MASK) != DEFAULT_PTE_ATTR))
+	       return true;
+
+	return false;
 }
 
 static void stage2_put_pte(kvm_pte_t *ptep, struct kvm_s2_mmu *mmu, u64 addr,
