@@ -566,6 +566,16 @@ static void sync_shadow_state(struct kvm_shadow_vcpu_state *shadow_state,
 	shadow_state->exit_code = exit_reason;
 }
 
+static void __hyp_sve_save_guest(struct kvm_vcpu *vcpu)
+{
+	__sve_save_state(vcpu_sve_pffr(vcpu),
+			 &vcpu->arch.ctxt.fp_regs.fpsr);
+
+	__vcpu_sys_reg(vcpu, ZCR_EL1) = read_sysreg_el1(SYS_ZCR);
+	sve_cond_update_zcr_vq(vcpu_sve_max_vq(vcpu) - 1,
+			       SYS_ZCR_EL1);
+}
+
 static void fpsimd_host_restore(void)
 {
 	sysreg_clear_set(cptr_el2, CPTR_EL2_TZ | CPTR_EL2_TFP, 0);
@@ -576,7 +586,11 @@ static void fpsimd_host_restore(void)
 		struct kvm_vcpu *shadow_vcpu = &shadow_state->shadow_vcpu;
 		struct user_fpsimd_state *host_fpsimd_state = this_cpu_ptr(&loaded_host_fpsimd_state);
 
-		__fpsimd_save_state(&shadow_vcpu->arch.ctxt.fp_regs);
+		if (vcpu_has_sve(shadow_vcpu))
+			__hyp_sve_save_guest(shadow_vcpu);
+		else
+			__fpsimd_save_state(&shadow_vcpu->arch.ctxt.fp_regs);
+
 		__fpsimd_restore_state(host_fpsimd_state);
 
 		shadow_vcpu->arch.fp_state = FP_STATE_HOST_OWNED;
