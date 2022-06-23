@@ -345,6 +345,18 @@ static struct ptdump_info kernel_ptdump_info = {
 	.base_addr	= PAGE_OFFSET,
 };
 
+static struct ptdump_info stage2_kernel_ptdump_info;
+
+/* Setter called after the PGT address is obtained from host stage2 */
+void ptdump_stage2_setinfo(unsigned long base_addr,
+			   const struct addr_marker *marker,
+			   struct mm_struct *mm)
+{
+	stage2_kernel_ptdump_info.base_addr = base_addr;
+	stage2_kernel_ptdump_info.markers   = marker;
+	stage2_kernel_ptdump_info.mm        = mm;
+}
+
 void ptdump_check_wx(void)
 {
 	struct pg_state st = {
@@ -381,6 +393,8 @@ static int __init ptdump_init(void)
 #endif
 	ptdump_initialize();
 	ptdump_debugfs_register(&kernel_ptdump_info, "kernel_page_tables");
+	ptdump_debugfs_register(&stage2_kernel_ptdump_info,
+				"stage2_kernel_page_tables");
 	return 0;
 }
 device_initcall(ptdump_init);

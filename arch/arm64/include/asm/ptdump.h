@@ -21,6 +21,10 @@ struct ptdump_info {
 	unsigned long			base_addr;
 };
 
+void ptdump_stage2_setinfo(unsigned long base_addr,
+			   const struct addr_marker *marker,
+			   struct mm_struct *mm);
+
 void ptdump_walk(struct seq_file *s, struct ptdump_info *info);
 #ifdef CONFIG_PTDUMP_DEBUGFS
 void __init ptdump_debugfs_register(struct ptdump_info *info, const char *name);
