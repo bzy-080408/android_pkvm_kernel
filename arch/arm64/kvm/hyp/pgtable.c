@@ -674,10 +674,11 @@ static bool stage2_pte_needs_update(kvm_pte_t old, kvm_pte_t new)
 static bool stage2_pte_is_counted(kvm_pte_t pte)
 {
 	if (kvm_pte_valid(pte) &&
-	    ((pte & KVM_PTE_LEAF_ATTR_LO) != DEFAULT_PTE_ATTR))
+	    ((pte & KVM_PTE_LEAF_ATTR_LO) != DEFAULT_PTE_ATTR) &&
+	    ((pte & KVM_PTE_LEAF_ATTR_HI) != 0))
 		return true;
 
-	return false;
+	return pte != 0;
 }
 
 static void stage2_put_pte(kvm_pte_t *ptep, struct kvm_s2_mmu *mmu, u64 addr,
@@ -842,9 +843,6 @@ static int stage2_map_walk_table_post(u64 addr, u64 end, u32 level,
 	kvm_pte_t *childp;
 	int ret = 0;
 
-	if (!data->anchor)
-		return 0;
-
 	if (data->anchor == ptep) {
 		childp = data->childp;
 		data->anchor = NULL;
@@ -854,8 +852,12 @@ static int stage2_map_walk_table_post(u64 addr, u64 end, u32 level,
 		childp = kvm_pte_follow(*ptep, mm_ops);
 	}
 
-	mm_ops->put_page(childp);
-	mm_ops->put_page(ptep);
+	if (!data->anchor && !kvm_phys_is_valid(data->phys) &&
+	    data->annotation == 0 && mm_ops->page_count(childp) == 1 &&
+	    kvm_level_supports_block_mapping(level)) {
+		stage2_put_pte(ptep, data->mmu, addr, level, mm_ops);
+		mm_ops->put_page(childp);
+	}
 
 	return ret;
 }
