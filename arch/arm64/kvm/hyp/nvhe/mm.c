@@ -117,6 +117,20 @@ int pkvm_create_mappings(void *from, void *to, enum kvm_pgtable_prot prot)
 	return ret;
 }
 
+void pkvm_remove_mappings(void *from, void *to)
+{
+	unsigned long start = (unsigned long)from;
+	unsigned long end = (unsigned long)to;
+	unsigned long virt_addr;
+
+	hyp_spin_lock(&pkvm_pgd_lock);
+
+	for (virt_addr = start; virt_addr < end; virt_addr += PAGE_SIZE)
+		kvm_pgtable_hyp_unmap(&pkvm_pgtable, virt_addr, PAGE_SIZE);
+
+	hyp_spin_unlock(&pkvm_pgd_lock);
+}
+
 int hyp_back_vmemmap(phys_addr_t back)
 {
 	unsigned long i, start, size, end = 0;
