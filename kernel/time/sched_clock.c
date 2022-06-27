@@ -97,6 +97,21 @@ unsigned long long notrace sched_clock(void)
 	return res;
 }
 
+unsigned long long __cnt_to_sched_clock(u64 cnt)
+{
+	u64 cyc, res;
+	unsigned int seq;
+	struct clock_read_data *rd;
+
+	do {
+		rd = sched_clock_read_begin(&seq);
+		cyc = (cnt - rd->epoch_cyc) & rd->sched_clock_mask;
+		res = rd->epoch_ns + cyc_to_ns(cyc, rd->mult, rd->shift);
+	} while (sched_clock_read_retry(seq));
+
+	return res;
+}
+
 /*
  * Updating the data required to read the clock.
  *

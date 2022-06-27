@@ -98,4 +98,9 @@ static inline void enable_sched_clock_irqtime(void) {}
 static inline void disable_sched_clock_irqtime(void) {}
 #endif
 
+/*
+ * Convert arch counter snapshots to a sched_clock
+ */
+unsigned long long __cnt_to_sched_clock(u64 cnt);
+
 #endif /* _LINUX_SCHED_CLOCK_H */
