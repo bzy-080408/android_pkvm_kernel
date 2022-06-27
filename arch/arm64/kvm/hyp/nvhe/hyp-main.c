@@ -21,6 +21,7 @@
 #include <nvhe/mm.h>
 #include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
+#include <nvhe/trace.h>
 
 #include <linux/irqchip/arm-gic-v3.h>
 #include <uapi/linux/psci.h>
@@ -1050,6 +1051,19 @@ static void handle___pkvm_iommu_finalize(struct kvm_cpu_context *host_ctxt)
 	cpu_reg(host_ctxt, 1) = __pkvm_iommu_finalize();
 }
 
+static void handle___pkvm_start_tracing(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(unsigned long, buf_va, host_ctxt, 1);
+	DECLARE_REG(unsigned int, order, host_ctxt, 2);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_start_tracing(buf_va, order);
+}
+
+static void handle___pkvm_stop_tracing(struct kvm_cpu_context *host_ctxt)
+{
+	__pkvm_stop_tracing();
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -1087,6 +1101,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_iommu_register),
 	HANDLE_FUNC(__pkvm_iommu_pm_notify),
 	HANDLE_FUNC(__pkvm_iommu_finalize),
+	HANDLE_FUNC(__pkvm_start_tracing),
+	HANDLE_FUNC(__pkvm_stop_tracing),
 };
 
 static inline u64 kernel__text_addr(void)
