@@ -13,4 +13,35 @@
  * Hypervisor events definitions.
  */
 
+enum hyp_evt_id {
+	HYP_EVT_ENTER,
+	HYP_EVT_EXIT,
+};
+
+HYP_EVENT(hyp_enter,
+	HYP_EVT_ENTER,
+	HE_PROTO(u64 esr, u64 x0, u32 vmid),
+	HE_STRUCT(
+		  he_field(u64, esr)
+		  he_field(u64, x0)
+		  he_field(u32, vmid)
+	),
+	HE_ASSIGN(
+		__entry->esr = esr;
+		__entry->x0 = x0;
+		__entry->vmid = vmid;
+	)
+)
+
+HYP_EVENT(hyp_exit,
+	HYP_EVT_EXIT,
+	/* TODO: Fix macro to avoid "unused" */
+	HE_PROTO(u8 unused),
+	HE_STRUCT(
+		he_field(u8, unused)
+	),
+	HE_ASSIGN(
+		__entry->unused = unused;
+	)
+)
 #endif

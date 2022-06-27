@@ -283,6 +283,15 @@ static int ht_show(struct seq_file *m, void *v)
 	ht_print_time(m, evt_raw);
 
 	switch (evt_raw->id) {
+		case HYP_EVT_ENTER: {
+			struct trace_hyp_format_hyp_enter *evt =
+				(struct trace_hyp_format_hyp_enter *)&evt_raw->args;
+			seq_printf(m, "hyp_enter: esr=0x%016llx x0=0x%016llx vmid=%u\n",
+				evt->esr, evt->x0, evt->vmid);
+			break;
+		} case HYP_EVT_EXIT: {
+			seq_puts(m, "hyp_exit\n");
+			break;
 		} default:
 			seq_printf(m, "UNKNOWN HYP EVENT ID:%d\n", evt_raw->id);
 	}

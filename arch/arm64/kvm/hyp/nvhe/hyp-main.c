@@ -13,6 +13,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_host.h>
 #include <asm/kvm_hyp.h>
+#include <asm/kvm_hypevents.h>
 #include <asm/kvm_mmu.h>
 
 #include <nvhe/ffa.h>
@@ -1194,7 +1195,10 @@ static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 
 void handle_trap(struct kvm_cpu_context *host_ctxt)
 {
+	DECLARE_REG(u64, x0, host_ctxt, 0);
 	u64 esr = read_sysreg_el2(SYS_ESR);
+
+	trace_hyp_hyp_enter(esr, x0, 0);
 
 	switch (ESR_ELx_EC(esr)) {
 	case ESR_ELx_EC_HVC64:
@@ -1214,4 +1218,6 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 	default:
 		BUG();
 	}
+
+	trace_hyp_hyp_exit(0);
 }
