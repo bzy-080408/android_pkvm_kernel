@@ -4,6 +4,7 @@
 #include <linux/percpu-defs.h>
 
 #include <linux/sched/clock.h>
+#include <linux/memblock.h>
 
 #include <asm/kvm_host.h>
 #include <asm/kvm_hyptrace.h>
@@ -12,13 +13,68 @@
 struct trace_buf {
 	unsigned long va;
 	int order;
+	int flags;
 	struct dentry *debugfs;
 };
+
+#define TRACE_BUF_MEMBLOCK (1 << 0)
 
 static DEFINE_MUTEX(mutex);
 static DEFINE_PER_CPU(struct trace_buf, trace_buf) = { .va = 0, .flags = 0, .debugfs = NULL};
 static bool hyp_tracing_is_on;
 static struct dentry *debugfs_folder;
+
+static unsigned long __trace_buf_prealloc[8] = {0};
+
+/*
+ * TODO: to be replaced by dynamic allocation after hyptrace is plugged to
+ * host trace_events.
+ */
+void __init hyp_trace_buf_preallocate(void)
+{
+	int cpu;
+
+	/*
+	 * Ahem ... this is init _before_ the CPUs are online and
+	 * the cpu_possible_mask is therefore empty here...
+	 *
+	 * ...But it's just for quick debug right? So let's just allocate what
+	 * we need for 8 CPUs and move on.
+	 */
+	for (cpu = 0; cpu < 8; cpu++) {
+		phys_addr_t base =
+			memblock_phys_alloc(PAGE_SIZE << 13, PAGE_SIZE);
+
+		if (!base) {
+			pr_warn("Failed to pre-allocate hyp_trace for cpu %d\n", cpu);
+			continue;
+		}
+
+		__trace_buf_prealloc[cpu] = (unsigned long)phys_to_virt(base);
+
+		pr_info("Reserved %lu MiB at 0x%lx for hyp_trace CPU %d\n",
+			PAGE_SIZE >> 7, __trace_buf_prealloc[cpu], cpu);
+	}
+}
+
+static int hyp_trace_buf_use_preallocation(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
+
+		if (cpu >= 8)
+			break;
+
+		buf->va = __trace_buf_prealloc[cpu];
+		buf->order = 13;
+		buf->flags |= TRACE_BUF_MEMBLOCK;
+	}
+
+	return 0;
+}
+late_initcall(hyp_trace_buf_use_preallocation);
 
 static void hyp_trace_free_buf(void)
 {
@@ -27,7 +83,7 @@ static void hyp_trace_free_buf(void)
 	for_each_possible_cpu(cpu) {
 		struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
 
-		if (!buf->va)
+		if (!buf->va || buf->flags & TRACE_BUF_MEMBLOCK)
 			continue;
 
 		free_page(buf->va);
