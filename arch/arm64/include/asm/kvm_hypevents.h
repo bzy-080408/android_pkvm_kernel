@@ -16,7 +16,39 @@
 enum hyp_evt_id {
 	HYP_EVT_ENTER,
 	HYP_EVT_EXIT,
+	HYP_EVT_POP_MEMCACHE,
+	HYP_EVT_PUSH_MEMCACHE,
 };
+
+HYP_EVENT(pop_hyp_memcache,
+	HYP_EVT_POP_MEMCACHE,
+	HE_PROTO(u64 mc, u64 paddr, u8 nr_pages),
+	HE_STRUCT(
+		he_field(u64, mc)
+		he_field(u64, paddr)
+		he_field(u8, nr_pages)
+	),
+	HE_ASSIGN(
+		__entry->mc = mc;
+		__entry->paddr = paddr;
+		__entry->nr_pages = nr_pages;
+	)
+)
+
+HYP_EVENT(push_hyp_memcache,
+	HYP_EVT_PUSH_MEMCACHE,
+	HE_PROTO(u64 mc, u64 paddr, u8 nr_pages),
+	HE_STRUCT(
+		he_field(u64, mc)
+		he_field(u64, paddr)
+		he_field(u8, nr_pages)
+	),
+	HE_ASSIGN(
+		__entry->mc = mc;
+		__entry->paddr = paddr;
+		__entry->nr_pages = nr_pages;
+	)
+)
 
 HYP_EVENT(hyp_enter,
 	HYP_EVT_ENTER,

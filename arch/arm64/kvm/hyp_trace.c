@@ -292,6 +292,18 @@ static int ht_show(struct seq_file *m, void *v)
 		} case HYP_EVT_EXIT: {
 			seq_puts(m, "hyp_exit\n");
 			break;
+		} case HYP_EVT_POP_MEMCACHE: {
+			struct trace_hyp_format_pop_hyp_memcache *evt =
+				(struct trace_hyp_format_pop_hyp_memcache *)&evt_raw->args;
+			seq_printf(m, "pop_hyp_memcache: mc=0x%llx paddr=0x%llx nr_pages=%u\n",
+				evt->mc, evt->paddr, evt->nr_pages);
+			break;
+		} case HYP_EVT_PUSH_MEMCACHE: {
+			struct trace_hyp_format_push_hyp_memcache *evt =
+				(struct trace_hyp_format_push_hyp_memcache *)&evt_raw->args;
+			seq_printf(m, "push_hyp_memcache: mc=0x%llx paddr=0x%llx nr_pages=%u\n",
+				evt->mc, evt->paddr, evt->nr_pages);
+			break;
 		} default:
 			seq_printf(m, "UNKNOWN HYP EVENT ID:%d\n", evt_raw->id);
 	}
