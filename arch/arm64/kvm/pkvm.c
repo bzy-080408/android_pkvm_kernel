@@ -165,6 +165,7 @@ static int __create_el2_shadow(struct kvm *kvm)
 
 	total_sz = shadow_sz + pgd_sz;
 	atomic64_set(&kvm->stat.nvhe_mem, total_sz);
+	atomic64_set(&kvm->stat.nvhe_mem_peak, total_sz);
 
 	/* Store the shadow handle given by hyp for future call reference. */
 	kvm->arch.pkvm.shadow_handle = shadow_handle;

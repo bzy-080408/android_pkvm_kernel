@@ -718,6 +718,7 @@ static inline void vcpu_arch_write_sys_reg(struct kvm_vcpu_arch *vcpu_arch, u64 
 struct kvm_vm_stat {
 	ulong remote_tlb_flush;
 	atomic64_t nvhe_mem;
+	atomic64_t nvhe_mem_peak;
 };
 
 struct kvm_vcpu_stat {

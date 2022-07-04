@@ -823,8 +823,19 @@ static void account_hyp_memcache(struct kvm_hyp_memcache *mc,
 		return;
 
 	if (nr_pages > prev_nr_pages) {
+		u64 peak, cur;
+
 		atomic64_add((nr_pages - prev_nr_pages) << PAGE_SHIFT,
 			     &kvm->stat.nvhe_mem);
+
+		cur = atomic64_read(&kvm->stat.nvhe_mem);
+		peak = atomic64_read(&kvm->stat.nvhe_mem_peak);
+		while (1) {
+			if (peak >= cur)
+				break;
+			peak = atomic64_cmpxchg(&kvm->stat.nvhe_mem_peak,
+						peak, cur);
+		}
 	} else {
 		atomic64_sub((prev_nr_pages - nr_pages) << PAGE_SHIFT,
 			     &kvm->stat.nvhe_mem);
