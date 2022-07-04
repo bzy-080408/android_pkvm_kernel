@@ -125,7 +125,7 @@ static inline void __free_hyp_memcache(struct kvm_hyp_memcache *mc,
 		free_fn(pop_hyp_memcache(mc, to_va), arg);
 }
 
-void free_hyp_memcache(struct kvm_hyp_memcache *mc);
+void free_hyp_memcache(struct kvm_hyp_memcache *mc, struct kvm *kvm);
 int topup_hyp_memcache(struct kvm_vcpu *vcpu);
 
 struct kvm_vmid {
@@ -717,6 +717,7 @@ static inline void vcpu_arch_write_sys_reg(struct kvm_vcpu_arch *vcpu_arch, u64 
 
 struct kvm_vm_stat {
 	ulong remote_tlb_flush;
+	atomic64_t nvhe_mem;
 };
 
 struct kvm_vcpu_stat {

@@ -121,7 +121,7 @@ void __init kvm_hyp_reserve(void)
 static int __create_el2_shadow(struct kvm *kvm)
 {
 	struct kvm_vcpu *vcpu, **vcpu_array;
-	size_t pgd_sz, shadow_sz;
+	size_t pgd_sz, shadow_sz, total_sz;
 	void *pgd, *shadow_addr;
 	unsigned long idx;
 	int shadow_handle;
@@ -163,6 +163,9 @@ static int __create_el2_shadow(struct kvm *kvm)
 
 	shadow_handle = ret;
 
+	total_sz = shadow_sz + pgd_sz;
+	atomic64_set(&kvm->stat.nvhe_mem, total_sz);
+
 	/* Store the shadow handle given by hyp for future call reference. */
 	kvm->arch.pkvm.shadow_handle = shadow_handle;
 
@@ -197,7 +200,7 @@ void kvm_shadow_destroy(struct kvm *kvm)
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_shadow,
 					  kvm->arch.pkvm.shadow_handle));
 
-	free_hyp_memcache(&kvm->arch.pkvm.teardown_mc);
+	free_hyp_memcache(&kvm->arch.pkvm.teardown_mc, kvm);
 
 	ppages = &kvm->arch.pkvm.pinned_pages;
 	list_for_each_entry_safe(ppage, tmp, ppages, link) {
