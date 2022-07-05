@@ -895,9 +895,14 @@ static void hyp_mc_free_fn(void *addr, void *unused)
 	free_page((unsigned long)addr);
 }
 
-static void *hyp_mc_alloc_fn(void *unused)
+static void *hyp_mc_alloc_fn(void *args)
 {
-	return (void *)__get_free_page(GFP_KERNEL_ACCOUNT);
+	void *addr = (void *)__get_free_page(GFP_KERNEL_ACCOUNT);
+	unsigned long flags = (unsigned long)args;
+
+	hyp_mc_page_set_flags(addr, flags);
+
+	return addr;
 }
 
 static void account_hyp_memcache(struct kvm_hyp_memcache *mc,
@@ -931,7 +936,7 @@ void free_hyp_memcache(struct kvm_hyp_memcache *mc, struct kvm *kvm)
 }
 
 int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages,
-		       struct kvm *kvm)
+		       struct kvm *kvm, unsigned long mc_flags)
 {
 	unsigned long prev_nr_pages;
 	int err;
@@ -941,7 +946,7 @@ int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages,
 
 	prev_nr_pages = mc->nr_pages;
 	err = __topup_hyp_memcache(mc, min_pages, hyp_mc_alloc_fn,
-				    kvm_host_pa, NULL);
+				   kvm_host_pa, (void *)mc_flags);
 	if (!err)
 		account_hyp_memcache(mc, prev_nr_pages, kvm);
 
@@ -1284,7 +1289,7 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	u64 pfn;
 	int ret;
 
-	ret = topup_hyp_memcache(hyp_memcache, kvm_mmu_cache_min_pages(kvm), kvm);
+	ret = topup_hyp_memcache(hyp_memcache, kvm_mmu_cache_min_pages(kvm), kvm, 0);
 	if (ret)
 		return -ENOMEM;
 

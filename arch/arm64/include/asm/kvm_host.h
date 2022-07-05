@@ -78,6 +78,18 @@ struct kvm_hyp_memcache {
 	unsigned long nr_pages;
 };
 
+struct kvm_hyp_mc_page {
+	phys_addr_t next;
+	unsigned long flags;
+};
+
+static inline void hyp_mc_page_set_flags(void *addr, unsigned long flags)
+{
+	struct kvm_hyp_mc_page *mc_page = (struct kvm_hyp_mc_page *)addr;
+
+	mc_page->flags = flags;
+}
+
 static inline void push_hyp_memcache(struct kvm_hyp_memcache *mc,
 				     phys_addr_t *p,
 				     phys_addr_t (*to_pa)(void *virt))
@@ -128,7 +140,8 @@ static inline void __free_hyp_memcache(struct kvm_hyp_memcache *mc,
 }
 
 void free_hyp_memcache(struct kvm_hyp_memcache *mc, struct kvm *kvm);
-int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages, struct kvm *kvm);
+int topup_hyp_memcache(struct kvm_hyp_memcache *mc, unsigned long min_pages, struct kvm *kvm,
+		       unsigned long flags);
 
 struct kvm_vmid {
 	atomic64_t id;
