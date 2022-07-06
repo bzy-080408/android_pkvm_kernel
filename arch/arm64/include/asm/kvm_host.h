@@ -176,6 +176,7 @@ struct kvm_pinned_page {
 	struct rb_node		node;
 	struct page		*page;
 	u64			ipa;
+	bool			dirty;
 };
 
 struct kvm_protected_vm {

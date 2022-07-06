@@ -213,7 +213,7 @@ void kvm_shadow_destroy(struct kvm *kvm)
 		cond_resched();
 
 		account_locked_vm(mm, 1, false);
-		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
+		unpin_user_pages_dirty_lock(&ppage->page, 1, ppage->dirty);
 		node = rb_next(node);
 		rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
 		kfree(ppage);

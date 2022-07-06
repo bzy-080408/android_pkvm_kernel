@@ -148,7 +148,7 @@ static int pkvm_unmap_guest(struct kvm *kvm, struct kvm_pinned_page *ppage)
 		return ret;
 
 	account_locked_vm(mm, 1, false);
-	unpin_user_pages_dirty_lock(&ppage->page, 1, true);
+	unpin_user_pages_dirty_lock(&ppage->page, 1, ppage->dirty);
 	rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
 	kfree(ppage);
 
@@ -989,6 +989,7 @@ static int pkvm_wp_range(struct kvm *kvm, u64 start, u64 end)
 					ppage->ipa >> PAGE_SHIFT);
 		if (ret)
 			return ret;
+		ppage->dirty = false;
 	}
 
 	return 0;
@@ -1295,6 +1296,35 @@ static int insert_ppage(struct kvm *kvm, struct kvm_pinned_page *ppage)
 	return rb_find_add(&ppage->node, &kvm->arch.pkvm.pinned_pages, cmp_ppages) ? -EEXIST : 0;
 }
 
+static struct kvm_pinned_page *find_ppage(struct kvm *kvm, u64 ipa)
+{
+	struct rb_node *node = rb_find((void *)ipa, &kvm->arch.pkvm.pinned_pages, cmp_ppage_ipa);
+
+	return node ? container_of(node, struct kvm_pinned_page, node) : NULL;
+}
+
+static int pkvm_relax_perms(struct kvm *kvm, u64 pfn, u64 gfn,
+			    enum kvm_pgtable_prot prot)
+{
+	struct kvm_pinned_page *ppage;
+	int ret;
+
+	ppage = find_ppage(kvm, gfn << PAGE_SHIFT);
+	if (!ppage || page_to_pfn(ppage->page) != pfn)
+		return -EFAULT;
+
+	if (!PageSwapBacked(ppage->page))
+		return -EIO;
+
+	ret = kvm_call_hyp_nvhe(__pkvm_relax_perms, pfn, gfn, prot);
+	if (ret)
+		return ret;
+
+	ppage->dirty |= !!(prot & KVM_PGTABLE_PROT_W);
+
+	return 0;
+}
+
 static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  unsigned long hva)
 {
@@ -1330,7 +1360,7 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	} else if (ret != 1) {
 		ret = -EFAULT;
 		goto dec_account;
-	} else if (!PageSwapBacked(page)) {
+	} else if (kvm->arch.pkvm.enabled && !PageSwapBacked(page)) {
 		/*
 		 * We really can't deal with page-cache pages returned by GUP
 		 * because (a) we may trigger writeback of a page for which we
@@ -1351,7 +1381,7 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	write_lock(&kvm->mmu_lock);
 	pfn = page_to_pfn(page);
-	ret = pkvm_host_map_guest(pfn, fault_ipa >> PAGE_SHIFT, KVM_PGTABLE_PROT_RWX);
+	ret = pkvm_host_map_guest(pfn, fault_ipa >> PAGE_SHIFT, KVM_PGTABLE_PROT_R);
 	if (ret) {
 		if (ret == -EAGAIN)
 			ret = 0;
@@ -1360,6 +1390,7 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	ppage->page = page;
 	ppage->ipa = fault_ipa;
+	ppage->dirty = kvm->arch.pkvm.enabled;
 	WARN_ON(insert_ppage(kvm, ppage));
 	write_unlock(&kvm->mmu_lock);
 
@@ -1425,11 +1456,12 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * logging_active is guaranteed to never be true for VM_PFNMAP
 	 * memslots.
 	 */
-	if (logging_active) {
+	if (logging_active || is_protected_kvm_enabled()) {
 		force_pte = true;
 		vma_shift = PAGE_SHIFT;
 		use_read_lock = (fault_status == FSC_PERM && write_fault &&
-				 fault_granule == PAGE_SIZE);
+				 fault_granule == PAGE_SIZE &&
+				 !is_protected_kvm_enabled());
 	} else {
 		vma_shift = get_vma_page_shift(vma, hva);
 	}
@@ -1581,7 +1613,10 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	 * kvm_pgtable_stage2_map() should be called to change block size.
 	 */
 	if (fault_status == FSC_PERM && vma_pagesize == fault_granule) {
-		ret = kvm_pgtable_stage2_relax_perms(pgt, fault_ipa, prot);
+		if (is_protected_kvm_enabled())
+			ret = pkvm_relax_perms(kvm, pfn, gfn, prot);
+		else
+			ret = kvm_pgtable_stage2_relax_perms(pgt, fault_ipa, prot);
 	} else {
 		WARN_ONCE(use_read_lock, "Attempted stage-2 map outside of write lock\n");
 
@@ -1756,7 +1791,7 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		goto out_unlock;
 	}
 
-	if (is_protected_kvm_enabled())
+	if (is_protected_kvm_enabled() && fault_status != FSC_PERM)
 		ret = pkvm_mem_abort(vcpu, fault_ipa, hva);
 	else
 		ret = user_mem_abort(vcpu, fault_ipa, memslot, hva, fault_status);
