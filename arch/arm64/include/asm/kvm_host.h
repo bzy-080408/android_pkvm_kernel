@@ -160,8 +160,9 @@ struct kvm_arch_memory_slot {
 };
 
 struct kvm_pinned_page {
-	struct list_head	link;
+	struct rb_node		node;
 	struct page		*page;
+	u64			ipa;
 };
 
 struct kvm_protected_vm {
@@ -169,7 +170,7 @@ struct kvm_protected_vm {
 	int shadow_handle;
 	struct mutex shadow_lock;
 	struct kvm_hyp_memcache teardown_mc;
-	struct list_head pinned_pages;
+	struct rb_root pinned_pages;
 	gpa_t pvmfw_load_addr;
 };
 
