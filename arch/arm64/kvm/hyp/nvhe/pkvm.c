@@ -272,6 +272,26 @@ static struct kvm_shadow_vm *find_shadow_by_handle(unsigned int shadow_handle)
 	return shadow_table[shadow_idx];
 }
 
+struct kvm_shadow_vm *pkvm_get_shadow(unsigned int shadow_handle)
+{
+	struct kvm_shadow_vm *vm;
+
+	hyp_spin_lock(&shadow_lock);
+	vm = find_shadow_by_handle(shadow_handle);
+	if (vm)
+		hyp_page_ref_inc(hyp_virt_to_page(vm));
+	hyp_spin_unlock(&shadow_lock);
+
+	return vm;
+}
+
+void pkvm_put_shadow(struct kvm_shadow_vm *vm)
+{
+	hyp_spin_lock(&shadow_lock);
+	hyp_page_ref_dec(hyp_virt_to_page(vm));
+	hyp_spin_unlock(&shadow_lock);
+}
+
 struct kvm_shadow_vcpu_state *
 pkvm_load_shadow_vcpu_state(unsigned int shadow_handle, unsigned int vcpu_idx)
 {
