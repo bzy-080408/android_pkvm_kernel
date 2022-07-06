@@ -770,6 +770,7 @@ static void handle___pkvm_host_map_guest(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(u64, pfn, host_ctxt, 1);
 	DECLARE_REG(u64, gfn, host_ctxt, 2);
+	DECLARE_REG(enum kvm_pgtable_prot, prot, host_ctxt, 3);
 	struct kvm_vcpu *host_vcpu;
 	struct kvm_vcpu *shadow_vcpu;
 	struct kvm_shadow_vcpu_state *shadow_state;
@@ -793,7 +794,7 @@ static void handle___pkvm_host_map_guest(struct kvm_cpu_context *host_ctxt)
 	if (shadow_state_is_protected(shadow_state))
 		ret = __pkvm_host_donate_guest(pfn, gfn, shadow_vcpu);
 	else
-		ret = __pkvm_host_share_guest(pfn, gfn, shadow_vcpu);
+		ret = __pkvm_host_share_guest(pfn, gfn, shadow_vcpu, prot);
 out:
 	cpu_reg(host_ctxt, 1) =  ret;
 }

@@ -961,7 +961,7 @@ static int guest_ack_share(u64 addr, const struct pkvm_mem_transition *tx,
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
 
-	if (perms != KVM_PGTABLE_PROT_RWX)
+	if (perms & ~KVM_PGTABLE_PROT_RWX)
 		return -EPERM;
 
 	return __guest_check_page_state_range(tx->completer.guest.vcpu, addr,
@@ -1652,7 +1652,7 @@ void hyp_unpin_shared_mem(void *from, void *to)
 	host_unlock_component();
 }
 
-int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
+int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu, enum kvm_pgtable_prot prot)
 {
 	int ret;
 	u64 host_addr = hyp_pfn_to_phys(pfn);
@@ -1676,7 +1676,7 @@ int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 				},
 			},
 		},
-		.completer_prot	= KVM_PGTABLE_PROT_RWX,
+		.completer_prot	= prot,
 	};
 
 	host_lock_component();
