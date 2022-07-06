@@ -1062,6 +1062,14 @@ static int guest_ack_share(u64 addr, const struct pkvm_mem_transition *tx,
 					      addr, size, PKVM_NOPAGE);
 }
 
+static int guest_ack_unshare(u64 addr, const struct pkvm_mem_transition *tx)
+{
+	u64 size = tx->nr_pages * PAGE_SIZE;
+
+	return __guest_check_page_state_range(tx->completer.guest.hyp_vm, addr,
+					      size, PKVM_PAGE_SHARED_BORROWED);
+}
+
 static int guest_ack_donation(u64 addr, const struct pkvm_mem_transition *tx)
 {
 	u64 size = tx->nr_pages * PAGE_SIZE;
@@ -1081,6 +1089,14 @@ static int guest_complete_share(u64 addr, const struct pkvm_mem_transition *tx,
 	prot = pkvm_mkstate(perms, PKVM_PAGE_SHARED_BORROWED);
 	return kvm_pgtable_stage2_map(&vm->pgt, addr, size, tx->completer.guest.phys,
 				      prot, mc);
+}
+
+static int guest_complete_unshare(u64 addr, const struct pkvm_mem_transition *tx)
+{
+	struct pkvm_hyp_vm *vm = tx->completer.guest.hyp_vm;
+	u64 size = tx->nr_pages * PAGE_SIZE;
+
+	return kvm_pgtable_stage2_unmap(&vm->pgt, addr, size);
 }
 
 static int guest_complete_donation(u64 addr, const struct pkvm_mem_transition *tx)
@@ -1352,6 +1368,9 @@ static int check_unshare(struct pkvm_mem_share *share)
 	case PKVM_ID_HYP:
 		ret = hyp_ack_unshare(completer_addr, tx);
 		break;
+	case PKVM_ID_GUEST:
+		ret = guest_ack_unshare(completer_addr, tx);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -1385,6 +1404,9 @@ static int __do_unshare(struct pkvm_mem_share *share)
 		break;
 	case PKVM_ID_HYP:
 		ret = hyp_complete_unshare(completer_addr, tx);
+		break;
+	case PKVM_ID_GUEST:
+		ret = guest_complete_unshare(completer_addr, tx);
 		break;
 	default:
 		ret = -EINVAL;
@@ -1780,6 +1802,43 @@ int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct pkvm_hyp_vcpu *vcpu)
 	guest_lock_component(vm);
 
 	ret = do_share(&share);
+
+	guest_unlock_component(vm);
+	host_unlock_component();
+
+	return ret;
+}
+
+int __pkvm_host_unshare_guest(u64 pfn, u64 gfn, struct pkvm_hyp_vm *vm)
+{
+	int ret;
+	u64 host_addr = hyp_pfn_to_phys(pfn);
+	u64 guest_addr = hyp_pfn_to_phys(gfn);
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= 1,
+			.initiator	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = guest_addr,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_GUEST,
+				.guest	= {
+					.hyp_vm = vm,
+					.mc = NULL,
+					.phys = host_addr,
+				},
+			},
+		},
+	};
+
+	host_lock_component();
+	guest_lock_component(vm);
+
+	ret = do_unshare(&share);
 
 	guest_unlock_component(vm);
 	host_unlock_component();
