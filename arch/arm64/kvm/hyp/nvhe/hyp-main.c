@@ -820,6 +820,26 @@ out:
 	cpu_reg(host_ctxt, 1) =  ret;
 }
 
+static void handle___pkvm_relax_perms(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(u64, pfn, host_ctxt, 1);
+	DECLARE_REG(u64, gfn, host_ctxt, 2);
+	DECLARE_REG(enum kvm_pgtable_prot, prot, host_ctxt, 3);
+	struct kvm_shadow_vcpu_state *shadow_state;
+	int ret = -EINVAL;
+
+	if (!is_protected_kvm_enabled())
+		goto out;
+
+	shadow_state = pkvm_loaded_shadow_vcpu_state();
+	if (!shadow_state || shadow_state_is_protected(shadow_state))
+		goto out;
+
+	ret = __pkvm_relax_perms(pfn, gfn, prot, &shadow_state->shadow_vcpu);
+out:
+	cpu_reg(host_ctxt, 1) = ret;
+}
+
 static void handle___kvm_adjust_pc(struct kvm_cpu_context *host_ctxt)
 {
 	struct kvm_shadow_vcpu_state *shadow_state;
@@ -1077,6 +1097,7 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_host_reclaim_page),
 	HANDLE_FUNC(__pkvm_host_map_guest),
 	HANDLE_FUNC(__pkvm_host_unmap_guest),
+	HANDLE_FUNC(__pkvm_relax_perms),
 	HANDLE_FUNC(__kvm_adjust_pc),
 	HANDLE_FUNC(__kvm_vcpu_run),
 	HANDLE_FUNC(__kvm_timer_set_cntvoff),
