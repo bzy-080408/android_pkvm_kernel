@@ -7,6 +7,7 @@
 #include <asm/arch_timer.h>
 
 #include <linux/build_bug.h>
+#include <linux/types.h>
 
 #define SHARED_BUF_UNUSED 0
 #define SHARED_BUF_READY 1
@@ -35,6 +36,11 @@ static inline struct hyp_trace_evt *__trace_rb_next(struct hyp_trace_rb *rb)
 {
 	return rb->events + __hyp_trace_rb_next_idx(rb);
 }
+
+int __hyp_trace_rb_read_args(unsigned long kern_va, unsigned int first_buf_order,
+			     struct hyp_trace_rb_args **args);
+int __hyp_trace_rb_start(struct hyp_trace_rb_args *args);
+void __hyp_trace_rb_stop(void);
 
 int __pkvm_start_tracing(unsigned long kern_va, unsigned int first_buf_order);
 void __pkvm_stop_tracing(void);

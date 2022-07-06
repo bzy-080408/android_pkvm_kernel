@@ -57,7 +57,7 @@ static void hyp_trace_rb_init(struct hyp_trace_rb *rb, struct hyp_shared_buf *bu
 	hyp_shared_buf_ready(buf);
 }
 
-void __pkvm_stop_tracing(void)
+void __hyp_trace_rb_stop(void)
 {
 	int cpu;
 
@@ -71,18 +71,26 @@ void __pkvm_stop_tracing(void)
 	}
 }
 
-int __pkvm_start_tracing(unsigned long kern_va, unsigned int first_buf_order)
+int __hyp_trace_rb_read_args(unsigned long kern_va, unsigned int first_buf_order,
+			     struct hyp_trace_rb_args **args)
 {
 	struct hyp_shared_buf *buf = per_cpu_ptr(&trace_rb, 0);
-	struct hyp_trace_rb_args *args;
+	int err;
+
+	err = hyp_shared_buf_init(buf, kern_va, first_buf_order);
+	if (err)
+		return err;
+
+	*args = (struct hyp_trace_rb_args *)buf->va;
+
+	return 0;
+}
+
+int __hyp_trace_rb_start(struct hyp_trace_rb_args *args)
+{
+	struct hyp_shared_buf *buf = per_cpu_ptr(&trace_rb, 0);
 	struct hyp_trace_rb *rb;
 	int cpu, ret;
-
-	ret = hyp_shared_buf_init(buf, kern_va, first_buf_order);
-	if (ret)
-		return ret;
-
-	args = (struct hyp_trace_rb_args *)buf->va;
 
 	/* The first buffer is mapped, we can unfold the others */
 	for (cpu = 1; cpu < hyp_nr_cpus; cpu++) {

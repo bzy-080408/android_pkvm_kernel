@@ -1,6 +1,12 @@
 #ifndef __ARM64_KVM_HYPTRACE_H_
 #define __ARM64_KVM_HYPTRACE_H_
 
+#include <linux/cache.h>
+#include <linux/threads.h>
+
+#include <asm/page.h>
+#include <asm/div64.h>
+
 #define HYP_TRACE_EVT_ARG_SIZE 6
 
 struct hyp_trace_evt_args {
