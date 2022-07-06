@@ -193,6 +193,7 @@ static void unmap_stage2_range(struct kvm_s2_mmu *mmu, phys_addr_t start, u64 si
 static void pkvm_stage2_flush(struct kvm *kvm)
 {
 	struct kvm_pinned_page *ppage;
+	struct rb_node *node;
 
 	/*
 	 * Contrary to stage2_apply_range(), we don't need to check
@@ -200,7 +201,8 @@ static void pkvm_stage2_flush(struct kvm *kvm)
 	 * from a vcpu thread, and the list is only ever freed on VM
 	 * destroy (which only occurs when all vcpu are gone).
 	 */
-	list_for_each_entry(ppage, &kvm->arch.pkvm.pinned_pages, link) {
+	for (node = rb_first(&kvm->arch.pkvm.pinned_pages); node; node = rb_next(node)) {
+		ppage = rb_entry(node, struct kvm_pinned_page, node);
 		__clean_dcache_guest_page(page_address(ppage->page), PAGE_SIZE);
 		cond_resched_lock(&kvm->mmu_lock);
 	}
@@ -671,7 +673,7 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	mmfr0 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1);
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
-	INIT_LIST_HEAD(&kvm->arch.pkvm.pinned_pages);
+	kvm->arch.pkvm.pinned_pages = RB_ROOT;
 	mmu->arch = &kvm->arch;
 
 	if (is_protected_kvm_enabled())
@@ -1159,6 +1161,32 @@ static int pkvm_host_donate_guest(u64 pfn, u64 gfn)
 	return (res.a1 == -EPERM) ? -EAGAIN : res.a1;
 }
 
+static int insert_ppage(struct kvm *kvm, struct kvm_pinned_page *ppage)
+{
+	struct rb_root *root = &kvm->arch.pkvm.pinned_pages;
+	struct rb_node **new = &root->rb_node, *parent = NULL;
+
+	/* Figure out where to put new node */
+	while (*new) {
+		struct kvm_pinned_page *this = container_of(
+			*new, struct kvm_pinned_page, node);
+
+		parent = *new;
+		if (ppage->ipa < this->ipa)
+			new = &(*new)->rb_left;
+		else if (ppage->ipa > this->ipa)
+			new = &(*new)->rb_right;
+		else
+			return -EEXIST;
+	}
+
+	/* Add new node and rebalance tree. */
+	rb_link_node(&ppage->node, parent, new);
+	rb_insert_color(&ppage->node, root);
+
+	return 0;
+}
+
 static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  unsigned long hva)
 {
@@ -1220,8 +1248,8 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	}
 
 	ppage->page = page;
-	INIT_LIST_HEAD(&ppage->link);
-	list_add(&ppage->link, &kvm->arch.pkvm.pinned_pages);
+	ppage->ipa = fault_ipa;
+	WARN_ON(insert_ppage(kvm, ppage));
 	spin_unlock(&kvm->mmu_lock);
 
 	return 0;
