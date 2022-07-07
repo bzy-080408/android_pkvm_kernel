@@ -1250,11 +1250,6 @@ static bool pkvm_memrelinquish_call(struct kvm_vcpu *vcpu)
 
 	pa = __pkvm_guest_relinquish_to_host(vcpu, ipa);
 	if (pa != 0) {
-		/* We found a page mapped. Pass it on to host for further
-		 * work. Rewrite the ipa to pa in the SMCCC arg list.
-		 * XXX HACK? :)
-		 */
-		vcpu_set_reg(vcpu, 1, pa);
 		/* Now pass to host. */
 		return false;
 	}
