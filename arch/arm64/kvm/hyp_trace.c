@@ -21,6 +21,7 @@ struct trace_buf {
 
 static DEFINE_MUTEX(mutex);
 static DEFINE_PER_CPU(struct trace_buf, trace_buf) = { .va = 0, .flags = 0, .debugfs = NULL};
+static u64 events_on;
 static bool hyp_tracing_is_on;
 static struct dentry *debugfs_folder;
 
@@ -144,6 +145,8 @@ static int hyp_trace_start(void)
 		args->kern_va[cpu] = buf->va;
 		args->order[cpu] = buf->order;
 	}
+
+	args->events = events_on;
 
 	ret = kvm_call_hyp_nvhe(__pkvm_start_tracing, args, order);
 	hyp_tracing_is_on = !ret;
@@ -369,6 +372,71 @@ static void hyp_create_trace_debugfs(void)
 	}
 }
 
+static ssize_t
+hyp_events_write(struct file *filp, const char __user *ubuf, size_t cnt, loff_t *ppos)
+{
+	char c;
+	unsigned long event_id = (unsigned long)((struct seq_file *)filp->private_data)->private;
+
+	if (cnt != 2)
+		return -EINVAL;
+
+	if (get_user(c, ubuf))
+		return -EFAULT;
+
+	switch (c) {
+	case '1':
+		events_on |= (1 << event_id);
+		break;
+	case '0':
+		events_on &= ~(1 << event_id);
+		break;
+	default:
+			return -EINVAL;
+	}
+
+	return cnt;
+}
+
+static int hyp_events_show(struct seq_file *m, void *v)
+{
+	unsigned long event_id = (unsigned long)v;
+
+	seq_printf(m, "%d\n", (events_on & (1 << event_id)) ? 1 : 0);
+
+	return 0;
+}
+
+static int hyp_events_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hyp_events_show, inode->i_private);
+}
+
+static const struct file_operations hyp_events_fops = {
+	.open		= hyp_events_open,
+	.write		= hyp_events_write,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static void hyp_create_events_debugfs(struct dentry *parent)
+{
+	struct dentry *d = debugfs_create_dir("events", parent);
+
+	if (!d) {
+		pr_err("Failed to create debugfs dir events\n");
+		return;
+	}
+
+#undef __ARM64_KVM_HYPEVENTS_H_
+#undef HYP_EVENT
+#define HYP_EVENT(__name, __id, __proto, __struct, __assign) \
+	debugfs_create_file(#__name, 0700, d, (void *)__id, &hyp_events_fops)
+
+#include <asm/kvm_hypevents.h>
+}
+
 static int __init hyp_tracing_debugfs(void)
 {
 	struct dentry *d;
@@ -385,6 +453,8 @@ static int __init hyp_tracing_debugfs(void)
 		pr_err("Failed to create file hyp-trace/tracing_on\n");
 		return -ENODEV;
 	}
+
+	hyp_create_events_debugfs(debugfs_folder);
 
 	return 0;
 }
