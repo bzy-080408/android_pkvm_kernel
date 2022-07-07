@@ -5,8 +5,6 @@
 #include <nvhe/trace.h>
 #else
 #include <asm/kvm_hypevents_defs.h>
-#define HYP_EVENT(__name, __id, __proto, __struct, __assign) \
-	HYP_EVENT_FORMAT(__name, __struct)
 #endif
 
 /*

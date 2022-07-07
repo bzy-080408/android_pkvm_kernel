@@ -14,4 +14,10 @@
 #define HE_ASSIGN(args...)	args
 
 #define he_field(type, item)	type item;
+
+#ifndef __KVM_NVHE_HYPERVISOR__
+#define HYP_EVENT(__name, __id, __proto, __struct, __assign) \
+	HYP_EVENT_FORMAT(__name, __struct)
+#endif
+
 #endif
