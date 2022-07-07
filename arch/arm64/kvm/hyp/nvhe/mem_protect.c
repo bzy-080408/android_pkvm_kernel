@@ -1770,6 +1770,45 @@ unlock:
 	return ret;
 }
 
+int __pkvm_wrprotect(struct kvm_shadow_vm *vm, u64 pfn, u64 gfn)
+{
+	int ret;
+	u64 host_addr = hyp_pfn_to_phys(pfn);
+	u64 guest_addr = hyp_pfn_to_phys(gfn);
+	struct pkvm_mem_share share = {
+		.tx	= {
+			.nr_pages	= 1,
+			.initiator	= {
+				.id	= PKVM_ID_HOST,
+				.addr	= host_addr,
+				.host	= {
+					.completer_addr = guest_addr,
+				},
+			},
+			.completer	= {
+				.id	= PKVM_ID_GUEST,
+				.guest	= {
+					.vcpu = &vm->shadow_vcpu_states[0].shadow_vcpu,
+					.phys = host_addr,
+				},
+			},
+		},
+	};
+
+	host_lock_component();
+	guest_lock_component(vm);
+
+	ret = check_unshare(&share);
+	if (ret)
+		goto unlock;
+
+	ret = kvm_pgtable_stage2_wrprotect(&vm->pgt, guest_addr, PAGE_SIZE);
+unlock:
+	guest_unlock_component(vm);
+	host_unlock_component();
+
+	return ret;
+}
 
 int __pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu)
 {
