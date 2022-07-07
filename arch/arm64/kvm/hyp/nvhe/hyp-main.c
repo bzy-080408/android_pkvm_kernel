@@ -903,6 +903,22 @@ static void handle___kvm_tlb_flush_vmid(struct kvm_cpu_context *host_ctxt)
 	__kvm_tlb_flush_vmid(kern_hyp_va(mmu));
 }
 
+static void handle___pkvm_tlb_flush_vmid(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(unsigned int, shadow_handle, host_ctxt, 1);
+	struct kvm_shadow_vm *vm;
+
+	if (!is_protected_kvm_enabled())
+		return;
+
+	vm = pkvm_get_shadow(shadow_handle);
+	if (!vm)
+		return;
+
+	__kvm_tlb_flush_vmid(&vm->kvm.arch.mmu);
+	pkvm_put_shadow(vm);
+}
+
 static void handle___kvm_flush_cpu_context(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(struct kvm_s2_mmu *, mmu, host_ctxt, 1);
@@ -1131,6 +1147,7 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_vcpu_load),
 	HANDLE_FUNC(__pkvm_vcpu_put),
 	HANDLE_FUNC(__pkvm_vcpu_sync_state),
+	HANDLE_FUNC(__pkvm_tlb_flush_vmid),
 };
 
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
