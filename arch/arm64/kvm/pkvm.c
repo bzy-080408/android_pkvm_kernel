@@ -214,28 +214,47 @@ void kvm_shadow_destroy(struct kvm *kvm)
 	}
 }
 
-void kvm_shadow_reclaim_one(struct kvm *kvm, phys_addr_t pa)
+static struct kvm_pinned_page *ppage_find(struct rb_root *root, phys_addr_t ipa)
+{
+	struct rb_node *node = root->rb_node;
+
+	while (node) {
+		struct kvm_pinned_page *ppage = container_of(
+			node, struct kvm_pinned_page, node);
+
+		if (ipa < ppage->ipa)
+			node = node->rb_left;
+		else if (ipa > ppage->ipa)
+			node = node->rb_right;
+		else
+			return ppage;
+	}
+	return NULL;
+}
+
+void kvm_shadow_reclaim_one(struct kvm *kvm, phys_addr_t ipa)
 {
 	struct kvm_pinned_page *ppage;
 	struct mm_struct *mm = current->mm;
-	struct list_head *ppages;
 
-	ppages = &kvm->arch.pkvm.pinned_pages;
-	list_for_each_entry(ppage, ppages, link) {
-		u64 pfn = page_to_pfn(ppage->page);
-		if (pfn != PHYS_PFN(pa))
-			continue;
+	/* XXX Does this *all* need to be done under a higher-level lock? */
 
-		/* Found the page. Reclaim it. */
-		WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page, pfn));
-		cond_resched();
+	spin_lock(&kvm->mmu_lock);
+	ppage = ppage_find(&kvm->arch.pkvm.pinned_pages, ipa);
+	if (ppage)
+		rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
+	spin_unlock(&kvm->mmu_lock);
 
-		account_locked_vm(mm, 1, false);
-		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
-		list_del(&ppage->link);
-		kfree(ppage);
-		break;
-	}
+	WARN_ON(!ppage);
+	if (!ppage)
+		return;
+
+	WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
+				  page_to_pfn(ppage->page)));
+
+	account_locked_vm(mm, 1, false);
+	unpin_user_pages_dirty_lock(&ppage->page, 1, true);
+	kfree(ppage);
 }
 
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,

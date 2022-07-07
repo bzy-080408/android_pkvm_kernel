@@ -9,6 +9,9 @@
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
 
+/* XXX Put me in a header file */
+void kvm_shadow_reclaim_one(struct kvm *kvm, phys_addr_t ipa);
+
 static void kvm_ptp_get_time(struct kvm_vcpu *vcpu, u64 *val)
 {
 	struct system_time_snapshot systime_snapshot;
@@ -162,7 +165,6 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 
 		/* Used for both non-p and p, on top of prot. */
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
-		void kvm_shadow_reclaim_one(struct kvm *kvm, phys_addr_t pa);
 		if (!is_protected_kvm_enabled())
 			break;
 		kvm_shadow_reclaim_one(vcpu->kvm, smccc_get_arg1(vcpu));
