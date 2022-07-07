@@ -33,7 +33,7 @@ HYP_EVENT(pop_hyp_memcache,
 		__entry->paddr = paddr;
 		__entry->nr_pages = nr_pages;
 	)
-)
+);
 
 HYP_EVENT(push_hyp_memcache,
 	HYP_EVT_PUSH_MEMCACHE,
@@ -48,7 +48,7 @@ HYP_EVENT(push_hyp_memcache,
 		__entry->paddr = paddr;
 		__entry->nr_pages = nr_pages;
 	)
-)
+);
 
 HYP_EVENT(hyp_enter,
 	HYP_EVT_ENTER,
@@ -63,7 +63,7 @@ HYP_EVENT(hyp_enter,
 		__entry->x0 = x0;
 		__entry->vmid = vmid;
 	)
-)
+);
 
 HYP_EVENT(hyp_exit,
 	HYP_EVT_EXIT,
@@ -75,5 +75,5 @@ HYP_EVENT(hyp_exit,
 	HE_ASSIGN(
 		__entry->unused = unused;
 	)
-)
+);
 #endif
