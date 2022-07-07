@@ -309,7 +309,7 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__debug_switch_to_guest(vcpu);
 
 	do {
-		trace_hyp_hyp_exit(0);
+		trace_hyp_hyp_exit();
 
 		/* Jump in the fire! */
 		exit_code = __guest_enter(vcpu);

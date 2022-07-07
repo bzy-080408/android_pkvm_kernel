@@ -69,13 +69,10 @@ HYP_EVENT(hyp_enter,
 
 HYP_EVENT(hyp_exit,
 	HYP_EVT_EXIT,
-	/* TODO: Fix macro to avoid "unused" */
-	HE_PROTO(u8 unused),
+	HE_PROTO(void),
 	HE_STRUCT(
-		he_field(u8, unused)
 	),
 	HE_ASSIGN(
-		__entry->unused = unused;
 	)
 );
 #endif

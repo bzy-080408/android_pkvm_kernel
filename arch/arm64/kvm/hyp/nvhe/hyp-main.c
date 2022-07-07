@@ -1219,5 +1219,5 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 		BUG();
 	}
 
-	trace_hyp_hyp_exit(0);
+	trace_hyp_hyp_exit();
 }
