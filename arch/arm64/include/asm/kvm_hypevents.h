@@ -13,12 +13,16 @@
  * Hypervisor events definitions.
  */
 
+#ifndef hyp_evt_id
+#define hyp_evt_id
 enum hyp_evt_id {
 	HYP_EVT_ENTER,
 	HYP_EVT_EXIT,
 	HYP_EVT_POP_MEMCACHE,
 	HYP_EVT_PUSH_MEMCACHE,
+	__NUM_HYP_EVENTS,
 };
+#endif
 
 HYP_EVENT(pop_hyp_memcache,
 	HYP_EVT_POP_MEMCACHE,

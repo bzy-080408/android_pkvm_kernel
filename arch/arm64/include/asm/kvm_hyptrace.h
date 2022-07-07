@@ -35,6 +35,7 @@ struct hyp_trace_rb {
 struct hyp_trace_rb_args {
 	unsigned long kern_va[NR_CPUS];
 	int order[NR_CPUS];
+	u64 events;
 };
 
 static inline u64 __hyp_trace_rb_max_entries(struct hyp_trace_rb *rb)

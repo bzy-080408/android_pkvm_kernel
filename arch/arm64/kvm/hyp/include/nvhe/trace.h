@@ -47,6 +47,7 @@ void __pkvm_stop_tracing(void);
 
 #define HYP_EVENT(__name, __id, __proto, __struct, __assign)			\
 	HYP_EVENT_FORMAT(__name, __struct)					\
+	extern atomic_t __name##_enabled;					\
 	static inline void trace_hyp_##__name(__proto)				\
 	{									\
 		struct hyp_shared_buf *buf = this_cpu_ptr(&trace_rb);		\
@@ -57,6 +58,8 @@ void __pkvm_stop_tracing(void);
 		BUILD_BUG_ON(sizeof(struct trace_hyp_format_##__name) >		\
 			     sizeof(struct hyp_trace_evt_args));		\
 										\
+		if (!atomic_read(&__name##_enabled))				\
+			return;							\
 		if (!__start_write_shared_buf(buf))				\
 			return;							\
 		__entry_raw = __trace_rb_next(rb);				\
