@@ -744,7 +744,7 @@ void kvm_pmu_set_counter_event_type(struct kvm_vcpu *vcpu, u64 data,
 void kvm_host_pmu_init(struct arm_pmu *pmu)
 {
 	if (pmu->pmuver != 0 && pmu->pmuver != ID_AA64DFR0_PMUVER_IMP_DEF &&
-	    !kvm_arm_support_pmu_v3() && !is_protected_kvm_enabled())
+	    !kvm_arm_support_pmu_v3())
 		static_branch_enable(&kvm_arm_pmu_available);
 }
 
