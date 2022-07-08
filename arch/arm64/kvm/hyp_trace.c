@@ -14,16 +14,15 @@ struct trace_buf {
 	unsigned long va;
 	int order;
 	int flags;
-	struct dentry *debugfs;
 };
 
 #define TRACE_BUF_MEMBLOCK (1 << 0)
+#define TRACE_BUF_RB_INIT (1 << 1)		/* hyp_trace_rb init by hyp */
 
 static DEFINE_MUTEX(mutex);
-static DEFINE_PER_CPU(struct trace_buf, trace_buf) = { .va = 0, .flags = 0, .debugfs = NULL};
+static DEFINE_PER_CPU(struct trace_buf, trace_buf) = { .va = 0, .flags = 0 };
 static u64 events_on;
 static bool hyp_tracing_is_on;
-static struct dentry *debugfs_folder;
 
 static unsigned long __trace_buf_prealloc[8] = {0};
 
@@ -149,7 +148,15 @@ static int hyp_trace_start(void)
 	args->events = events_on;
 
 	ret = kvm_call_hyp_nvhe(__pkvm_start_tracing, args, order);
-	hyp_tracing_is_on = !ret;
+
+	if (!ret) {
+		hyp_tracing_is_on = true;
+		for_each_possible_cpu(cpu) {
+			buf = per_cpu_ptr(&trace_buf, cpu);
+			if (buf->va)
+				buf->flags |= TRACE_BUF_RB_INIT;
+		}
+	}
 
 end:
 	if (ret)
@@ -174,8 +181,6 @@ end:
 	mutex_unlock(&mutex);
 }
 
-static void hyp_create_trace_debugfs(void);
-
 static ssize_t
 hyp_tracing_on(struct file *filp, const char __user *ubuf, size_t cnt, loff_t *ppos)
 {
@@ -193,7 +198,6 @@ hyp_tracing_on(struct file *filp, const char __user *ubuf, size_t cnt, loff_t *p
 		err = hyp_trace_start();
 		if (err)
 			return err;
-		hyp_create_trace_debugfs();
 		break;
 	case '0':
 		hyp_trace_stop();
@@ -209,24 +213,103 @@ static const struct file_operations hyp_tracing_on_fops = {
 	.write  = hyp_tracing_on,
 };
 
-static void *__ht_next(struct seq_file *m, loff_t *pos)
+struct trace_buf_iterator {
+	unsigned long read_idx[NR_CPUS];
+	int *pfn_to_cpu;
+	int min_pfn;
+	int max_pfn;
+};
+
+static void trace_buf_iterator_init(struct trace_buf_iterator *it)
 {
-	struct trace_buf *buf = m->private;
-	struct hyp_trace_rb *rb = (struct hyp_trace_rb *)buf->va;
-	loff_t rb_idx;
+	int i, cpu, min_pfn = INT_MAX, max_pfn = INT_MIN, num_pfn = 0;
 
-	if (!rb)
-		return NULL;
+	for_each_possible_cpu(cpu) {
+		struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
+		int pfn_start, pfn_end;
 
-	/* pos offset by 1 due to SEQ_START_TOKEN */
-	rb_idx = *pos - 1;
+		if (!buf->va)
+			continue;
 
-	if (rb_idx >= __hyp_trace_rb_next_idx(rb))
-		return NULL;
+		pfn_start = virt_to_pfn(buf->va);
+		pfn_end = pfn_start + (1 << buf->order) - 1;
 
-	return rb->events + rb_idx;
+		min_pfn = min(min_pfn, pfn_start);
+		max_pfn = max(max_pfn, pfn_end);
+	}
+
+	/* No trace_buf has been init. */
+	if (max_pfn == INT_MIN)
+		return;
+
+	it->min_pfn = min_pfn;
+	it->max_pfn = max_pfn;
+
+	num_pfn = it->max_pfn - it->min_pfn + 1;
+
+	it->pfn_to_cpu = kmalloc_array(num_pfn, sizeof(int), GFP_KERNEL);
+	for (i = 0; i < num_pfn; i++)
+		it->pfn_to_cpu[i] = -1;
+
+	for_each_possible_cpu(cpu) {
+		struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
+		int pfn = virt_to_pfn(buf->va);
+		int pfn_end = pfn + (1 << buf->order) - 1;
+
+		for (; pfn <= pfn_end; pfn++)
+			it->pfn_to_cpu[pfn - min_pfn] = cpu;
+	}
 }
 
+static void trace_buf_iterator_clear(struct trace_buf_iterator *it)
+{
+	kfree(it->pfn_to_cpu);
+}
+
+static int trace_buf_va_to_cpu(struct trace_buf_iterator *it, void *buf_va)
+{
+	int pfn = virt_to_pfn(buf_va);
+
+	if (pfn > it->max_pfn || pfn < it->min_pfn)
+		return -1;
+
+	return it->pfn_to_cpu[pfn - it->min_pfn];
+}
+
+static void *__ht_next(struct seq_file *m, loff_t *pos)
+
+{
+	struct trace_buf_iterator *it = m->private;
+	struct hyp_trace_evt *next_evt = NULL;
+	int cpu, next_evt_cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
+		struct hyp_trace_rb *rb = (struct hyp_trace_rb *)buf->va;
+		struct hyp_trace_evt *evt;
+		int write_idx;
+
+		if (!rb || !(buf->flags & TRACE_BUF_RB_INIT))
+			continue;
+
+		write_idx = __hyp_trace_rb_next_idx(rb);
+		evt = rb->events + it->read_idx[cpu];
+
+		if (it->read_idx[cpu] >= write_idx)
+			continue;
+
+		if (next_evt && evt->timestamp >= next_evt->timestamp)
+			continue;
+
+		next_evt = evt;
+		next_evt_cpu = cpu;
+	}
+
+	if (next_evt)
+		it->read_idx[next_evt_cpu]++;
+
+	return next_evt;
+}
 
 static void *ht_start(struct seq_file *m, loff_t *pos)
 {
@@ -245,6 +328,14 @@ static void *ht_next(struct seq_file *m, void *v, loff_t *pos)
 
 static void ht_stop(struct seq_file *m, void *v) { }
 
+static void ht_print_cpu(struct seq_file *m, struct hyp_trace_evt *evt_raw)
+{
+	struct trace_buf_iterator *it = m->private;
+	int cpu = trace_buf_va_to_cpu(it, evt_raw);
+
+	seq_printf(m, "[%03d] ", cpu);
+}
+
 static void ht_print_time(struct seq_file *m, struct hyp_trace_evt *evt_raw)
 {
 	unsigned long long t = __cnt_to_sched_clock(evt_raw->timestamp);
@@ -262,28 +353,34 @@ static int ht_show(struct seq_file *m, void *v)
 	struct hyp_trace_evt *evt_raw = v;
 
 	if (v == SEQ_START_TOKEN) {
-		struct trace_buf *buf = m->private;
-		struct hyp_trace_rb *rb = (struct hyp_trace_rb *)buf->va;
+		int cpu;
 
-		/*
-		 * TODO: there's a possibility write_idx will change during a
-		 * print ...
-		 */
+		seq_printf(m, "Tracing is %s\n", hyp_tracing_is_on ? "ON" : "OFF");
 
-		seq_printf(m, "write_idx=%d num_events=%d max_events=%llu",
-			atomic_read(&rb->hdr.write_idx),
-			__hyp_trace_rb_next_idx(rb),
-			__hyp_trace_rb_max_entries(rb));
+		for_each_possible_cpu(cpu) {
+			struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
+			struct hyp_trace_rb *rb = (struct hyp_trace_rb *)buf->va;
 
-		if (atomic_read(&rb->hdr.write_idx) > __hyp_trace_rb_max_entries(rb))
-			seq_puts(m, " WARNING: EVENTS LOST");
+			if (!rb || !(buf->flags & TRACE_BUF_RB_INIT))
+				continue;
 
-		seq_puts(m, "\n");
+			seq_printf(m, "CPU%d: write_idx=%d num_events=%d max_events=%llu",
+					cpu,
+					atomic_read(&rb->hdr.write_idx),
+					__hyp_trace_rb_next_idx(rb),
+					__hyp_trace_rb_max_entries(rb));
+
+			if (atomic_read(&rb->hdr.write_idx) > __hyp_trace_rb_max_entries(rb))
+				seq_puts(m, " WARNING: EVENTS LOST");
+
+			seq_puts(m, "\n");
+		}
 
 		return 0;
 	}
 
 	ht_print_time(m, evt_raw);
+	ht_print_cpu(m, evt_raw);
 
 	switch (evt_raw->id) {
 		case HYP_EVT_ENTER: {
@@ -325,12 +422,17 @@ static int hyp_trace_open(struct inode *inode, struct file *file)
 {
 	int ret = seq_open(file, &hyp_trace_ops);
 	struct seq_file *m = file->private_data;
+	struct trace_buf_iterator *it;
 
 	if (ret)
 		return ret;
 
 	mutex_lock(&mutex);
-	m->private = inode->i_private;
+
+	it = kzalloc(sizeof(*it), GFP_KERNEL);
+	trace_buf_iterator_init(it);
+
+	m->private = it;
 
 	return 0;
 
@@ -338,11 +440,15 @@ static int hyp_trace_open(struct inode *inode, struct file *file)
 
 int hyp_trace_release(struct inode *inode, struct file *file)
 {
+	struct trace_buf_iterator *it = ((struct seq_file *)file->private_data)->private;
+
+	trace_buf_iterator_clear(it);
+	kfree(it);
+
 	mutex_unlock(&mutex);
 
 	return seq_release(inode, file);
 }
-
 
 static const struct file_operations hyp_trace_fops = {
 	.open  = hyp_trace_open,
@@ -351,25 +457,11 @@ static const struct file_operations hyp_trace_fops = {
 	.release = hyp_trace_release,
 };
 
-static void hyp_create_trace_debugfs(void)
+static void hyp_create_trace_debugfs(struct dentry *parent)
 {
-	char trace_name[16];
-	int cpu;
-
-	for_each_possible_cpu(cpu) {
-		struct trace_buf *buf = per_cpu_ptr(&trace_buf, cpu);
-		struct dentry *d = buf->debugfs;
-
-		snprintf(trace_name, sizeof(trace_name), "trace.%d", cpu);
-		debugfs_remove(d);
-		d = debugfs_create_file(trace_name, 0600, debugfs_folder,
-					(void *)buf,
-					&hyp_trace_fops);
-		if (!d)
-			pr_warn("Failed create hyp-trace/trace for CPU %d\n", cpu);
-
-		buf->debugfs = d;
-	}
+	if (!debugfs_create_file("trace", 0600, parent,
+				 NULL, &hyp_trace_fops))
+		pr_warn("Failed create hyp-tracing/trace\n");
 }
 
 static ssize_t
@@ -439,7 +531,7 @@ static void hyp_create_events_debugfs(struct dentry *parent)
 
 static int __init hyp_tracing_debugfs(void)
 {
-	struct dentry *d;
+	struct dentry *debugfs_folder, *d;
 
 	debugfs_folder = debugfs_create_dir("hyp-tracing", NULL);
 
@@ -455,6 +547,7 @@ static int __init hyp_tracing_debugfs(void)
 	}
 
 	hyp_create_events_debugfs(debugfs_folder);
+	hyp_create_trace_debugfs(debugfs_folder);
 
 	return 0;
 }
