@@ -969,8 +969,10 @@ int kvm_trng_call(struct kvm_vcpu *vcpu);
 extern phys_addr_t hyp_mem_base;
 extern phys_addr_t hyp_mem_size;
 void __init kvm_hyp_reserve(void);
+void __init hyp_trace_buf_preallocate(void);
 #else
 static inline void kvm_hyp_reserve(void) { }
+static inline void hyp_trace_buf_preallocate(void) { }
 #endif
 
 #endif /* __ARM64_KVM_HOST_H__ */

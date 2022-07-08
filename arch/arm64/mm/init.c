@@ -432,8 +432,6 @@ void __init arm64_memblock_init(void)
 	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;
 }
 
-void hyp_trace_buf_preallocate(void);
-
 void __init bootmem_init(void)
 {
 	unsigned long min, max;
