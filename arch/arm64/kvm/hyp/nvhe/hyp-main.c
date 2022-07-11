@@ -535,7 +535,11 @@ static void flush_shadow_state(struct pkvm_loaded_state *state)
 	 * the shadow.
 	 */
 	if (!state->is_protected) {
-		if (READ_ONCE(host_vcpu->arch.flags) & KVM_ARM64_PKVM_STATE_DIRTY)
+		unsigned long host_flags = READ_ONCE(host_vcpu->arch.flags);
+
+		shadow_vcpu->arch.flags = host_flags;
+
+		if (host_flags & KVM_ARM64_PKVM_STATE_DIRTY)
 			__flush_vcpu_state(shadow_vcpu);
 
 		state->vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
@@ -603,7 +607,11 @@ static void sync_shadow_state(struct pkvm_loaded_state *state, u32 exit_reason)
 		BUG();
 	}
 
-	host_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION | KVM_ARM64_INCREMENT_PC);
+	if (!state->is_protected)
+		host_vcpu->arch.flags = shadow_vcpu->arch.flags;
+	else
+		host_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION | KVM_ARM64_INCREMENT_PC);
+
 	shadow_vcpu->arch.pkvm.exit_code = exit_reason;
 }
 
