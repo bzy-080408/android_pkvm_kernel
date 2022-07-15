@@ -390,16 +390,6 @@ static void static_key_set_entries(struct static_key *key,
 	key->type |= type;
 }
 
-static enum jump_label_type jump_label_type(struct jump_entry *entry)
-{
-	struct static_key *key = jump_entry_key(entry);
-	bool enabled = static_key_enabled(key);
-	bool branch = jump_entry_is_branch(entry);
-
-	/* See the comment in linux/jump_label.h */
-	return enabled ^ branch;
-}
-
 static bool jump_label_can_update(struct jump_entry *entry, bool init)
 {
 	/*
