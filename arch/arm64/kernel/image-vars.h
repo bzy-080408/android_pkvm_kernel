@@ -124,6 +124,8 @@ KVM_NVHE_ALIAS(__hyp_bss_start);
 KVM_NVHE_ALIAS(__hyp_bss_end);
 KVM_NVHE_ALIAS(__hyp_rodata_start);
 KVM_NVHE_ALIAS(__hyp_rodata_end);
+KVM_NVHE_ALIAS(__hyp_jump_table_start);
+KVM_NVHE_ALIAS(__hyp_jump_table_end);
 
 /* pKVM static key */
 KVM_NVHE_ALIAS(kvm_protected_mode_initialized);

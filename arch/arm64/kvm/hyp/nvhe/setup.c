@@ -11,6 +11,7 @@
 #include <asm/kvm_pkvm.h>
 
 #include <nvhe/early_alloc.h>
+#include <nvhe/jump_label.h>
 #include <nvhe/gfp.h>
 #include <nvhe/memory.h>
 #include <nvhe/mem_protect.h>
@@ -174,6 +175,10 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 	prot = pkvm_mkstate(PAGE_HYP_RO, PKVM_PAGE_SHARED_OWNED);
 	ret = pkvm_create_mappings(&kvm_vgic_global_state,
 				   &kvm_vgic_global_state + 1, prot);
+	if (ret)
+		return ret;
+
+	ret = create_hyp_jump_label_mappings();
 	if (ret)
 		return ret;
 
