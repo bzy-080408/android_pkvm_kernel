@@ -472,6 +472,15 @@ extern bool ____wrong_branch_error(void);
  * See jump_label_type() / jump_label_init_type().
  */
 
+static inline enum jump_label_type jump_label_type(struct jump_entry *entry)
+{
+	struct static_key *key = jump_entry_key(entry);
+	bool enabled = static_key_enabled(key);
+	bool branch = jump_entry_is_branch(entry);
+
+	return enabled ^ branch;
+}
+
 #define static_branch_likely(x)							\
 ({										\
 	bool branch;								\
