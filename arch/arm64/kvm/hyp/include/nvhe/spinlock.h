@@ -14,6 +14,7 @@
 #define __ARM64_KVM_NVHE_SPINLOCK_H__
 
 #include <asm/alternative.h>
+#include <asm/barrier.h>
 #include <asm/lse.h>
 #include <asm/rwonce.h>
 
