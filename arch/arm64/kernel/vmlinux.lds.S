@@ -56,6 +56,16 @@
 		__hyp_reloc_end = .;				\
 	}
 
+#define HYPERVISOR_JUMP_TABLE_SECTION				\
+	HYP_SECTION_NAME(__jump_table) : {			\
+		. = ALIGN(PAGE_SIZE);				\
+		__hyp_jump_table_start = .;			\
+		*(HYP_SECTION_NAME(__jump_table))       	\
+		__hyp_jump_table_end = .;			\
+		. = ALIGN(PAGE_SIZE);				\
+	}
+
+
 #define BSS_FIRST_SECTIONS					\
 	__hyp_bss_start = .;					\
 	*(HYP_SECTION_NAME(.bss))				\
@@ -87,6 +97,7 @@
 #define HYPERVISOR_PERCPU_SECTION
 #define HYPERVISOR_RELOC_SECTION
 #define HYPERVISOR_EVENTS
+#define HYPERVISOR_JUMP_TABLE_SECTION
 #define SBSS_ALIGN			0
 #endif
 
@@ -224,6 +235,8 @@ SECTIONS
 	HYPERVISOR_EVENTS
 
 	HYPERVISOR_RODATA_SECTIONS
+
+	HYPERVISOR_JUMP_TABLE_SECTION
 
 	/* code sections that are never executed via the kernel mapping */
 	.rodata.text : {

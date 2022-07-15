@@ -14,6 +14,7 @@
 #include <nvhe/ffa.h>
 #include <nvhe/gfp.h>
 #include <nvhe/iommu.h>
+#include <nvhe/jump_label.h>
 #include <nvhe/memory.h>
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
@@ -177,6 +178,10 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 	end = start + pvmfw_size;
 	prot = pkvm_mkstate(PAGE_HYP_RO, PKVM_PAGE_OWNED);
 	ret = pkvm_create_mappings(start, end, prot);
+	if (ret)
+		return ret;
+
+	ret = create_hyp_jump_label_mappings();
 	if (ret)
 		return ret;
 
