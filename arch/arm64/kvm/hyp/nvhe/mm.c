@@ -219,7 +219,8 @@ void *hyp_fixmap_map(phys_addr_t phys)
 	void *addr = *this_cpu_ptr(&hyp_fixmap_base);
 	int ret = kvm_pgtable_hyp_map(&pkvm_pgtable, (u64)addr, PAGE_SIZE,
 				      phys, PAGE_HYP);
-	return ret ? NULL : addr;
+
+	return ret ? NULL : addr + offset_in_page(phys);
 }
 
 int hyp_fixmap_unmap(void)
