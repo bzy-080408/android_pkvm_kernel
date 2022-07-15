@@ -16,11 +16,11 @@ SECTIONS {
 	HYP_SECTION(.text)
 	HYP_SECTION(.data..ro_after_init)
 	HYP_SECTION(.rodata)
+	HYP_SECTION(__jump_table)
 #ifdef CONFIG_TRACING
 	. = ALIGN(PAGE_SIZE);
 	HYP_SECTION(_hyp_event_ids)
 #endif
-
 	/*
 	 * .hyp..data..percpu needs to be page aligned to maintain the same
 	 * alignment for when linking into vmlinux.

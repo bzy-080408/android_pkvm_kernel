@@ -1893,10 +1893,47 @@ out:
 	return err;
 }
 
+static bool __hyp_owns_key(unsigned long key, void *unused)
+{
+	return key >= (unsigned long)__hyp_bss_start &&
+	       key < (unsigned long)__hyp_bss_end;
+}
+
+static int kvm_hyp_init_jump_label(void)
+{
+	struct jump_entry *start = (struct jump_entry *)__hyp_jump_table_start;
+	struct jump_entry *end = (struct jump_entry *)__hyp_jump_table_end;
+	struct jump_label_table_cb *cb = kzalloc(sizeof(*cb), GFP_KERNEL);
+	int err;
+
+	if (!cb)
+		return -ENOMEM;
+
+	cb->owns_key = __hyp_owns_key;
+
+	err = __jump_label_add_table(start, end, cb, NULL);
+	if (err)
+		return err;
+
+	__jump_label_apply_nops(start, end);
+
+	return 0;
+}
+
+static void kvm_hyp_del_jump_label(void)
+{
+	struct jump_label_table_cb *cb = NULL;
+
+	__jump_label_del_table((struct jump_entry *)__hyp_jump_table_start, &cb);
+
+	kfree(cb);
+}
+
 static void teardown_hyp_mode(void)
 {
 	int cpu;
 
+	kvm_hyp_del_jump_label();
 	free_hyp_pgds();
 	for_each_possible_cpu(cpu) {
 		free_page(per_cpu(kvm_arm_hyp_stack_page, cpu));
@@ -2062,6 +2099,13 @@ static int init_hyp_mode(void)
 		goto out_err;
 	}
 
+	err = create_hyp_mappings(kvm_ksym_ref(__hyp_jump_table_start),
+				  kvm_ksym_ref(__hyp_jump_table_end), PAGE_HYP);
+	if (err) {
+		kvm_err("Cannot map hyp bss section: %d\n", err);
+		goto out_err;
+	}
+
 	/*
 	 * Map the Hyp stack pages
 	 */
@@ -2096,6 +2140,9 @@ static int init_hyp_mode(void)
 #ifdef CONFIG_TRACING
 	kvm_hyp_init_events();
 #endif
+	err = kvm_hyp_init_jump_label();
+	if (err)
+		goto out_err;
 
 	if (is_protected_kvm_enabled()) {
 		init_cpu_logical_map();
