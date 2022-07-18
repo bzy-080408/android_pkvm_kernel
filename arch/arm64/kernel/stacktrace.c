@@ -249,7 +249,7 @@ noinline notrace void hyp_dump_backtrace(unsigned long hyp_offset)
 	while (pc) {
 		pc &= va_mask;		/* Mask tags */
 		pc += hyp_offset;	/* Convert to kern addr */
-		kvm_err("[<%016lx>] %pB\n", pc, (void *)pc);
+		kvm_err("[<%016lx>] %pB\n", pc, (void *)(pc + kaslr_offset()));
 		pc = *stacktrace_pos++;
 	}
 
