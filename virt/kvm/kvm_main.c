@@ -666,8 +666,8 @@ static void kvm_mmu_notifier_change_pte(struct mmu_notifier *mn,
 	kvm_handle_hva_range(mn, address, address + 1, pte, kvm_set_spte_gfn);
 }
 
-void kvm_inc_notifier_count(struct kvm *kvm, unsigned long start,
-				   unsigned long end)
+void kvm_inc_notifier_count(struct kvm *kvm, gfn_t start,
+				   gfn_t end)
 {
 	/*
 	 * The count increase must become visible at unlock time as no
@@ -732,8 +732,8 @@ static int kvm_mmu_notifier_invalidate_range_start(struct mmu_notifier *mn,
 	return 0;
 }
 
-void kvm_dec_notifier_count(struct kvm *kvm, unsigned long start,
-				   unsigned long end)
+void kvm_dec_notifier_count(struct kvm *kvm, gfn_t start,
+				   gfn_t end)
 {
 	/*
 	 * This sequence increase will notify the kvm page fault that
