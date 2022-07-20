@@ -492,7 +492,7 @@ hyp_events_write(struct file *filp, const char __user *ubuf, size_t cnt, loff_t 
 
 static int hyp_events_show(struct seq_file *m, void *v)
 {
-	unsigned long event_id = (unsigned long)v;
+	unsigned long event_id = (unsigned long)m->private;
 
 	seq_printf(m, "%d\n", (events_on & (1 << event_id)) ? 1 : 0);
 
