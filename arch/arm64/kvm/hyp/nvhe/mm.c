@@ -25,7 +25,12 @@ struct memblock_region hyp_memory[HYP_MEMBLOCK_REGIONS];
 unsigned int hyp_memblock_nr;
 
 static u64 __io_map_base;
-static DEFINE_PER_CPU(void *, hyp_fixmap_base);
+
+struct hyp_fixmap_slot {
+	u64 addr;
+	kvm_pte_t *ptep;
+};
+static DEFINE_PER_CPU(struct hyp_fixmap_slot, fixmap_slots);
 
 static int __pkvm_create_mappings(unsigned long start, unsigned long size,
 				  unsigned long phys, enum kvm_pgtable_prot prot)
@@ -216,35 +221,61 @@ int hyp_map_vectors(void)
 
 void *hyp_fixmap_map(phys_addr_t phys)
 {
-	void *addr = *this_cpu_ptr(&hyp_fixmap_base);
-	int ret = kvm_pgtable_hyp_map(&pkvm_pgtable, (u64)addr, PAGE_SIZE,
-				      phys, PAGE_HYP);
-	return ret ? NULL : addr;
+	struct hyp_fixmap_slot *slot = this_cpu_ptr(&fixmap_slots);
+	kvm_pte_t *ptep = slot->ptep;
+
+	smp_store_release(ptep, *ptep | (KVM_PTE_VALID | kvm_phys_to_pte(phys)));
+	dsb(ishst);
+	isb();
+
+	return (void *)slot->addr;
 }
 
-int hyp_fixmap_unmap(void)
+static void fixmap_clear_slot(struct hyp_fixmap_slot *slot)
 {
-	void *addr = *this_cpu_ptr(&hyp_fixmap_base);
-	int ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, (u64)addr, PAGE_SIZE);
+	kvm_pte_t *ptep = slot->ptep;
+	u64 addr = slot->addr;
 
-	return (ret != PAGE_SIZE) ? -EINVAL : 0;
+	WRITE_ONCE(*ptep, *ptep & ~(KVM_PTE_VALID | kvm_phys_to_pte(-1ULL)));
+	dsb(ishst);
+	__tlbi_level(vale2is, __TLBI_VADDR(addr, 0), (KVM_PGTABLE_MAX_LEVELS - 1));
+	dsb(ish);
+	isb();
 }
 
-static int __pin_pgtable_cb(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
-			    enum kvm_pgtable_walk_flags flag, void * const arg)
+void hyp_fixmap_unmap(void)
 {
+	fixmap_clear_slot(this_cpu_ptr(&fixmap_slots));
+}
+
+static int __create_fixmap_slot_cb(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
+				   enum kvm_pgtable_walk_flags flag,
+				   void * const arg)
+{
+	struct hyp_fixmap_slot *slot = per_cpu_ptr(&fixmap_slots, (u64)arg);
+
 	if (!kvm_pte_valid(*ptep) || level != KVM_PGTABLE_MAX_LEVELS - 1)
 		return -EINVAL;
-	hyp_page_ref_inc(hyp_virt_to_page(ptep));
+
+	slot->addr = addr;
+	slot->ptep = ptep;
+
+	/*
+	 * Clear the PTE, but keep the page-table page refcount elevated to
+	 * prevent it from ever being freed. This lets us manipulate the PTEs
+	 * by hand safely without ever needing to allocate memory.
+	 */
+	fixmap_clear_slot(slot);
 
 	return 0;
 }
 
-static int hyp_pin_pgtable_pages(u64 addr)
+static int create_fixmap_slot(u64 addr, u64 cpu)
 {
 	struct kvm_pgtable_walker walker = {
-		.cb	= __pin_pgtable_cb,
+		.cb	= __create_fixmap_slot_cb,
 		.flags	= KVM_PGTABLE_WALK_LEAF,
+		.arg = (void *)cpu,
 	};
 
 	return kvm_pgtable_walk(&pkvm_pgtable, addr, PAGE_SIZE, &walker);
@@ -260,25 +291,14 @@ int hyp_create_pcpu_fixmap(void)
 		if (ret)
 			return ret;
 
-		/*
-		 * Create a dummy mapping, to get the intermediate page-table
-		 * pages allocated, then take a reference on the last level
-		 * page to keep it around at all times.
-		 */
 		ret = kvm_pgtable_hyp_map(&pkvm_pgtable, addr, PAGE_SIZE,
 					  __hyp_pa(__hyp_bss_start), PAGE_HYP);
 		if (ret)
 			return ret;
 
-		ret = hyp_pin_pgtable_pages(addr);
+		ret = create_fixmap_slot(addr, i);
 		if (ret)
 			return ret;
-
-		ret = kvm_pgtable_hyp_unmap(&pkvm_pgtable, addr, PAGE_SIZE);
-		if (ret != PAGE_SIZE)
-			return -EINVAL;
-
-		*per_cpu_ptr(&hyp_fixmap_base, i) = (void *)addr;
 	}
 
 	return 0;
