@@ -404,6 +404,12 @@ static int ht_show(struct seq_file *m, void *v)
 			seq_printf(m, "push_hyp_memcache: mc=0x%llx paddr=0x%llx nr_pages=%u\n",
 				evt->mc, evt->paddr, evt->nr_pages);
 			break;
+		} case HYP_EVT_COALESCED_BLOCK: {
+			struct trace_hyp_format_hyp_coalesced *evt =
+				(struct trace_hyp_format_hyp_coalesced *)&evt_raw->args;
+			seq_printf(m, "hyp_coalesced: start=0x%016llx end=0x%016llx level=%u\n",
+				   evt->addr, evt->end, evt->level);
+			break;
 		} default:
 			seq_printf(m, "UNKNOWN HYP EVENT ID:%d\n", evt_raw->id);
 	}

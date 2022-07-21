@@ -8,6 +8,8 @@
  */
 
 #include <linux/bitfield.h>
+
+#include <asm/kvm_hypevents.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/stage2_pgtable.h>
 
@@ -857,6 +859,11 @@ static int stage2_map_walk_table_post(u64 addr, u64 end, u32 level,
 	    kvm_level_supports_block_mapping(level)) {
 		stage2_put_pte(ptep, data->mmu, addr, level, mm_ops);
 		mm_ops->put_page(childp);
+#ifdef __KVM_NVHE_HYPERVISOR__
+		addr &= ~(kvm_granule_size(level) - 1);
+		end = addr + kvm_granule_size(level);
+		trace_hyp_hyp_coalesced(addr, end, level);
+#endif
 	}
 
 	return ret;

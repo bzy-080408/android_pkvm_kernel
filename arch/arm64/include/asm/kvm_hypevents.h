@@ -18,6 +18,7 @@ enum hyp_evt_id {
 	HYP_EVT_EXIT,
 	HYP_EVT_POP_MEMCACHE,
 	HYP_EVT_PUSH_MEMCACHE,
+	HYP_EVT_COALESCED_BLOCK,
 	__NUM_HYP_EVENTS,
 };
 #endif
@@ -74,5 +75,20 @@ HYP_EVENT(hyp_exit,
 	),
 	HE_ASSIGN(
 	)
+);
+
+HYP_EVENT(hyp_coalesced,
+	  HYP_EVT_COALESCED_BLOCK,
+	  HE_PROTO(u64 addr, u64 end, u32 level),
+	  HE_STRUCT(
+		    he_field(u64, addr)
+		    he_field(u64, end)
+		    he_field(u32, level)
+	  ),
+	  HE_ASSIGN(
+		    __entry->addr = addr;
+		    __entry->end  = end;
+		    __entry->level = level;
+	  )
 );
 #endif
