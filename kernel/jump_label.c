@@ -496,8 +496,6 @@ void __init jump_label_init(void)
 	cpus_read_unlock();
 }
 
-#ifdef CONFIG_MODULES
-
 static enum jump_label_type jump_label_init_type(struct jump_entry *entry)
 {
 	struct static_key *key = jump_entry_key(entry);
@@ -508,10 +506,52 @@ static enum jump_label_type jump_label_init_type(struct jump_entry *entry)
 	return type ^ branch;
 }
 
+struct jump_label_table {
+	struct jump_label_table *next;
+	struct jump_label_table_cb *cb;
+	struct jump_entry *start;
+	struct jump_entry *stop;
+	void *private;
+};
+
+/* The kernel is the default mod user */
+static struct jump_label_table jump_label_tables = {
+	.start = __start___jump_table,
+	.stop = __stop___jump_table,
+};
+
+static struct jump_label_table *jump_label_table_find(struct jump_entry *entry)
+{
+	struct jump_label_table *table = &jump_label_tables;
+
+	while (table) {
+		if (entry < table->stop && entry >= table->start)
+			break;
+		table = table->next;
+	}
+
+	return table;
+}
+
+static bool jump_label_table_owns_key(struct jump_label_table *table, unsigned long key)
+{
+	return table->cb && table->cb->owns_key && table->cb->owns_key(key, table->private);
+}
+
+static bool jump_label_table_init_sec(struct jump_label_table *table, unsigned long addr)
+{
+	return table->cb && table->cb->is_init_section && table->cb->is_init_section(addr, table->private);
+}
+
+static bool jump_label_table_init_state(struct jump_label_table *table)
+{
+	return table->cb && table->cb->is_init_section && table->cb->is_init_state(table->private);
+}
+
 struct static_key_mod {
 	struct static_key_mod *next;
 	struct jump_entry *entries;
-	struct module *mod;
+	struct jump_label_table *table;
 };
 
 static inline struct static_key_mod *static_key_mod(struct static_key *key)
@@ -537,6 +577,222 @@ static void static_key_set_mod(struct static_key *key,
 	key->type |= type;
 }
 
+static void __jump_label_mod_update(struct static_key *key)
+{
+	struct static_key_mod *mod;
+
+	for (mod = static_key_mod(key); mod; mod = mod->next) {
+		/*
+		 * NULL if the static_key is defined in a module
+		 * that does not use it
+		 */
+		if (!mod->entries)
+			continue;
+
+		__jump_label_update(key, mod->entries, mod->table->stop,
+				    jump_label_table_init_state(mod->table));
+	}
+}
+
+static int __jump_label_add_mod(struct jump_label_table *table)
+{
+	struct jump_entry *iter, *iter_start = table->start, *iter_stop = table->stop;
+	struct static_key_mod *jlm, *jlm2;
+	struct static_key *key = NULL;
+
+	jump_label_sort_entries(iter_start, iter_stop);
+
+	for (iter = iter_start; iter < iter_stop; iter++) {
+		struct static_key *iterk;
+		bool in_init = jump_label_table_init_sec(table, jump_entry_code(iter));
+
+		jump_entry_set_init(iter, in_init);
+
+		iterk = jump_entry_key(iter);
+		if (iterk == key)
+			continue;
+
+		key = iterk;
+
+		/* The table own the key. Fold entries within */
+		if (jump_label_table_owns_key(table, (unsigned long)key)) {
+			static_key_set_entries(key, iter);
+			continue;
+		}
+
+		jlm = kzalloc(sizeof(struct static_key_mod), GFP_KERNEL);
+		if (!jlm)
+			return -ENOMEM;
+
+		/* Find the table and unfold the static key */
+		if (!static_key_linked(key)) {
+			struct jump_entry *ent = static_key_entries(key);
+			struct jump_label_table *tb = jump_label_table_find(ent);
+
+			if (!table) {
+				kfree(jlm);
+				WARN(1, "Cannot unfold static key");
+				return -ENODEV;
+			}
+
+			jlm2 = kzalloc(sizeof(struct static_key_mod),
+				       GFP_KERNEL);
+			if (!jlm2) {
+				kfree(jlm);
+				return -ENOMEM;
+			}
+
+			jlm2->entries = ent;
+			jlm2->table = tb;
+			static_key_set_mod(key, jlm2);
+			static_key_set_linked(key);
+		}
+
+		jlm->table = table;
+		jlm->entries = iter;
+		jlm->next = static_key_mod(key);
+		static_key_set_mod(key, jlm);
+		static_key_set_linked(key);
+
+		/* Only update if we've changed from our initial state */
+		if (jump_label_type(iter) != jump_label_init_type(iter))
+			__jump_label_update(key, iter, iter_stop, true);
+	}
+
+	return 0;
+}
+
+int __jump_label_add_table(struct jump_entry *iter_start,
+			   struct jump_entry *iter_stop,
+			   struct jump_label_table_cb *cb,
+			   void *private)
+{
+	struct jump_label_table *tail = &jump_label_tables;
+	struct jump_label_table *table;
+	int err;
+
+	/* if the module doesn't have jump label entries, just return */
+	if (iter_start == iter_stop)
+		return 0;
+
+	while (tail->next) {
+		if (tail->stop == iter_stop) {
+			WARN(1, "The jump table has already been registered.");
+			return -EINVAL;
+		}
+		tail = tail->next;
+	}
+
+	table = kzalloc(sizeof(*table), GFP_KERNEL);
+	if (!table)
+		return -ENOMEM;
+
+	table->private = private;
+	table->cb = cb;
+	table->start = iter_start;
+	table->stop = iter_stop;
+
+	tail->next = table;
+
+	err = __jump_label_add_mod(table);
+	if (err) {
+		kfree(table);
+		tail->next = NULL;
+	}
+
+	return err;
+}
+
+static void __jump_label_del_mod(struct jump_label_table *table)
+{
+	struct jump_entry *iter, *iter_start = table->start, *iter_stop = table->stop;
+	struct static_key_mod *jlm, **prev;
+	struct static_key *key = NULL;
+
+	for (iter = iter_start; iter < iter_stop; iter++) {
+		if (jump_entry_key(iter) == key)
+			continue;
+
+		key = jump_entry_key(iter);
+
+		if (jump_label_table_owns_key(table, (unsigned long)key))
+			continue;
+
+		if (WARN_ON(!static_key_linked(key)))
+			continue;
+
+		prev = &key->next;
+		jlm = static_key_mod(key);
+
+		while (jlm && jlm->table->start != iter_start) {
+			prev = &jlm->next;
+			jlm = jlm->next;
+		}
+
+		/* No memory during module load */
+		if (WARN_ON(!jlm))
+			continue;
+
+		if (prev == &key->next)
+			static_key_set_mod(key, jlm->next);
+		else
+			*prev = jlm->next;
+
+		kfree(jlm);
+
+		jlm = static_key_mod(key);
+		/* if only one etry is left, fold it back into the static_key */
+		if (jlm->next == NULL) {
+			static_key_set_entries(key, jlm->entries);
+			static_key_clear_linked(key);
+			kfree(jlm);
+		}
+	}
+}
+
+void __jump_label_del_table(struct jump_entry *start, struct jump_label_table_cb **cb)
+{
+	struct jump_label_table *table, *prev;
+
+	prev = table = &jump_label_tables;
+
+	while (table) {
+		if (table->start == start)
+			break;
+		prev = table;
+		table = table->next;
+	}
+
+	if (!table || table == &jump_label_tables)
+		return;
+
+	prev->next = table->next;
+
+	__jump_label_del_mod(table);
+
+	if (cb)
+		*cb = table->cb;
+
+	kfree(table);
+}
+
+void __jump_label_apply_nops(struct jump_entry *iter_start,
+			     struct jump_entry *iter_stop)
+{
+	struct jump_entry *iter;
+
+	/* if the table doesn't have jump label entries, just return */
+	if (iter_start == iter_stop)
+		return;
+
+	for (iter = iter_start; iter < iter_stop; iter++) {
+		/* Only write NOPs for arch_branch_static(). */
+		if (jump_label_init_type(iter) == JUMP_LABEL_NOP)
+			arch_jump_label_transform_static(iter, JUMP_LABEL_NOP);
+	}
+}
+
+#ifdef CONFIG_MODULES
 static int __jump_label_mod_text_reserved(void *start, void *end)
 {
 	struct module *mod;
@@ -561,31 +817,6 @@ static int __jump_label_mod_text_reserved(void *start, void *end)
 	return ret;
 }
 
-static void __jump_label_mod_update(struct static_key *key)
-{
-	struct static_key_mod *mod;
-
-	for (mod = static_key_mod(key); mod; mod = mod->next) {
-		struct jump_entry *stop;
-		struct module *m;
-
-		/*
-		 * NULL if the static_key is defined in a module
-		 * that does not use it
-		 */
-		if (!mod->entries)
-			continue;
-
-		m = mod->mod;
-		if (!m)
-			stop = __stop___jump_table;
-		else
-			stop = m->jump_entries + m->num_jump_entries;
-		__jump_label_update(key, mod->entries, stop,
-				    m && m->state == MODULE_STATE_COMING);
-	}
-}
-
 /***
  * apply_jump_label_nops - patch module jump labels with arch_get_jump_label_nop()
  * @mod: module to patch
@@ -598,129 +829,44 @@ void jump_label_apply_nops(struct module *mod)
 {
 	struct jump_entry *iter_start = mod->jump_entries;
 	struct jump_entry *iter_stop = iter_start + mod->num_jump_entries;
-	struct jump_entry *iter;
 
-	/* if the module doesn't have jump label entries, just return */
-	if (iter_start == iter_stop)
-		return;
-
-	for (iter = iter_start; iter < iter_stop; iter++) {
-		/* Only write NOPs for arch_branch_static(). */
-		if (jump_label_init_type(iter) == JUMP_LABEL_NOP)
-			arch_jump_label_transform_static(iter, JUMP_LABEL_NOP);
-	}
+	__jump_label_apply_nops(iter_start, iter_stop);
 }
+
+static bool __module_is_init_state(void *param)
+{
+	return ((struct module *)param)->state == MODULE_STATE_COMING;
+}
+
+static bool __module_is_init_section(unsigned long addr, void *param)
+{
+	return within_module_init(addr, (struct module *)param);
+}
+
+static bool __module_owns_key(unsigned long key_addr, void *param)
+{
+	return within_module(key_addr, (struct module *)param);
+}
+
+static struct jump_label_table_cb __module_cb = {
+	.is_init_state   = __module_is_init_state,
+	.is_init_section = __module_is_init_section,
+	.owns_key        = __module_owns_key,
+};
 
 static int jump_label_add_module(struct module *mod)
 {
 	struct jump_entry *iter_start = mod->jump_entries;
 	struct jump_entry *iter_stop = iter_start + mod->num_jump_entries;
-	struct jump_entry *iter;
-	struct static_key *key = NULL;
-	struct static_key_mod *jlm, *jlm2;
 
-	/* if the module doesn't have jump label entries, just return */
-	if (iter_start == iter_stop)
-		return 0;
-
-	jump_label_sort_entries(iter_start, iter_stop);
-
-	for (iter = iter_start; iter < iter_stop; iter++) {
-		struct static_key *iterk;
-		bool in_init;
-
-		in_init = within_module_init(jump_entry_code(iter), mod);
-		jump_entry_set_init(iter, in_init);
-
-		iterk = jump_entry_key(iter);
-		if (iterk == key)
-			continue;
-
-		key = iterk;
-		if (within_module((unsigned long)key, mod)) {
-			static_key_set_entries(key, iter);
-			continue;
-		}
-		jlm = kzalloc(sizeof(struct static_key_mod), GFP_KERNEL);
-		if (!jlm)
-			return -ENOMEM;
-		if (!static_key_linked(key)) {
-			jlm2 = kzalloc(sizeof(struct static_key_mod),
-				       GFP_KERNEL);
-			if (!jlm2) {
-				kfree(jlm);
-				return -ENOMEM;
-			}
-			preempt_disable();
-			jlm2->mod = __module_address((unsigned long)key);
-			preempt_enable();
-			jlm2->entries = static_key_entries(key);
-			jlm2->next = NULL;
-			static_key_set_mod(key, jlm2);
-			static_key_set_linked(key);
-		}
-		jlm->mod = mod;
-		jlm->entries = iter;
-		jlm->next = static_key_mod(key);
-		static_key_set_mod(key, jlm);
-		static_key_set_linked(key);
-
-		/* Only update if we've changed from our initial state */
-		if (jump_label_type(iter) != jump_label_init_type(iter))
-			__jump_label_update(key, iter, iter_stop, true);
-	}
-
-	return 0;
+	return __jump_label_add_table(iter_start, iter_stop, &__module_cb, mod);
 }
 
 static void jump_label_del_module(struct module *mod)
 {
 	struct jump_entry *iter_start = mod->jump_entries;
-	struct jump_entry *iter_stop = iter_start + mod->num_jump_entries;
-	struct jump_entry *iter;
-	struct static_key *key = NULL;
-	struct static_key_mod *jlm, **prev;
 
-	for (iter = iter_start; iter < iter_stop; iter++) {
-		if (jump_entry_key(iter) == key)
-			continue;
-
-		key = jump_entry_key(iter);
-
-		if (within_module((unsigned long)key, mod))
-			continue;
-
-		/* No memory during module load */
-		if (WARN_ON(!static_key_linked(key)))
-			continue;
-
-		prev = &key->next;
-		jlm = static_key_mod(key);
-
-		while (jlm && jlm->mod != mod) {
-			prev = &jlm->next;
-			jlm = jlm->next;
-		}
-
-		/* No memory during module load */
-		if (WARN_ON(!jlm))
-			continue;
-
-		if (prev == &key->next)
-			static_key_set_mod(key, jlm->next);
-		else
-			*prev = jlm->next;
-
-		kfree(jlm);
-
-		jlm = static_key_mod(key);
-		/* if only one etry is left, fold it back into the static_key */
-		if (jlm->next == NULL) {
-			static_key_set_entries(key, jlm->entries);
-			static_key_clear_linked(key);
-			kfree(jlm);
-		}
-	}
+	__jump_label_del_table(iter_start, NULL);
 }
 
 static int
@@ -795,29 +941,34 @@ int jump_label_text_reserved(void *start, void *end)
 
 static void jump_label_update(struct static_key *key)
 {
-	struct jump_entry *stop = __stop___jump_table;
 	bool init = system_state < SYSTEM_RUNNING;
+	struct jump_label_table *table;
 	struct jump_entry *entry;
-#ifdef CONFIG_MODULES
-	struct module *mod;
 
 	if (static_key_linked(key)) {
 		__jump_label_mod_update(key);
 		return;
 	}
 
-	preempt_disable();
-	mod = __module_address((unsigned long)key);
-	if (mod) {
-		stop = mod->jump_entries + mod->num_jump_entries;
-		init = mod->state == MODULE_STATE_COMING;
-	}
-	preempt_enable();
-#endif
 	entry = static_key_entries(key);
 	/* if there are no users, entry can be NULL */
-	if (entry)
-		__jump_label_update(key, entry, stop, init);
+	if (entry) {
+		table = jump_label_table_find(entry);
+
+		if (!table) {
+			WARN(1, "Couldn't find jump_label_table");
+			return;
+		}
+
+		/*
+		 * Treat the in-kernel table as a special case to not have to
+		 * create a callback struct.
+		 */
+		if (table != &jump_label_tables)
+			init = jump_label_table_init_state(table);
+
+		__jump_label_update(key, entry, table->stop, init);
+	}
 }
 
 #ifdef CONFIG_STATIC_KEYS_SELFTEST
