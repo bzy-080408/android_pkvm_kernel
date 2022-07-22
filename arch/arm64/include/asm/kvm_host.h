@@ -51,6 +51,12 @@
 #define KVM_DIRTY_LOG_MANUAL_CAPS   (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE | \
 				     KVM_DIRTY_LOG_INITIALLY_SET)
 
+#define KVM_HAVE_MMU_RWLOCK
+
+#ifdef __KVM_NVHE_HYPERVISOR__
+#include <asm/kvm_hypevents.h>
+#endif
+
 /*
  * Mode of operation configurable with kvm-arm.mode early param.
  * See Documentation/admin-guide/kernel-parameters.txt for more information.
@@ -83,6 +89,9 @@ static inline void push_hyp_memcache(struct kvm_hyp_memcache *mc,
 	*p = mc->head;
 	mc->head = to_pa(p);
 	mc->nr_pages++;
+#ifdef __KVM_NVHE_HYPERVISOR__
+	trace_hyp_push_hyp_memcache((u64)mc, to_pa(p), mc->nr_pages);
+#endif
 }
 
 static inline void *pop_hyp_memcache(struct kvm_hyp_memcache *mc,
@@ -90,6 +99,9 @@ static inline void *pop_hyp_memcache(struct kvm_hyp_memcache *mc,
 {
 	phys_addr_t *p = to_va(mc->head);
 
+#ifdef __KVM_NVHE_HYPERVISOR__
+	trace_hyp_pop_hyp_memcache((u64)mc, mc->head, mc->nr_pages - 1);
+#endif
 	if (!mc->nr_pages)
 		return NULL;
 
@@ -125,7 +137,7 @@ static inline void __free_hyp_memcache(struct kvm_hyp_memcache *mc,
 		free_fn(pop_hyp_memcache(mc, to_va), arg);
 }
 
-void free_hyp_memcache(struct kvm_hyp_memcache *mc);
+void free_hyp_memcache(struct kvm_hyp_memcache *mc, struct kvm *kvm);
 int topup_hyp_memcache(struct kvm_vcpu *vcpu);
 
 struct kvm_vmid {
@@ -160,8 +172,9 @@ struct kvm_arch_memory_slot {
 };
 
 struct kvm_pinned_page {
-	struct list_head	link;
+	struct rb_node		node;
 	struct page		*page;
+	u64			ipa;
 };
 
 struct kvm_protected_vm {
@@ -169,7 +182,7 @@ struct kvm_protected_vm {
 	int shadow_handle;
 	struct mutex shadow_lock;
 	struct kvm_hyp_memcache teardown_mc;
-	struct list_head pinned_pages;
+	struct rb_root pinned_pages;
 	gpa_t pvmfw_load_addr;
 };
 
@@ -338,14 +351,8 @@ struct kvm_cpu_context {
 	struct kvm_vcpu *__hyp_running_vcpu;
 };
 
-struct kvm_pmu_events {
-	u32 events_host;
-	u32 events_guest;
-};
-
 struct kvm_host_data {
 	struct kvm_cpu_context host_ctxt;
-	struct kvm_pmu_events pmu_events;
 };
 
 struct kvm_host_psci_config {
@@ -717,6 +724,8 @@ static inline void vcpu_arch_write_sys_reg(struct kvm_vcpu_arch *vcpu_arch, u64 
 
 struct kvm_vm_stat {
 	ulong remote_tlb_flush;
+	atomic64_t nvhe_mem;
+	atomic64_t nvhe_mem_peak;
 };
 
 struct kvm_vcpu_stat {
@@ -887,6 +896,27 @@ void kvm_arm_vcpu_init_debug(struct kvm_vcpu *vcpu);
 void kvm_arm_setup_debug(struct kvm_vcpu *vcpu);
 void kvm_arm_clear_debug(struct kvm_vcpu *vcpu);
 void kvm_arm_reset_debug_ptr(struct kvm_vcpu *vcpu);
+
+static inline void vcpu_arch_save_guest_debug_regs(struct kvm_vcpu_arch *vcpu_arch)
+{
+	u64 val = vcpu_arch_read_sys_reg(vcpu_arch, MDSCR_EL1);
+
+	vcpu_arch->guest_debug_preserved.mdscr_el1 = val;
+}
+
+static inline void vcpu_arch_restore_guest_debug_regs(struct kvm_vcpu_arch *vcpu_arch)
+{
+	u64 val = vcpu_arch->guest_debug_preserved.mdscr_el1;
+
+	vcpu_arch_write_sys_reg(vcpu_arch, val, MDSCR_EL1);
+}
+
+#define __vcpu_save_guest_debug_regs(vcpu) vcpu_arch_save_guest_debug_regs(&((vcpu)->arch))
+#define __vcpu_restore_guest_debug_regs(vcpu) vcpu_arch_restore_guest_debug_regs(&((vcpu)->arch))
+
+#define kvm_vcpu_needs_debug_regs(vcpu)		\
+	(!!((vcpu)->guest_debug))
+
 int kvm_arm_vcpu_arch_set_attr(struct kvm_vcpu *vcpu,
 			       struct kvm_device_attr *attr);
 int kvm_arm_vcpu_arch_get_attr(struct kvm_vcpu *vcpu,
@@ -917,9 +947,6 @@ void kvm_arch_vcpu_put_debug_state_flags(struct kvm_vcpu *vcpu);
 #ifdef CONFIG_KVM
 void kvm_set_pmu_events(u32 set, struct perf_event_attr *attr);
 void kvm_clr_pmu_events(u32 clr);
-
-void kvm_vcpu_pmu_restore_guest(struct kvm_vcpu *vcpu);
-void kvm_vcpu_pmu_restore_host(struct kvm_vcpu *vcpu);
 #else
 static inline void kvm_set_pmu_events(u32 set, struct perf_event_attr *attr) {}
 static inline void kvm_clr_pmu_events(u32 clr) {}
@@ -947,16 +974,16 @@ bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 #define kvm_has_mte(kvm)					\
 	(system_supports_mte() &&				\
 	 test_bit(KVM_ARCH_FLAG_MTE_ENABLED, &(kvm)->arch.flags))
-#define kvm_vcpu_has_pmu(vcpu)					\
-	(test_bit(KVM_ARM_VCPU_PMU_V3, (vcpu)->arch.features))
 
 int kvm_trng_call(struct kvm_vcpu *vcpu);
 #ifdef CONFIG_KVM
 extern phys_addr_t hyp_mem_base;
 extern phys_addr_t hyp_mem_size;
 void __init kvm_hyp_reserve(void);
+void __init hyp_trace_buf_preallocate(void);
 #else
 static inline void kvm_hyp_reserve(void) { }
+static inline void hyp_trace_buf_preallocate(void) { }
 #endif
 
 #endif /* __ARM64_KVM_HOST_H__ */

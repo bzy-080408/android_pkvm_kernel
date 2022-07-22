@@ -121,7 +121,7 @@ void __init kvm_hyp_reserve(void)
 static int __create_el2_shadow(struct kvm *kvm)
 {
 	struct kvm_vcpu *vcpu, **vcpu_array;
-	size_t pgd_sz, shadow_sz;
+	size_t pgd_sz, shadow_sz, total_sz;
 	void *pgd, *shadow_addr;
 	unsigned long idx;
 	int shadow_handle;
@@ -163,6 +163,10 @@ static int __create_el2_shadow(struct kvm *kvm)
 
 	shadow_handle = ret;
 
+	total_sz = shadow_sz + pgd_sz;
+	atomic64_set(&kvm->stat.nvhe_mem, total_sz);
+	atomic64_set(&kvm->stat.nvhe_mem_peak, total_sz);
+
 	/* Store the shadow handle given by hyp for future call reference. */
 	kvm->arch.pkvm.shadow_handle = shadow_handle;
 
@@ -189,27 +193,72 @@ int create_el2_shadow(struct kvm *kvm)
 
 void kvm_shadow_destroy(struct kvm *kvm)
 {
-	struct kvm_pinned_page *ppage, *tmp;
+	struct kvm_pinned_page *ppage;
 	struct mm_struct *mm = current->mm;
-	struct list_head *ppages;
+	struct rb_node *node;
 
 	if (kvm->arch.pkvm.shadow_handle)
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_shadow,
 					  kvm->arch.pkvm.shadow_handle));
 
-	free_hyp_memcache(&kvm->arch.pkvm.teardown_mc);
+	free_hyp_memcache(&kvm->arch.pkvm.teardown_mc, kvm);
 
-	ppages = &kvm->arch.pkvm.pinned_pages;
-	list_for_each_entry_safe(ppage, tmp, ppages, link) {
+	node = rb_first(&kvm->arch.pkvm.pinned_pages);
+	while (node) {
+		ppage = rb_entry(node, struct kvm_pinned_page, node);
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
 					  page_to_pfn(ppage->page)));
 		cond_resched();
 
 		account_locked_vm(mm, 1, false);
 		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
-		list_del(&ppage->link);
+		node = rb_next(node);
+		rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
 		kfree(ppage);
 	}
+}
+
+static struct kvm_pinned_page *ppage_find(struct rb_root *root, phys_addr_t ipa)
+{
+	struct rb_node *node = root->rb_node;
+
+	while (node) {
+		struct kvm_pinned_page *ppage = container_of(
+			node, struct kvm_pinned_page, node);
+
+		if (ipa < ppage->ipa)
+			node = node->rb_left;
+		else if (ipa > ppage->ipa)
+			node = node->rb_right;
+		else
+			return ppage;
+	}
+	return NULL;
+}
+
+void kvm_shadow_reclaim_one(struct kvm *kvm, phys_addr_t ipa)
+{
+	struct kvm_pinned_page *ppage;
+	struct mm_struct *mm = current->mm;
+
+	/* XXX Does this *all* need to be done under a higher-level lock? */
+
+	spin_lock(&kvm->mmu_lock);
+	ppage = ppage_find(&kvm->arch.pkvm.pinned_pages, ipa);
+	if (ppage)
+		rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
+	spin_unlock(&kvm->mmu_lock);
+
+	WARN_ON(!ppage);
+	if (!ppage)
+		return;
+
+	WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
+				  page_to_pfn(ppage->page)));
+
+	account_locked_vm(mm, 1, false);
+	unpin_user_pages_dirty_lock(&ppage->page, 1, true);
+	kfree(ppage);
 }
 
 static int __init pkvm_firmware_rmem_err(struct reserved_mem *rmem,

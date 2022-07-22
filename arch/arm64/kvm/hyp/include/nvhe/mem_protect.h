@@ -71,6 +71,7 @@ int __pkvm_host_share_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu);
 int __pkvm_host_donate_guest(u64 pfn, u64 gfn, struct kvm_vcpu *vcpu);
 int __pkvm_guest_share_host(struct kvm_vcpu *vcpu, u64 ipa);
 int __pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, u64 ipa);
+phys_addr_t __pkvm_guest_relinquish_to_host(struct kvm_vcpu *vcpu, u64 ipa);
 int __pkvm_host_share_ffa(u64 pfn, u64 nr_pages);
 int __pkvm_host_unshare_ffa(u64 pfn, u64 nr_pages);
 int __pkvm_install_ioguard_page(struct kvm_vcpu *vcpu, u64 ipa);
@@ -82,6 +83,7 @@ int host_stage2_idmap_locked(phys_addr_t addr, u64 size, enum kvm_pgtable_prot p
 			     bool update_iommu);
 int host_stage2_set_owner_locked(phys_addr_t addr, u64 size, pkvm_id owner_id);
 int host_stage2_unmap_dev_locked(phys_addr_t start, u64 size);
+int host_stage2_wrprotect(u64 addr, u64 size);
 int kvm_host_prepare_stage2(void *pgt_pool_base);
 int kvm_guest_prepare_stage2(struct kvm_shadow_vm *vm, void *pgd);
 void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt);

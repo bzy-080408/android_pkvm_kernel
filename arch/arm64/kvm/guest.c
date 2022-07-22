@@ -42,6 +42,8 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT("exits", exits),
 	VCPU_STAT("halt_poll_success_ns", halt_poll_success_ns),
 	VCPU_STAT("halt_poll_fail_ns", halt_poll_fail_ns),
+	VM_STAT("nvhe_mem", nvhe_mem),
+	VM_STAT("nvhe_mem_peak", nvhe_mem),
 	{ NULL }
 };
 

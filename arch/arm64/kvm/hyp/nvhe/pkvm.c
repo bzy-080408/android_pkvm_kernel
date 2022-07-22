@@ -169,9 +169,6 @@ static void pvm_init_traps_aa64mmfr1(struct kvm_vcpu *vcpu)
  */
 static void pvm_init_trap_regs(struct kvm_vcpu *vcpu)
 {
-	vcpu->arch.cptr_el2 = CPTR_EL2_DEFAULT;
-	vcpu->arch.mdcr_el2 = 0;
-
 	/*
 	 * Always trap:
 	 * - Feature id registers: to control features exposed to guests
@@ -197,14 +194,23 @@ static void pvm_init_trap_regs(struct kvm_vcpu *vcpu)
 /*
  * Initialize trap register values for protected VMs.
  */
-static void pkvm_vcpu_init_traps(struct kvm_vcpu *vcpu)
+static void pkvm_vcpu_init_traps(struct kvm_vcpu *shadow_vcpu, struct kvm_vcpu *host_vcpu)
 {
-	pvm_init_trap_regs(vcpu);
-	pvm_init_traps_aa64pfr0(vcpu);
-	pvm_init_traps_aa64pfr1(vcpu);
-	pvm_init_traps_aa64dfr0(vcpu);
-	pvm_init_traps_aa64mmfr0(vcpu);
-	pvm_init_traps_aa64mmfr1(vcpu);
+	shadow_vcpu->arch.cptr_el2 = CPTR_EL2_DEFAULT;
+	shadow_vcpu->arch.mdcr_el2 = 0;
+
+	if (!vcpu_is_protected(shadow_vcpu)) {
+		shadow_vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS |
+					    READ_ONCE(host_vcpu->arch.hcr_el2);
+		return;
+	}
+
+	pvm_init_trap_regs(shadow_vcpu);
+	pvm_init_traps_aa64pfr0(shadow_vcpu);
+	pvm_init_traps_aa64pfr1(shadow_vcpu);
+	pvm_init_traps_aa64dfr0(shadow_vcpu);
+	pvm_init_traps_aa64mmfr0(shadow_vcpu);
+	pvm_init_traps_aa64mmfr1(shadow_vcpu);
 }
 
 /*
@@ -459,16 +465,17 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 			}
 		}
 
-		if (vm->arch.pkvm.enabled)
-			pkvm_vcpu_init_traps(shadow_vcpu);
-		kvm_reset_pvm_sys_regs(shadow_vcpu);
-
 		vm->vcpus[i] = shadow_vcpu;
 		shadow_state->vm = vm;
 
 		shadow_vcpu->arch.hw_mmu = &vm->arch.mmu;
 		shadow_vcpu->arch.pkvm.shadow_vm = vm;
 		shadow_vcpu->arch.power_off = true;
+		shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.vcpu_debug_state;
+
+		if (vm->arch.pkvm.enabled)
+			pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
+		kvm_reset_pvm_sys_regs(shadow_vcpu);
 
 		if (test_bit(KVM_ARM_VCPU_POWER_OFF, shadow_vcpu->arch.features)) {
 			shadow_vcpu->arch.pkvm.power_state = PSCI_0_2_AFFINITY_LEVEL_OFF;
@@ -1238,6 +1245,31 @@ out_guest_err:
 	return true;
 }
 
+static bool pkvm_memrelinquish_call(struct kvm_vcpu *vcpu)
+{
+	u64 ipa = smccc_get_arg1(vcpu);
+	u64 arg2 = smccc_get_arg2(vcpu);
+	u64 arg3 = smccc_get_arg3(vcpu);
+	phys_addr_t pa;
+
+	if (arg2 || arg3)
+		goto out_guest_err;
+
+	pa = __pkvm_guest_relinquish_to_host(vcpu, ipa);
+	if (pa != 0) {
+		/* Now pass to host. */
+		return false;
+	}
+
+	/* This was a NOP as no page was actually mapped at the IPA. */
+	smccc_set_retval(vcpu, 0, 0, 0, 0);
+	return true;
+
+out_guest_err:
+	smccc_set_retval(vcpu, SMCCC_RET_INVALID_PARAMETER, 0, 0, 0);
+	return true;
+}
+
 static bool pkvm_install_ioguard_page(struct kvm_vcpu *vcpu, u64 *exit_code)
 {
 	u32 retval = SMCCC_RET_SUCCESS;
@@ -1323,6 +1355,7 @@ bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_ENROLL);
 		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_MAP);
 		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MMIO_GUARD_UNMAP);
+		val[0] |= BIT(ARM_SMCCC_KVM_FUNC_MEM_RELINQUISH);
 		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MMIO_GUARD_ENROLL_FUNC_ID:
 		set_bit(KVM_ARCH_FLAG_MMIO_GUARD, &vcpu->arch.pkvm.shadow_vm->arch.flags);
@@ -1348,6 +1381,8 @@ bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 		return pkvm_memshare_call(vcpu, exit_code);
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
 		return pkvm_memunshare_call(vcpu);
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
+		return pkvm_memrelinquish_call(vcpu);
 	case ARM_SMCCC_TRNG_VERSION ... ARM_SMCCC_TRNG_RND32:
 	case ARM_SMCCC_TRNG_RND64:
 		if (smccc_trng_available)
@@ -1359,4 +1394,15 @@ bool kvm_handle_pvm_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
 
 	smccc_set_retval(vcpu, val[0], val[1], val[2], val[3]);
 	return true;
+}
+
+/* XXX This is used to hook the MEM_RELINQUISH hypercall only. */
+bool kvm_hyp_handle_hvc64(struct kvm_vcpu *vcpu, u64 *exit_code)
+{
+	u32 fn = smccc_get_function(vcpu);
+	switch (fn) {
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
+		return pkvm_memrelinquish_call(vcpu);
+	}
+	return false;
 }

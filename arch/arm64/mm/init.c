@@ -458,6 +458,7 @@ void __init bootmem_init(void)
 	dma_pernuma_cma_reserve();
 
 	kvm_hyp_reserve();
+	hyp_trace_buf_preallocate();
 
 	/*
 	 * sparse_init() tries to allocate memory from memblock, so must be

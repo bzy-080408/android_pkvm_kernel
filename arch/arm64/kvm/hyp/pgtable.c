@@ -46,6 +46,11 @@
 					 KVM_PTE_LEAF_ATTR_LO_S2_S2AP_W | \
 					 KVM_PTE_LEAF_ATTR_HI_S2_XN)
 
+#define KVM_INVALID_PTE_OWNER_MASK	GENMASK(9, 2)
+#define KVM_MAX_OWNER_ID		FIELD_MAX(KVM_INVALID_PTE_OWNER_MASK)
+
+#define DEFAULT_PTE_ATTR		(0x7FC)
+
 struct kvm_pgtable_walk_data {
 	struct kvm_pgtable		*pgt;
 	struct kvm_pgtable_walker	*walker;
@@ -55,6 +60,8 @@ struct kvm_pgtable_walk_data {
 };
 
 #define KVM_PHYS_INVALID (-1ULL)
+
+static bool stage2_pte_is_counted(kvm_pte_t pte);
 
 static bool kvm_phys_is_valid(u64 phys)
 {
@@ -147,7 +154,7 @@ static void kvm_set_table_pte(kvm_pte_t *ptep, kvm_pte_t *childp,
 	pte |= FIELD_PREP(KVM_PTE_TYPE, KVM_PTE_TYPE_TABLE);
 	pte |= KVM_PTE_VALID;
 
-	WARN_ON(kvm_pte_valid(old));
+	WARN_ON(stage2_pte_is_counted(old));
 	smp_store_release(ptep, pte);
 }
 
@@ -666,12 +673,12 @@ static bool stage2_pte_needs_update(kvm_pte_t old, kvm_pte_t new)
 
 static bool stage2_pte_is_counted(kvm_pte_t pte)
 {
-	/*
-	 * The refcount tracks valid entries as well as invalid entries if they
-	 * encode ownership of a page to another entity than the page-table
-	 * owner, whose id is 0.
-	 */
-	return !!pte;
+	if (kvm_pte_valid(pte) &&
+	    ((pte & KVM_PTE_LEAF_ATTR_LO) != DEFAULT_PTE_ATTR) &&
+	    ((pte & KVM_PTE_LEAF_ATTR_HI) != 0))
+		return true;
+
+	return pte != 0;
 }
 
 static void stage2_put_pte(kvm_pte_t *ptep, struct kvm_s2_mmu *mmu, u64 addr,
@@ -836,9 +843,6 @@ static int stage2_map_walk_table_post(u64 addr, u64 end, u32 level,
 	kvm_pte_t *childp;
 	int ret = 0;
 
-	if (!data->anchor)
-		return 0;
-
 	if (data->anchor == ptep) {
 		childp = data->childp;
 		data->anchor = NULL;
@@ -848,8 +852,12 @@ static int stage2_map_walk_table_post(u64 addr, u64 end, u32 level,
 		childp = kvm_pte_follow(*ptep, mm_ops);
 	}
 
-	mm_ops->put_page(childp);
-	mm_ops->put_page(ptep);
+	if (!data->anchor && !kvm_phys_is_valid(data->phys) &&
+	    data->annotation == 0 && mm_ops->page_count(childp) == 1 &&
+	    kvm_level_supports_block_mapping(level)) {
+		stage2_put_pte(ptep, data->mmu, addr, level, mm_ops);
+		mm_ops->put_page(childp);
+	}
 
 	return ret;
 }

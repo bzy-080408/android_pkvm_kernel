@@ -13,6 +13,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_host.h>
 #include <asm/kvm_hyp.h>
+#include <asm/kvm_hypevents.h>
 #include <asm/kvm_mmu.h>
 
 #include <nvhe/ffa.h>
@@ -21,6 +22,7 @@
 #include <nvhe/mm.h>
 #include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
+#include <nvhe/trace.h>
 
 #include <linux/irqchip/arm-gic-v3.h>
 #include <uapi/linux/psci.h>
@@ -108,8 +110,8 @@ static void handle_pvm_entry_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *
 		pkvm_refill_memcache(shadow_vcpu, host_vcpu);
 		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
-		fallthrough;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
 		vcpu_set_reg(shadow_vcpu, 0, SMCCC_RET_SUCCESS);
 		break;
 	default:
@@ -295,8 +297,8 @@ static void handle_pvm_exit_hvc64(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *s
 		break;
 
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
-		fallthrough;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
+	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_RELINQUISH_FUNC_ID:
 		n = 4;
 		break;
 
@@ -519,6 +521,60 @@ static void __flush_vcpu_state(struct kvm_vcpu *shadow_vcpu)
 	__copy_vcpu_state(host_vcpu, shadow_vcpu);
 }
 
+static void __flush_debug_state(struct pkvm_loaded_state *state)
+{
+	struct kvm_vcpu *shadow_vcpu = state->vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
+	u64 mdcr_el2 = READ_ONCE(host_vcpu->arch.mdcr_el2);
+
+	/*
+	 * Propagate the monitor debug configuration of the vcpu from host.
+	 * Preserve HPMN, which is set-up by some knowledgeable bootcode.
+	 * Ensure that MDCR_EL2_E2PB_MASK and MDCR_EL2_E2TB_MASK are clear,
+	 * as guests should not be able to access profiling and trace buffers.
+	 * Ensure that RES0 bits are clear.
+	 */
+	mdcr_el2 &= ~(MDCR_EL2_RES0 |
+		      MDCR_EL2_HPMN_MASK |
+	              (MDCR_EL2_E2PB_MASK << MDCR_EL2_E2PB_SHIFT) |
+	              (MDCR_EL2_E2TB_MASK << MDCR_EL2_E2TB_SHIFT));
+	shadow_vcpu->arch.mdcr_el2 = read_sysreg(mdcr_el2) & MDCR_EL2_HPMN_MASK;
+	shadow_vcpu->arch.mdcr_el2 |= mdcr_el2;
+
+	/* Propagate the debug control field of the vcpu from host. */
+	shadow_vcpu->guest_debug = READ_ONCE(host_vcpu->guest_debug);
+
+	/* Propagate PMU state. */
+	shadow_vcpu->arch.pmu = host_vcpu->arch.pmu;
+
+	/* Check if the debug registers are used. */
+	if (!kvm_vcpu_needs_debug_regs(shadow_vcpu))
+		return;
+
+	__vcpu_save_guest_debug_regs(shadow_vcpu);
+
+	/* Switch debug_ptr to the external_debug_state if done by the host. */
+	if (kern_hyp_va(READ_ONCE(host_vcpu->arch.debug_ptr)) == &host_vcpu->arch.external_debug_state)
+		shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.external_debug_state;
+
+	/* Propagate any special handling for single step from host. */
+	vcpu_write_sys_reg(shadow_vcpu, vcpu_read_sys_reg(host_vcpu, MDSCR_EL1), MDSCR_EL1);
+	*vcpu_cpsr(shadow_vcpu) = *vcpu_cpsr(host_vcpu);
+}
+
+static void __sync_debug_state(struct pkvm_loaded_state *state)
+{
+	struct kvm_vcpu *shadow_vcpu = state->vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_vcpu->arch.pkvm.host_vcpu;
+
+	/* Check if the debug registers are used. */
+	if (!kvm_vcpu_needs_debug_regs(shadow_vcpu))
+		return;
+
+	__vcpu_restore_guest_debug_regs(shadow_vcpu);
+	shadow_vcpu->arch.debug_ptr = &host_vcpu->arch.vcpu_debug_state;
+}
+
 static void flush_shadow_state(struct pkvm_loaded_state *state)
 {
 	struct kvm_vcpu *shadow_vcpu = state->vcpu;
@@ -535,11 +591,17 @@ static void flush_shadow_state(struct pkvm_loaded_state *state)
 	 * the shadow.
 	 */
 	if (!state->is_protected) {
-		if (READ_ONCE(host_vcpu->arch.flags) & KVM_ARM64_PKVM_STATE_DIRTY)
+		unsigned long host_flags = READ_ONCE(host_vcpu->arch.flags);
+
+		shadow_vcpu->arch.flags = host_flags;
+
+		if (host_flags & KVM_ARM64_PKVM_STATE_DIRTY)
 			__flush_vcpu_state(shadow_vcpu);
 
-		state->vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
-		state->vcpu->arch.hcr_el2 |= host_vcpu->arch.hcr_el2;
+		__flush_debug_state(state);
+
+		shadow_vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS & ~(HCR_RW | HCR_TWI | HCR_TWE);
+		shadow_vcpu->arch.hcr_el2 |= READ_ONCE(host_vcpu->arch.hcr_el2);
 	}
 
 	flush_vgic_state(host_vcpu, shadow_vcpu);
@@ -575,6 +637,9 @@ static void sync_shadow_state(struct pkvm_loaded_state *state, u32 exit_reason)
 	u8 esr_ec;
 	shadow_entry_exit_handler_fn ec_handler;
 
+	if (!state->is_protected)
+		__sync_debug_state(state);
+
 	/*
 	 * Don't sync the vcpu GPR/sysreg state after a run. Instead,
 	 * leave it in the shadow until someone actually requires it.
@@ -603,7 +668,11 @@ static void sync_shadow_state(struct pkvm_loaded_state *state, u32 exit_reason)
 		BUG();
 	}
 
-	host_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION | KVM_ARM64_INCREMENT_PC);
+	if (!state->is_protected)
+		host_vcpu->arch.flags = shadow_vcpu->arch.flags;
+	else
+		host_vcpu->arch.flags &= ~(KVM_ARM64_PENDING_EXCEPTION | KVM_ARM64_INCREMENT_PC);
+
 	shadow_vcpu->arch.pkvm.exit_code = exit_reason;
 }
 
@@ -1066,6 +1135,19 @@ static void handle___pkvm_iommu_finalize(struct kvm_cpu_context *host_ctxt)
 	cpu_reg(host_ctxt, 1) = __pkvm_iommu_finalize();
 }
 
+static void handle___pkvm_start_tracing(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(unsigned long, buf_va, host_ctxt, 1);
+	DECLARE_REG(unsigned int, order, host_ctxt, 2);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_start_tracing(buf_va, order);
+}
+
+static void handle___pkvm_stop_tracing(struct kvm_cpu_context *host_ctxt)
+{
+	__pkvm_stop_tracing();
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -1103,6 +1185,8 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_iommu_register),
 	HANDLE_FUNC(__pkvm_iommu_pm_notify),
 	HANDLE_FUNC(__pkvm_iommu_finalize),
+	HANDLE_FUNC(__pkvm_start_tracing),
+	HANDLE_FUNC(__pkvm_stop_tracing),
 };
 
 static inline u64 kernel__text_addr(void)
@@ -1194,7 +1278,10 @@ static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 
 void handle_trap(struct kvm_cpu_context *host_ctxt)
 {
+	DECLARE_REG(u64, x0, host_ctxt, 0);
 	u64 esr = read_sysreg_el2(SYS_ESR);
+
+	trace_hyp_hyp_enter(esr, x0, 0);
 
 	switch (ESR_ELx_EC(esr)) {
 	case ESR_ELx_EC_HVC64:
@@ -1214,4 +1301,6 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 	default:
 		BUG();
 	}
+
+	trace_hyp_hyp_exit();
 }
