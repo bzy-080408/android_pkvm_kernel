@@ -105,6 +105,10 @@ enum __kvm_host_smccc_func {
 	DECLARE_KVM_VHE_PER_CPU(type, sym);	\
 	DECLARE_KVM_NVHE_PER_CPU(type, sym)
 
+/* Shared per-cpu data between protected-nVHE and host */
+#define DEFINE_PER_CPU_NVHE_SHARED(type, name)				\
+	DEFINE_PER_CPU_SECTION(type, name, "..nvhe..shared")
+
 /*
  * Compute pointer to a symbol defined in nVHE percpu region.
  * Returns NULL if percpu memory has not been allocated yet.
@@ -204,6 +208,8 @@ DECLARE_KVM_HYP_SYM(__kvm_hyp_vector);
 extern unsigned long kvm_nvhe_sym(kvm_arm_hyp_percpu_base)[];
 DECLARE_KVM_NVHE_SYM(__per_cpu_start);
 DECLARE_KVM_NVHE_SYM(__per_cpu_end);
+DECLARE_KVM_NVHE_SYM(__per_cpu_nvhe_shared_start);
+DECLARE_KVM_NVHE_SYM(__per_cpu_nvhe_shared_end);
 
 DECLARE_KVM_HYP_SYM(__bp_harden_hyp_vecs);
 #define __bp_harden_hyp_vecs	CHOOSE_HYP_SYM(__bp_harden_hyp_vecs)

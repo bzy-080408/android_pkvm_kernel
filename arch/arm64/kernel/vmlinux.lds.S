@@ -36,6 +36,8 @@
 	. = ALIGN(PAGE_SIZE);					\
 	HYP_SECTION_NAME(.data..percpu) : {			\
 		*(HYP_SECTION_NAME(.data..percpu))		\
+		. = ALIGN(PAGE_SIZE);					\
+		*(HYP_SECTION_NAME(.data..percpu..nvhe..shared))	\
 	}
 
 #define HYPERVISOR_RELOC_SECTION				\

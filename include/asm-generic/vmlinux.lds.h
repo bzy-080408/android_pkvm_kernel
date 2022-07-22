@@ -1020,6 +1020,16 @@
 #define PERCPU_DECRYPTED_SECTION
 #endif
 
+/* Percpu data shared from protected nVHE to host */
+#ifdef CONFIG_KVM
+#define PERCPU_NVHE_SHARED_SECTION					\
+	. = ALIGN(PAGE_SIZE);						\
+	__per_cpu_nvhe_shared_start = .;				\
+	*(.data..percpu..nvhe..shared)					\
+	__per_cpu_nvhe_shared_end = .;
+#else
+#define PERCPU_NVHE_SHARED_SECTION
+#endif
 
 /*
  * Default discarded sections.
@@ -1094,6 +1104,7 @@
 	*(.data..percpu)						\
 	*(.data..percpu..shared_aligned)				\
 	PERCPU_DECRYPTED_SECTION					\
+	PERCPU_NVHE_SHARED_SECTION					\
 	__per_cpu_end = .;
 
 /**

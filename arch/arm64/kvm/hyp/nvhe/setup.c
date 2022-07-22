@@ -27,6 +27,12 @@ phys_addr_t pvmfw_size;
 
 #define hyp_percpu_size ((unsigned long)__per_cpu_end - \
 			 (unsigned long)__per_cpu_start)
+#define hyp_percpu_shared_size ((unsigned long)__per_cpu_nvhe_shared_end - \
+				(unsigned long)__per_cpu_nvhe_shared_start)
+#define hyp_percpu_shared_base(cpu)			\
+	((unsigned long)kern_hyp_va(per_cpu_base[cpu])	\
+	+ (unsigned long)__per_cpu_nvhe_shared_start	\
+	- (unsigned long)__per_cpu_start)
 
 static void *vmemmap_base;
 static void *shadow_table_base;
@@ -119,11 +125,25 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 		return ret;
 
 	for (i = 0; i < hyp_nr_cpus; i++) {
+		/* Map the private nVHE per-cpu data */
 		start = (void *)kern_hyp_va(per_cpu_base[i]);
-		end = start + PAGE_ALIGN(hyp_percpu_size);
+		end = start + PAGE_ALIGN(hyp_percpu_size - hyp_percpu_shared_size);
 		ret = pkvm_create_mappings(start, end, PAGE_HYP);
 		if (ret)
 			return ret;
+
+		/*
+		 * Map the shared per-cpu data and transfer ownership to the
+		 * hypervisor
+		 */
+		start = (void *)hyp_percpu_shared_base(i);
+		end = start + PAGE_ALIGN(hyp_percpu_shared_size);
+		prot = pkvm_mkstate(PAGE_HYP, PKVM_PAGE_SHARED_OWNED);
+		ret = pkvm_create_mappings(start, end, prot);
+		if (ret)
+			return ret;
+
+
 
 		end = (void *)per_cpu_ptr(&kvm_init_params, i)->stack_hyp_va;
 		start = end - PAGE_SIZE;
