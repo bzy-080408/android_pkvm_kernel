@@ -254,6 +254,18 @@ extern void static_key_disable(struct static_key *key);
 extern void static_key_enable_cpuslocked(struct static_key *key);
 extern void static_key_disable_cpuslocked(struct static_key *key);
 
+struct jump_label_table_cb {
+	bool (*is_init_state)(void *);
+	bool (*is_init_section)(unsigned long, void *);
+	bool (*owns_key)(unsigned long, void*);
+};
+
+extern int __jump_label_add_table(struct jump_entry *start, struct jump_entry *stop,
+				  struct jump_label_table_cb *cb,
+				  void *private);
+extern void __jump_label_del_table(struct jump_entry *start, struct jump_label_table_cb **cb);
+extern void __jump_label_apply_nops(struct jump_entry *start, struct jump_entry *stop);
+
 /*
  * We should be using ATOMIC_INIT() for initializing .enabled, but
  * the inclusion of atomic.h is problematic for inclusion of jump_label.h
