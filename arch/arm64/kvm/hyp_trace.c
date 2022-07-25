@@ -532,6 +532,8 @@ static void hyp_create_events_debugfs(struct dentry *parent)
 #define HYP_EVENT(__name, __id, __proto, __struct, __assign) \
 	debugfs_create_file(#__name, 0700, d, (void *)__id, &hyp_events_fops)
 
+	debugfs_create_file("do_not_press", 0700, d, (void *)HYP_DO_NOT_PRESS, &hyp_events_fops);
+
 #include <asm/kvm_hypevents.h>
 }
 

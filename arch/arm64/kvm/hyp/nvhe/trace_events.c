@@ -33,6 +33,9 @@ int __pkvm_start_tracing(unsigned long kern_va, unsigned int first_buf_order)
 	if (err)
 		return err;
 
+	if (args->events & (1 << HYP_DO_NOT_PRESS))
+		asm volatile("sub	sp, sp, #4096\n");
+
 	enable_hyp_events(args->events);
 
 	return __hyp_trace_rb_start(args);
