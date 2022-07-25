@@ -25,11 +25,11 @@ enum hyp_evt_id {
 
 HYP_EVENT(pop_hyp_memcache,
 	HYP_EVT_POP_MEMCACHE,
-	HE_PROTO(u64 mc, u64 paddr, u8 nr_pages),
+	HE_PROTO(u64 mc, u64 paddr, u64 nr_pages),
 	HE_STRUCT(
 		he_field(u64, mc)
 		he_field(u64, paddr)
-		he_field(u8, nr_pages)
+		he_field(u64, nr_pages)
 	),
 	HE_ASSIGN(
 		__entry->mc = mc;
@@ -40,11 +40,11 @@ HYP_EVENT(pop_hyp_memcache,
 
 HYP_EVENT(push_hyp_memcache,
 	HYP_EVT_PUSH_MEMCACHE,
-	HE_PROTO(u64 mc, u64 paddr, u8 nr_pages),
+	HE_PROTO(u64 mc, u64 paddr, u64 nr_pages),
 	HE_STRUCT(
 		he_field(u64, mc)
 		he_field(u64, paddr)
-		he_field(u8, nr_pages)
+		he_field(u64, nr_pages)
 	),
 	HE_ASSIGN(
 		__entry->mc = mc;
