@@ -2013,3 +2013,17 @@ void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 
 	trace_kvm_toggle_cache(*vcpu_pc(vcpu), was_enabled, now_enabled);
 }
+
+void kvm_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
+{
+	gpa_t gpa = gfn_start << PAGE_SHIFT;
+	phys_addr_t size = (gfn_end - gfn_start) << PAGE_SHIFT;
+
+	/* TODO. */
+	if (is_protected_kvm_enabled())
+		return;
+
+	write_lock(&kvm->mmu_lock);
+	unmap_stage2_range(&kvm->arch.mmu, gpa, size);
+	write_unlock(&kvm->mmu_lock);
+}
