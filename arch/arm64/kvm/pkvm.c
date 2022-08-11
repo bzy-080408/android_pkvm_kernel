@@ -197,6 +197,8 @@ void kvm_shadow_destroy(struct kvm *kvm)
 	struct kvm_pinned_page *ppage, *tmp;
 	struct mm_struct *mm = current->mm;
 	struct list_head *ppages;
+	struct list_head *fd_pages;
+	struct kvm_private_fd_page *fd_page, *tmp_fd;
 
 	if (kvm->arch.pkvm.shadow_handle)
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_shadow,
@@ -215,6 +217,18 @@ void kvm_shadow_destroy(struct kvm *kvm)
 		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
 		list_del(&ppage->link);
 		kfree(ppage);
+	}
+
+	fd_pages = &kvm->arch.pkvm.fd_pages;
+	list_for_each_entry_safe(fd_page, tmp_fd, fd_pages, link) {
+		WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
+					  fd_page->pfn));
+		cond_resched();
+
+		account_locked_vm(mm, 1, false);
+		kvm_private_mem_put_pfn(fd_page->slot, fd_page->pfn);
+		list_del(&fd_page->link);
+		kfree(fd_page);
 	}
 }
 
