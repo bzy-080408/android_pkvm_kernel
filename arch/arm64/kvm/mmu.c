@@ -695,6 +695,7 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	mmfr1 = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm->arch.vtcr = kvm_get_vtcr(mmfr0, mmfr1, phys_shift);
 	INIT_LIST_HEAD(&kvm->arch.pkvm.pinned_pages);
+	INIT_LIST_HEAD(&kvm->arch.pkvm.fd_pages);
 	mmu->arch = &kvm->arch;
 
 	if (is_protected_kvm_enabled())
@@ -1183,6 +1184,52 @@ static int pkvm_host_map_guest(u64 pfn, u64 gfn)
 	return (ret == -EPERM) ? -EAGAIN : ret;
 }
 
+static int memfd_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
+		       struct kvm_memory_slot *memslot)
+{
+	struct kvm_hyp_memcache *hyp_memcache = &vcpu->arch.pkvm_memcache;
+	struct kvm_private_fd_page *fd_page;
+	struct kvm *kvm = vcpu->kvm;
+	u64 gfn = fault_ipa >> PAGE_SHIFT;
+	u64 pfn;
+	int ret;
+
+	ret = topup_hyp_memcache(hyp_memcache, kvm_mmu_cache_min_pages(kvm));
+	if (ret)
+		return -ENOMEM;
+
+	fd_page = kmalloc(sizeof(*fd_page), GFP_KERNEL_ACCOUNT);
+	if (!fd_page)
+		return -ENOMEM;
+
+	ret = kvm_private_mem_get_pfn(memslot, gfn, &pfn, NULL);
+	if (ret)
+		goto free_page;
+
+	write_lock(&kvm->mmu_lock);
+	ret = pkvm_host_map_guest(pfn, fault_ipa >> PAGE_SHIFT);
+	if (ret) {
+		if (ret == -EAGAIN)
+			ret = 0;
+		goto unlock;
+	}
+
+	fd_page->pfn = pfn;
+	INIT_LIST_HEAD(&fd_page->link);
+	list_add(&fd_page->link, &kvm->arch.pkvm.fd_pages);
+	write_unlock(&kvm->mmu_lock);
+
+	kvm_private_mem_put_pfn(memslot, pfn);
+	return 0;
+
+unlock:
+	write_unlock(&kvm->mmu_lock);
+	kvm_private_mem_put_pfn(memslot, pfn);
+free_page:
+	kfree(fd_page);
+	return ret;
+}
+
 static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  struct kvm_memory_slot *memslot)
 {
@@ -1644,10 +1691,16 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu)
 		goto out_unlock;
 	}
 
-	if (is_protected_kvm_enabled())
-		ret = pkvm_mem_abort(vcpu, fault_ipa, memslot);
-	else
+	if (is_protected_kvm_enabled()) {
+		if ((memslot->flags & KVM_MEM_PRIVATE) &&
+		     kvm_mem_is_private(vcpu->kvm, gfn))
+			ret = memfd_abort(vcpu, fault_ipa, memslot);
+		else
+			ret = pkvm_mem_abort(vcpu, fault_ipa, memslot);
+	} else {
 		ret = user_mem_abort(vcpu, fault_ipa, memslot, fault_status);
+	}
+
 	if (ret == 0)
 		ret = 1;
 out:

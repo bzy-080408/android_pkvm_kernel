@@ -218,6 +218,8 @@ void pkvm_destroy_hyp_vm(struct kvm *host_kvm)
 	struct kvm_pinned_page *ppage, *tmp;
 	struct mm_struct *mm = current->mm;
 	struct list_head *ppages;
+	struct list_head *fd_pages;
+	struct kvm_private_fd_page *fd_page, *tmp_fd;
 
 	if (pkvm_is_hyp_created(host_kvm)) {
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_vm,
@@ -237,6 +239,15 @@ void pkvm_destroy_hyp_vm(struct kvm *host_kvm)
 		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
 		list_del(&ppage->link);
 		kfree(ppage);
+	}
+
+	fd_pages = &host_kvm->arch.pkvm.fd_pages;
+	list_for_each_entry_safe(fd_page, tmp_fd, fd_pages, link) {
+		WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
+					  fd_page->pfn));
+		cond_resched();
+		list_del(&fd_page->link);
+		kfree(fd_page);
 	}
 }
 
