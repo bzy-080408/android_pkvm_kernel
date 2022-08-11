@@ -179,12 +179,18 @@ struct kvm_pinned_page {
 	struct page		*page;
 };
 
+struct kvm_private_fd_page {
+	struct list_head	link;
+	kvm_pfn_t		pfn;
+};
+
 typedef unsigned int pkvm_handle_t;
 
 struct kvm_protected_vm {
 	pkvm_handle_t handle;
 	struct kvm_hyp_memcache teardown_mc;
 	struct list_head pinned_pages;
+	struct list_head fd_pages;
 	bool enabled;
 };
 
