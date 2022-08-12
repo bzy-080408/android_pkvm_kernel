@@ -236,6 +236,36 @@ static int memfd_get_seals(struct file *file)
 	return seals ? *seals : -EINVAL;
 }
 
+static int memfd_set_flag(struct file *file, unsigned long flag)
+{
+	struct inode *inode = file_inode(file);
+	unsigned int *file_seals;
+	int error;
+
+	if (!(file->f_mode & FMODE_WRITE))
+		return -EPERM;
+
+	inode_lock(inode);
+
+	file_seals = memfd_file_seals_ptr(file);
+	if (!file_seals) {
+		error = -EINVAL;
+		goto unlock;
+	}
+
+	/* Cannot seal inaccessible files. */
+	if (!(*file_seals & F_SEAL_SEAL)) {
+		error = -EPERM;
+		goto unlock;
+	}
+
+	error = memfile_node_set_flags(file, flag);
+
+unlock:
+	inode_unlock(inode);
+	return error;
+}
+
 long memfd_fcntl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long error;
@@ -250,6 +280,15 @@ long memfd_fcntl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case F_GET_SEALS:
 		error = memfd_get_seals(file);
+		break;
+	case F_SET_INACCESSIBLE:
+		error = memfd_set_flag(file, MEMFILE_F_USER_INACCESSIBLE);
+		break;
+	case F_SET_UNMOVABLE:
+		error = memfd_set_flag(file, MEMFILE_F_UNMOVABLE);
+		break;
+	case F_SET_UNRECLAIMABLE:
+		error = memfd_set_flag(file, MEMFILE_F_UNRECLAIMABLE);
 		break;
 	default:
 		error = -EINVAL;

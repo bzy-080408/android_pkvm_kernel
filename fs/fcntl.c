@@ -410,6 +410,9 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		break;
 	case F_ADD_SEALS:
 	case F_GET_SEALS:
+	case F_SET_INACCESSIBLE:
+	case F_SET_UNMOVABLE:
+	case F_SET_UNRECLAIMABLE:
 		err = memfd_fcntl(filp, cmd, arg);
 		break;
 	case F_GET_RW_HINT:

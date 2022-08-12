@@ -56,6 +56,15 @@
 #define F_GET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 13)
 #define F_SET_FILE_RW_HINT	(F_LINUX_SPECIFIC_BASE + 14)
 
+/* Memory in the memfd inaccessible from userspace when set. */
+#define F_SET_INACCESSIBLE	(F_LINUX_SPECIFIC_BASE + 15)
+
+/* Memory in the memfd unmovable (e.g. via pagemigration) when set. */
+#define F_SET_UNMOVABLE	(F_LINUX_SPECIFIC_BASE + 16)
+
+/* Memory in the memfd unreclaimable (e.g. via kswapd) when set. */
+#define F_SET_UNRECLAIMABLE	(F_LINUX_SPECIFIC_BASE + 17)
+
 /*
  * Valid hint values for F_{GET,SET}_RW_HINT. 0 is "not set", or can be
  * used to clear any hints previously set.
