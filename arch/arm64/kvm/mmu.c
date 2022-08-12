@@ -1917,7 +1917,8 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		}
 
 		if (new &&
-		    new->flags & (KVM_MEM_LOG_DIRTY_PAGES | KVM_MEM_READONLY)) {
+		    ((new->flags & KVM_MEM_LOG_DIRTY_PAGES) ||
+		     (kvm_vm_is_protected(kvm) && new->flags & KVM_MEM_READONLY))) {
 			return -EPERM;
 		}
 	}
