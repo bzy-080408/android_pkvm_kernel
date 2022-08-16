@@ -7,6 +7,16 @@
 
 #include <asm/hypervisor.h>
 
+#ifndef ARM_SMCCC_KVM_FUNC_HYP_MEMINFO
+#define ARM_SMCCC_KVM_FUNC_HYP_MEMINFO	2
+
+#define ARM_SMCCC_VENDOR_HYP_KVM_HYP_MEMINFO_FUNC_ID			\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
+			   ARM_SMCCC_KVM_FUNC_HYP_MEMINFO)
+#endif	/* ARM_SMCCC_KVM_FUNC_HYP_MEMINFO */
+
 static unsigned long memshare_granule_sz;
 
 void kvm_init_memrelinquish_services(void)
