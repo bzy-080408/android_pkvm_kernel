@@ -271,28 +271,44 @@ static int set_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 	return 0;
 }
 
+static void init_shadow_vm(struct kvm *kvm,
+			   struct kvm_shadow_vm *vm,
+			   unsigned int nr_vcpus)
+{
+	vm->host_kvm = kvm;
+	vm->kvm.created_vcpus = nr_vcpus;
+	vm->kvm.arch.vtcr = host_kvm.arch.vtcr;
+}
+
+static int init_shadow_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state,
+			    struct kvm_shadow_vm *vm, int vcpu_idx)
+{
+	struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_state->shadow_vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+
+	shadow_vcpu_state->shadow_vm = vm;
+
+	shadow_vcpu->kvm = &vm->kvm;
+	shadow_vcpu->vcpu_id = READ_ONCE(host_vcpu->vcpu_id);
+	shadow_vcpu->vcpu_idx = vcpu_idx;
+
+	shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
+
+	return 0;
+}
+
 static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
-			       struct kvm_vcpu **vcpu_array,
 			       unsigned int nr_vcpus)
 {
 	int i;
 
-	vm->host_kvm = kvm;
-	vm->kvm.created_vcpus = nr_vcpus;
-	vm->kvm.arch.vtcr = host_kvm.arch.vtcr;
+	init_shadow_vm(kvm, vm, nr_vcpus);
 
 	for (i = 0; i < nr_vcpus; i++) {
-		struct kvm_shadow_vcpu_state *shadow_vcpu_state = &vm->shadow_vcpu_states[i];
-		struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_state->shadow_vcpu;
-		struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+		int ret = init_shadow_vcpu(&vm->shadow_vcpu_states[i], vm, i);
 
-		shadow_vcpu_state->shadow_vm = vm;
-
-		shadow_vcpu->kvm = &vm->kvm;
-		shadow_vcpu->vcpu_id = READ_ONCE(host_vcpu->vcpu_id);
-		shadow_vcpu->vcpu_idx = i;
-
-		shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -500,7 +516,7 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 	if (ret)
 		goto err_remove_mappings;
 
-	ret = init_shadow_structs(kvm, vm, pgd, nr_vcpus);
+	ret = init_shadow_structs(kvm, vm, nr_vcpus);
 	if (ret < 0)
 		goto err_unpin_host_vcpus;
 
