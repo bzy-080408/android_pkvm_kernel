@@ -461,15 +461,12 @@ static int init_shadow_psci(struct kvm_shadow_vm *vm,
 	return 0;
 }
 
-static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
-			       struct kvm_vcpu **vcpu_array,
-			       int *last_ran,
-			       size_t last_ran_size,
-			       unsigned int nr_vcpus)
+static void init_shadow_vm(struct kvm *kvm,
+			   struct kvm_shadow_vm *vm,
+			   int *last_ran,
+			   size_t last_ran_size,
+			   unsigned int nr_vcpus)
 {
-	int i;
-	int ret;
-
 	vm->host_kvm = kvm;
 	vm->kvm.created_vcpus = nr_vcpus;
 	vm->kvm.arch.vtcr = host_kvm.arch.vtcr;
@@ -477,54 +474,73 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 	vm->kvm.arch.mmu.last_vcpu_ran = last_ran;
 	vm->last_ran_size = last_ran_size;
 	memset(vm->kvm.arch.mmu.last_vcpu_ran, -1, sizeof(int) * hyp_nr_cpus);
+}
+
+static int init_shadow_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state,
+			    struct kvm_shadow_vm *vm, int vcpu_idx)
+{
+	struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_state->shadow_vcpu;
+	struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+	int ret;
+
+	shadow_vcpu_state->shadow_vm = vm;
+
+	shadow_vcpu->kvm = &vm->kvm;
+	shadow_vcpu->vcpu_id = READ_ONCE(host_vcpu->vcpu_id);
+	shadow_vcpu->vcpu_idx = vcpu_idx;
+
+	shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
+	shadow_vcpu->arch.cflags = READ_ONCE(host_vcpu->arch.cflags);
+	shadow_vcpu->arch.mp_state.mp_state = KVM_MP_STATE_STOPPED;
+
+	copy_features(shadow_vcpu, host_vcpu);
+
+	ret = init_ptrauth(shadow_vcpu);
+	if (ret)
+		return ret;
+
+	if (test_bit(KVM_ARM_VCPU_SVE, shadow_vcpu->arch.features)) {
+		size_t sve_state_size;
+		void *sve_state;
+
+		shadow_vcpu->arch.sve_state = READ_ONCE(host_vcpu->arch.sve_state);
+		shadow_vcpu->arch.sve_max_vl = READ_ONCE(host_vcpu->arch.sve_max_vl);
+
+		sve_state = kern_hyp_va(shadow_vcpu->arch.sve_state);
+		sve_state_size = vcpu_sve_state_size(shadow_vcpu);
+
+		if (!shadow_vcpu->arch.sve_state || !sve_state_size ||
+			hyp_pin_shared_mem(sve_state,
+					   sve_state + sve_state_size)) {
+			clear_bit(KVM_ARM_VCPU_SVE,
+				  shadow_vcpu->arch.features);
+			shadow_vcpu->arch.sve_state = NULL;
+			shadow_vcpu->arch.sve_max_vl = 0;
+			return -EINVAL;
+		}
+	}
+
+	pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
+	kvm_reset_pvm_sys_regs(shadow_vcpu);
+
+	/* Must be done after resetting sys registers. */
+	ret = init_shadow_psci(vm, shadow_vcpu_state, host_vcpu);
+
+	return ret;
+}
+
+static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
+			       int *last_ran,
+			       size_t last_ran_size,
+			       unsigned int nr_vcpus)
+{
+	int i;
+
+	init_shadow_vm(kvm, vm, last_ran, last_ran_size, nr_vcpus);
 
 	for (i = 0; i < nr_vcpus; i++) {
-		struct kvm_shadow_vcpu_state *shadow_vcpu_state = &vm->shadow_vcpu_states[i];
-		struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_state->shadow_vcpu;
-		struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+		int ret = init_shadow_vcpu(&vm->shadow_vcpu_states[i], vm, i);
 
-		shadow_vcpu_state->shadow_vm = vm;
-
-		shadow_vcpu->kvm = &vm->kvm;
-		shadow_vcpu->vcpu_id = READ_ONCE(host_vcpu->vcpu_id);
-		shadow_vcpu->vcpu_idx = i;
-
-		shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
-		shadow_vcpu->arch.cflags = READ_ONCE(host_vcpu->arch.cflags);
-		shadow_vcpu->arch.mp_state.mp_state = KVM_MP_STATE_STOPPED;
-
-		copy_features(shadow_vcpu, host_vcpu);
-
-		ret = init_ptrauth(shadow_vcpu);
-		if (ret)
-			return ret;
-
-		if (test_bit(KVM_ARM_VCPU_SVE, shadow_vcpu->arch.features)) {
-			size_t sve_state_size;
-			void *sve_state;
-
-			shadow_vcpu->arch.sve_state = READ_ONCE(host_vcpu->arch.sve_state);
-			shadow_vcpu->arch.sve_max_vl = READ_ONCE(host_vcpu->arch.sve_max_vl);
-
-			sve_state = kern_hyp_va(shadow_vcpu->arch.sve_state);
-			sve_state_size = vcpu_sve_state_size(shadow_vcpu);
-
-			if (!shadow_vcpu->arch.sve_state || !sve_state_size ||
-			    hyp_pin_shared_mem(sve_state,
-					       sve_state + sve_state_size)) {
-				clear_bit(KVM_ARM_VCPU_SVE,
-					  shadow_vcpu->arch.features);
-				shadow_vcpu->arch.sve_state = NULL;
-				shadow_vcpu->arch.sve_max_vl = 0;
-				return -EINVAL;
-			}
-		}
-
-		pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
-		kvm_reset_pvm_sys_regs(shadow_vcpu);
-
-		/* Must be done after resetting sys registers. */
-		ret = init_shadow_psci(vm, shadow_vcpu_state, host_vcpu);
 		if (ret)
 			return ret;
 	}
@@ -764,7 +780,7 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 	if (ret)
 		goto err_remove_mappings;
 
-	ret = init_shadow_structs(kvm, vm, pgd, last_ran, last_ran_size, nr_vcpus);
+	ret = init_shadow_structs(kvm, vm, last_ran, last_ran_size, nr_vcpus);
 	if (ret < 0)
 		goto err_unpin_host_vcpus;
 
