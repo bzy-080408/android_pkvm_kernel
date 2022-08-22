@@ -653,10 +653,11 @@ static void *map_donated_memory_noclear(unsigned long host_va, size_t size)
 {
 	void *va = (void *)kern_hyp_va(host_va);
 
-	if (!PAGE_ALIGNED(va) || !PAGE_ALIGNED(size))
+	if (!PAGE_ALIGNED(va))
 		return NULL;
 
-	if (__pkvm_host_donate_hyp(hyp_virt_to_pfn(va), size >> PAGE_SHIFT))
+	if (__pkvm_host_donate_hyp(hyp_virt_to_pfn(va),
+				   PAGE_ALIGN(size) >> PAGE_SHIFT))
 		return NULL;
 
 	return va;
@@ -674,7 +675,8 @@ static void *map_donated_memory(unsigned long host_va, size_t size)
 
 static void __unmap_donated_memory(void *va, size_t size)
 {
-	WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn(va), size >> PAGE_SHIFT));
+	WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn(va),
+				       PAGE_ALIGN(size) >> PAGE_SHIFT));
 }
 
 static void unmap_donated_memory(void *va, size_t size)
