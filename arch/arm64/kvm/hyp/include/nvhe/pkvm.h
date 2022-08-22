@@ -57,6 +57,12 @@ struct kvm_shadow_vm {
 	/* The total size of the donated shadow area. */
 	size_t shadow_area_size;
 
+	/*
+	 * The number of vcpus initialized and ready to run in the shadow vm.
+	 * Modifying this is protected by shadow_lock.
+	 */
+	unsigned int nr_vcpus;
+
 	/* The total size of the donated area for last_ran. */
 	size_t last_ran_size;
 
@@ -97,6 +103,8 @@ int __pkvm_init_shadow(struct kvm *kvm,
 		       unsigned long shadow_hva, size_t shadow_size,
 		       unsigned long pgd_hva,
 		       unsigned long last_ran_hva, size_t last_ran_size);
+int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
+			    struct kvm_vcpu *host_vcpu);
 int __pkvm_teardown_shadow(unsigned int shadow_handle);
 
 struct kvm_shadow_vcpu_state *
