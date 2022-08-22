@@ -452,7 +452,8 @@ static void init_shadow_vm(struct kvm *kvm,
 	vm->kvm.arch.pkvm.enabled = READ_ONCE(kvm->arch.pkvm.enabled);
 	vm->kvm.arch.mmu.last_vcpu_ran = last_ran;
 	vm->last_ran_size = last_ran_size;
-	memset(vm->kvm.arch.mmu.last_vcpu_ran, -1, sizeof(int) * hyp_nr_cpus);
+	memset(vm->kvm.arch.mmu.last_vcpu_ran, -1,
+	       array_size(hyp_nr_cpus, sizeof(int)));
 }
 
 static int init_shadow_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state,
@@ -607,8 +608,8 @@ static void remove_shadow_table(unsigned int shadow_handle)
 static size_t pkvm_get_shadow_size(unsigned int nr_vcpus)
 {
 	/* Shadow space for the vm struct and all of its vcpu states. */
-	return sizeof(struct kvm_shadow_vm) +
-	       sizeof(struct kvm_shadow_vcpu_state *) * nr_vcpus;
+	return size_add(sizeof(struct kvm_shadow_vm),
+		size_mul(sizeof(struct kvm_shadow_vcpu_state *), nr_vcpus));
 }
 
 /*
@@ -636,7 +637,7 @@ static int check_shadow_size(unsigned int nr_vcpus, size_t shadow_size)
  */
 static int check_last_ran_size(size_t size)
 {
-	return size >= (hyp_nr_cpus * sizeof(int)) ? 0 : -ENOMEM;
+	return size >= array_size(hyp_nr_cpus, sizeof(int)) ? 0 : -ENOMEM;
 }
 
 static void *map_donated_memory_noclear(unsigned long host_va, size_t size)
