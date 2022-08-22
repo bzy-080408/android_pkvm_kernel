@@ -71,8 +71,8 @@ struct kvm_shadow_vm {
 	struct hyp_pool pool;
 	hyp_spinlock_t lock;
 
-	/* Array of the shadow state per vcpu. */
-	struct kvm_shadow_vcpu_state shadow_vcpu_states[0];
+	/* Array of the shadow state pointers per vcpu. */
+	struct kvm_shadow_vcpu_state *shadow_vcpu_states[0];
 };
 
 static inline struct kvm_shadow_vcpu_state *get_shadow_state(struct kvm_vcpu *shadow_vcpu)
@@ -104,7 +104,8 @@ int __pkvm_init_shadow(struct kvm *kvm,
 		       unsigned long pgd_hva,
 		       unsigned long last_ran_hva, size_t last_ran_size);
 int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
-			    struct kvm_vcpu *host_vcpu);
+			    struct kvm_vcpu *host_vcpu,
+			    unsigned long shadow_vcpu_hva);
 int __pkvm_teardown_shadow(unsigned int shadow_handle);
 
 struct kvm_shadow_vcpu_state *
