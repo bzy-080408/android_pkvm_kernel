@@ -382,27 +382,30 @@ static void copy_features(struct kvm_vcpu *shadow_vcpu, struct kvm_vcpu *host_vc
 		vcpu_clear_flag(shadow_vcpu, GUEST_HAS_PTRAUTH);
 }
 
+static void unpin_host_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state)
+{
+	struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+	struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_state->shadow_vcpu;
+	void *sve_state = shadow_vcpu->arch.sve_state;
+
+	if (host_vcpu)
+		hyp_unpin_shared_mem(host_vcpu, host_vcpu + 1);
+
+	if (sve_state) {
+		size_t sve_state_size = vcpu_sve_state_size(shadow_vcpu);
+
+		sve_state = kern_hyp_va(shadow_vcpu->arch.sve_state);
+		hyp_unpin_shared_mem(sve_state, sve_state + sve_state_size);
+	}
+}
+
 static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 			     unsigned int nr_vcpus)
 {
 	int i;
 
-	for (i = 0; i < nr_vcpus; i++) {
-		struct kvm_vcpu *host_vcpu = shadow_vcpu_states[i].host_vcpu;
-		struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_states[i].shadow_vcpu;
-		size_t sve_state_size;
-		void *sve_state;
-
-		hyp_unpin_shared_mem(host_vcpu, host_vcpu + 1);
-
-		if (!test_bit(KVM_ARM_VCPU_SVE, shadow_vcpu->arch.features))
-			continue;
-
-		sve_state = shadow_vcpu->arch.sve_state;
-		sve_state = kern_hyp_va(sve_state);
-		sve_state_size = vcpu_sve_state_size(shadow_vcpu);
-		hyp_unpin_shared_mem(sve_state, sve_state + sve_state_size);
-	}
+	for (i = 0; i < nr_vcpus; i++)
+		unpin_host_vcpu(&shadow_vcpu_states[i]);
 }
 
 static int set_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
