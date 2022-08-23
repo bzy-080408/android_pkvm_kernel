@@ -235,16 +235,21 @@ static struct kvm_shadow_vm *find_shadow_by_handle(unsigned int shadow_handle)
 	return shadow_table[shadow_idx];
 }
 
+static void unpin_host_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state)
+{
+	struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+
+	if (host_vcpu)
+		hyp_unpin_shared_mem(host_vcpu, host_vcpu + 1);
+}
+
 static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 			     unsigned int nr_vcpus)
 {
 	int i;
 
-	for (i = 0; i < nr_vcpus; i++) {
-		struct kvm_vcpu *host_vcpu = shadow_vcpu_states[i].host_vcpu;
-
-		hyp_unpin_shared_mem(host_vcpu, host_vcpu + 1);
-	}
+	for (i = 0; i < nr_vcpus; i++)
+		unpin_host_vcpu(&shadow_vcpu_states[i]);
 }
 
 static int set_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
