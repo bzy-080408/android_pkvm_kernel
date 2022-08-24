@@ -21,6 +21,8 @@ obj-y += $(lib-objs)
 
 obj-$(CONFIG_KVM_S2MPU) += iommu/s2mpu.o
 
+obj-$(CONFIG_TRACING) += clock.o
+
 ##
 ## Build rules for compiling nVHE hyp code
 ## Output of this folder is `kvm_nvhe.o`, a partially linked object
