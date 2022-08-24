@@ -130,4 +130,12 @@ extern u64 kvm_nvhe_sym(id_aa64mmfr2_el1_sys_val);
 extern unsigned long kvm_nvhe_sym(__icache_flags);
 extern unsigned int kvm_nvhe_sym(kvm_arm_vmid_bits);
 
+struct hyp_clock_data {
+	u32 mult;
+	u32 shift;
+	u64 epoch_ns;
+	u64 epoch_cyc;
+};
+extern struct hyp_clock_data kvm_nvhe_sym(hyp_clock_data);
+
 #endif /* __ARM64_KVM_HYP_H__ */

@@ -21,6 +21,7 @@
 #include <linux/kvm_irqfd.h>
 #include <linux/irqbypass.h>
 #include <linux/sched/stat.h>
+#include <linux/sched_clock.h>
 #include <linux/psci.h>
 #include <trace/events/kvm.h>
 
@@ -2025,6 +2026,28 @@ static int kvm_hyp_init_protection(u32 hyp_va_bits)
 	return 0;
 }
 
+#ifdef CONFIG_TRACING
+static void kvm_hyp_init_clock(void)
+{
+	struct hyp_clock_data *hyp_clock = &kvm_nvhe_sym(hyp_clock_data);
+	struct clock_read_data *rd;
+	unsigned int seq;
+
+	do {
+		rd = sched_clock_read_begin(&seq);
+		hyp_clock->epoch_cyc = rd->epoch_cyc;
+		hyp_clock->epoch_ns = rd->epoch_ns;
+		hyp_clock->mult = rd->mult;
+		hyp_clock->shift = rd->shift;
+	} while (sched_clock_read_retry(seq));
+
+	if (!hyp_clock->mult)
+		kvm_err("Couldn't setup nVHE hyp clock from the sched_clock\n");
+}
+#else
+static void kvm_hyp_init_clock(void) {}
+#endif
+
 /**
  * Inits Hyp-mode on all online CPUs
  */
@@ -2184,6 +2207,8 @@ static int init_hyp_mode(void)
 		/* Prepare the CPU initialization parameters */
 		cpu_prepare_hyp_mode(cpu);
 	}
+
+	kvm_hyp_init_clock();
 
 	kvm_hyp_init_symbols();
 
