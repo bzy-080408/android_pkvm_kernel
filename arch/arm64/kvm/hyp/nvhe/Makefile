@@ -20,6 +20,7 @@ obj-y += ../vgic-v3-sr.o ../aarch32.o ../vgic-v2-cpuif-proxy.o ../entry.o \
 obj-y += $(lib-objs)
 
 obj-$(CONFIG_KVM_S2MPU) += iommu/s2mpu.o
+obj-$(CONFIG_TRACING) += clock.o
 
 ##
 ## Build rules for compiling nVHE hyp code
