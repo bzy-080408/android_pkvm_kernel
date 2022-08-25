@@ -523,7 +523,7 @@ static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
 		pkvm_vcpu_init_traps(shadow_vcpu, host_vcpu);
 		kvm_reset_pvm_sys_regs(shadow_vcpu);
 
-		/* Must be done after reseting sys registers. */
+		/* Must be done after resetting sys registers. */
 		ret = init_shadow_psci(vm, shadow_vcpu_state, host_vcpu);
 		if (ret)
 			return ret;
@@ -860,7 +860,7 @@ void pkvm_reset_vcpu(struct kvm_shadow_vcpu_state *shadow_state)
 	kvm_reset_vcpu_core(vcpu);
 	kvm_reset_pvm_sys_regs(vcpu);
 
-	/* Must be done after reseting sys registers. */
+	/* Must be done after resetting sys registers. */
 	kvm_reset_vcpu_psci(vcpu, reset_state);
 
 	reset_state->reset = false;
