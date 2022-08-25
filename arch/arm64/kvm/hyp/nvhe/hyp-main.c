@@ -20,6 +20,7 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/pkvm.h>
+#include <nvhe/trace.h>
 #include <nvhe/trap_handler.h>
 
 #include <linux/irqchip/arm-gic-v3.h>
@@ -1117,6 +1118,35 @@ static void handle___pkvm_iommu_finalize(struct kvm_cpu_context *host_ctxt)
 	cpu_reg(host_ctxt, 1) = __pkvm_iommu_finalize();
 }
 
+static void handle___pkvm_start_tracing(struct kvm_cpu_context *host_ctxt)
+{
+	 DECLARE_REG(unsigned long, pack_hva, host_ctxt, 1);
+	 DECLARE_REG(size_t, pack_size, host_ctxt, 2);
+
+	 cpu_reg(host_ctxt, 1) = __pkvm_start_tracing(pack_hva, pack_size);
+}
+
+static void handle___pkvm_stop_tracing(struct kvm_cpu_context *host_ctxt)
+{
+	__pkvm_stop_tracing();
+
+	cpu_reg(host_ctxt, 1) = 0;
+}
+
+static void handle___pkvm_rb_swap_reader_page(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(int, cpu, host_ctxt, 1);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_rb_swap_reader_page(cpu);
+}
+
+static void handle___pkvm_rb_update_footers(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(int, cpu, host_ctxt, 1);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_rb_update_footers(cpu);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -1154,6 +1184,10 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_iommu_register),
 	HANDLE_FUNC(__pkvm_iommu_pm_notify),
 	HANDLE_FUNC(__pkvm_iommu_finalize),
+	HANDLE_FUNC(__pkvm_start_tracing),
+	HANDLE_FUNC(__pkvm_stop_tracing),
+	HANDLE_FUNC(__pkvm_rb_swap_reader_page),
+	HANDLE_FUNC(__pkvm_rb_update_footers),
 };
 
 static inline u64 kernel__text_addr(void)
