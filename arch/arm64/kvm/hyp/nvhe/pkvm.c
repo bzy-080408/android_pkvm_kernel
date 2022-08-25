@@ -835,8 +835,8 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 
 	hyp_unpin_shared_mem(vm->host_kvm, vm->host_kvm + 1);
 
-	unmap_donated_memory(vm->kvm.arch.mmu.last_vcpu_ran, vm->last_ran_size);
-
+	teardown_donated_memory(mc, vm->kvm.arch.mmu.last_vcpu_ran,
+				vm->last_ran_size);
 	teardown_donated_memory(mc, vm, vm->shadow_area_size);
 	return 0;
 
