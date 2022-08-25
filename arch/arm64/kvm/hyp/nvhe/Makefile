@@ -21,7 +21,7 @@ obj-y += $(lib-objs)
 
 obj-$(CONFIG_KVM_S2MPU) += iommu/s2mpu.o
 
-obj-$(CONFIG_TRACING) += clock.o
+obj-$(CONFIG_TRACING) += clock.o trace.o
 
 ##
 ## Build rules for compiling nVHE hyp code
