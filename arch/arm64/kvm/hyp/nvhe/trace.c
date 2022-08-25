@@ -561,8 +561,6 @@ int __pkvm_start_tracing(unsigned long pack_hva, size_t pack_size)
 
 	bpage_backing_start = (struct hyp_buffer_page *)hyp_buffer_pages_backing.start;
 
-	hyp_clock_setup(pack->epoch_ns, pack->epoch_cyc);
-
 	for_each_ring_buffer_pack(rb_pack, cpu, trace_pack) {
 		struct hyp_rb_per_cpu *cpu_buffer;
 		int cpu;

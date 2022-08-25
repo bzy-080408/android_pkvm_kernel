@@ -11,8 +11,6 @@ struct hyp_buffer_pages_backing {
 };
 
 struct hyp_trace_pack {
-	u64					epoch_ns;
-	u64					epoch_cyc;
 	struct hyp_buffer_pages_backing		backing;
 	struct trace_buffer_pack		trace_buffer_pack;
 
