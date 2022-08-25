@@ -91,6 +91,10 @@ enum __kvm_host_smccc_func {
 	__KVM_HOST_SMCCC_FUNC___pkvm_unmap_module_page,
 	__KVM_HOST_SMCCC_FUNC___pkvm_init_module,
 	__KVM_HOST_SMCCC_FUNC___pkvm_close_module_registration,
+	__KVM_HOST_SMCCC_FUNC___pkvm_start_tracing,
+	__KVM_HOST_SMCCC_FUNC___pkvm_stop_tracing,
+	__KVM_HOST_SMCCC_FUNC___pkvm_rb_swap_reader_page,
+	__KVM_HOST_SMCCC_FUNC___pkvm_rb_update_footers,
 
 	/*
 	 * Start of the dynamically registered hypercalls. Start a bit
