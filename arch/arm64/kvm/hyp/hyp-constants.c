@@ -3,11 +3,15 @@
 #include <linux/kbuild.h>
 #include <nvhe/memory.h>
 #include <nvhe/pkvm.h>
+#include <nvhe/trace.h>
 
 int main(void)
 {
 	DEFINE(STRUCT_HYP_PAGE_SIZE,	sizeof(struct hyp_page));
 	DEFINE(KVM_SHADOW_VM_SIZE,	sizeof(struct kvm_shadow_vm));
 	DEFINE(SHADOW_VCPU_STATE_SIZE,	sizeof(struct shadow_vcpu_state));
+#ifdef CONFIG_TRACING
+	DEFINE(STRUCT_HYP_BUFFER_PAGE_SIZE,     sizeof(struct hyp_buffer_page));
+#endif
 	return 0;
 }
