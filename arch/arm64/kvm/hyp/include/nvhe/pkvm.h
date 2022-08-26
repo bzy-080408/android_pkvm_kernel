@@ -99,10 +99,8 @@ static inline bool vcpu_is_protected(struct kvm_vcpu *vcpu)
 }
 
 void hyp_shadow_table_init(void *tbl);
-int __pkvm_init_shadow(struct kvm *kvm,
-		       unsigned long shadow_hva, size_t shadow_size,
-		       unsigned long pgd_hva,
-		       unsigned long last_ran_hva, size_t last_ran_size);
+int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
+		       unsigned long pgd_hva, unsigned long last_ran_hva);
 int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
 			    struct kvm_vcpu *host_vcpu,
 			    unsigned long shadow_vcpu_hva);

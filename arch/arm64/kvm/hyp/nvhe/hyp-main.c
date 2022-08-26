@@ -1014,14 +1014,11 @@ static void handle___pkvm_init_shadow(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(struct kvm *, host_kvm, host_ctxt, 1);
 	DECLARE_REG(unsigned long, host_shadow_va, host_ctxt, 2);
-	DECLARE_REG(size_t, shadow_size, host_ctxt, 3);
-	DECLARE_REG(unsigned long, pgd, host_ctxt, 4);
-	DECLARE_REG(unsigned long, last_ran, host_ctxt, 5);
-	DECLARE_REG(size_t, last_ran_size, host_ctxt, 6);
+	DECLARE_REG(unsigned long, pgd, host_ctxt, 3);
+	DECLARE_REG(unsigned long, last_ran, host_ctxt, 4);
 
 	cpu_reg(host_ctxt, 1) = __pkvm_init_shadow(host_kvm, host_shadow_va,
-						   shadow_size, pgd,
-						   last_ran, last_ran_size);
+						   pgd, last_ran);
 }
 
 static void handle___pkvm_init_shadow_vcpu(struct kvm_cpu_context *host_ctxt)
