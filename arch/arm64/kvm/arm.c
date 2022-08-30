@@ -1924,6 +1924,8 @@ static int do_pkvm_init(u32 hyp_va_bits)
 	return ret;
 }
 
+int kvm_hyp_init_events(void);
+
 static int kvm_hyp_init_protection(u32 hyp_va_bits)
 {
 	void *addr = phys_to_virt(hyp_mem_base);
@@ -2086,6 +2088,12 @@ static int init_hyp_mode(void)
 		/* Prepare the CPU initialization parameters */
 		cpu_prepare_hyp_mode(cpu);
 	}
+
+
+	/* TODO: Real .h interface */
+#ifdef CONFIG_TRACING
+	kvm_hyp_init_events();
+#endif
 
 	if (is_protected_kvm_enabled()) {
 		init_cpu_logical_map();
