@@ -2,10 +2,13 @@
 #include <linux/list.h>
 #include <linux/percpu-defs.h>
 #include <linux/ring_buffer.h>
-#include <linux/workqueue.h>
+#include <linux/sched_clock.h>
+#include <linux/trace_events.h>
+#include <linux/tracefs.h>
 
 #include <asm/kvm_host.h>
 #include <asm/kvm_hyptrace.h>
+#include <asm/kvm_hypevents_defs.h>
 
 #include <linux/sched/clock.h>
 
@@ -200,18 +203,6 @@ static const struct file_operations hyp_tracing_on_fops = {
 	.write  = hyp_tracing_on,
 };
 
-struct ht_iterator {
-	struct ring_buffer_iter *buf_iter;
-	struct trace_buffer *trace_buffer;
-	struct hyp_entry_hdr *ent;
-	struct trace_seq seq;
-	u64 ts;
-	size_t ent_size;
-	struct delayed_work poke_work;
-	unsigned long lost_events;
-	int cpu;
-};
-
 static void ht_print_trace_time(struct ht_iterator *iter)
 {
 	unsigned long usecs_rem;
@@ -223,6 +214,8 @@ static void ht_print_trace_time(struct ht_iterator *iter)
 	trace_seq_printf(&iter->seq, "[%5lu.%06lu] ",
 			 (unsigned long)ts_ns, usecs_rem);
 }
+
+extern struct trace_event *ftrace_find_event(int type);
 
 static void ht_print_trace_fmt(struct ht_iterator *iter)
 {
@@ -237,6 +230,14 @@ static void ht_print_trace_fmt(struct ht_iterator *iter)
 	ht_print_trace_time(iter);
 
 	trace_seq_printf(&iter->seq, "id=%u ", iter->ent->id);
+
+	e = ftrace_find_event(iter->ent->id);
+
+	if (e) {
+		e->funcs->trace((struct trace_iterator *)iter, 0, e);
+		return;
+	}
+
 	trace_seq_printf(&iter->seq, "Unknown event id %d\n", iter->ent->id);
 };
 
@@ -407,6 +408,8 @@ static void __poke_reader(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
 	struct ht_iterator *iter;
+
+	//WARN_ON_ONCE(kvm_call_hyp_nvhe(__pkvm_rb_fake_event));
 
 	iter = container_of(dwork, struct ht_iterator, poke_work);
 
