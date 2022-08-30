@@ -1952,6 +1952,8 @@ static int kvm_hyp_init_protection(u32 hyp_va_bits)
 	return 0;
 }
 
+int kvm_hyp_init_events(void);
+
 /**
  * Inits Hyp-mode on all online CPUs
  */
@@ -2086,6 +2088,12 @@ static int init_hyp_mode(void)
 		/* Prepare the CPU initialization parameters */
 		cpu_prepare_hyp_mode(cpu);
 	}
+
+
+	/* TODO: Real .h interface */
+#ifdef CONFIG_TRACING
+	kvm_hyp_init_events();
+#endif
 
 	if (is_protected_kvm_enabled()) {
 		init_cpu_logical_map();
