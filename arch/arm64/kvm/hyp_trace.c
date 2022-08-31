@@ -344,7 +344,7 @@ int hyp_trace_release(struct inode *inode, struct file *file)
 
 	mutex_lock(&hyp_trace_lock);
 	hyp_trace_readers--;
-	mutex_lock(&hyp_trace_lock);
+	mutex_unlock(&hyp_trace_lock);
 
 	return seq_release_private(inode, file);
 }
