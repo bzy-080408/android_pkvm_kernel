@@ -58,9 +58,11 @@
 
 #define HYPERVISOR_JUMP_TABLE_SECTION				\
 	HYP_SECTION_NAME(__jump_table) : {			\
+		. = ALIGN(PAGE_SIZE);				\
 		__hyp_jump_table_start = .;			\
-		*(HYP_SECTION_NAME(__jump_table))       \
+		*(HYP_SECTION_NAME(__jump_table))       	\
 		__hyp_jump_table_end = .;			\
+		. = ALIGN(PAGE_SIZE);				\
 	}
 
 
