@@ -16,6 +16,7 @@ SECTIONS {
 	HYP_SECTION(.text)
 	HYP_SECTION(.data..ro_after_init)
 	HYP_SECTION(.rodata)
+	. = ALIGN(PAGE_SIZE);
 	HYP_SECTION(__jump_table)
 #ifdef CONFIG_TRACING
 	. = ALIGN(PAGE_SIZE);
