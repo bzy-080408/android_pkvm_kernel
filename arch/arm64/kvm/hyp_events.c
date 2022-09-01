@@ -5,7 +5,7 @@
 #include "hyp_trace.h"
 
 struct hyp_event {
-	struct trace_event_call call;
+	struct trace_event_call *call;
 	char name[32];
 };
 
@@ -50,10 +50,13 @@ struct hyp_event {
 		.fields_array	= hyp_event_fields_##__name,			\
 		.fields		= LIST_HEAD_INIT(hyp_event_class_##__name.fields),\
 	};									\
+	static struct trace_event_call hyp_event_call_##__name = {		\
+		.class = &hyp_event_class_##__name,				\
+		.event.funcs = &hyp_event_funcs_##__name,			\
+	};									\
 	struct hyp_event __section("_hyp_events") hyp_event_##__name = {	\
 		.name = #__name,						\
-		.call.class = &hyp_event_class_##__name,			\
-		.call.event.funcs = &hyp_event_funcs_##__name,			\
+		.call = &hyp_event_call_##__name,				\
 	}
 
 #undef __ARM64_KVM_HYPEVENTS_H_
@@ -90,7 +93,7 @@ void kvm_hyp_init_events_tracefs(void)
 	return;
 
 	for (; (unsigned long)event < (unsigned long)__stop_hyp_events; event++) {
-		ret = trace_add_event_call(&event->call);
+		ret = trace_add_event_call(event->call);
 		if (ret)
 			pr_warn("Couldn't register event call for %s\n", event->name);
 	}
@@ -107,12 +110,10 @@ int kvm_hyp_init_events(void)
 
 	/* TODO: BUILD_BUG nr events host side / hyp side */
 
-	printk("%s: __hyp_event_ids_start=%px", __func__, __hyp_event_ids_start);
-
 	for (; (unsigned long)event < (unsigned long)__stop_hyp_events;
 		event++, hyp_event_id++) {
-		event->call.name = event->name;
-		ret = register_trace_event(&event->call.event);
+		event->call->name = event->name;
+		ret = register_trace_event(&event->call->event);
 		if (!ret) {
 			pr_warn("Couldn't register trace event for %s\n", event->name);
 			continue;
