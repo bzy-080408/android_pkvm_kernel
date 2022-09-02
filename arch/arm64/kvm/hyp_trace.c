@@ -229,8 +229,6 @@ static void ht_print_trace_fmt(struct ht_iterator *iter)
 
 	ht_print_trace_time(iter);
 
-	trace_seq_printf(&iter->seq, "id=%u ", iter->ent->id);
-
 	e = ftrace_find_event(iter->ent->id);
 
 	if (e) {
