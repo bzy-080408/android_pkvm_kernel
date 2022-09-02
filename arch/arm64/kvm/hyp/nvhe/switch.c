@@ -306,8 +306,13 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__debug_switch_to_guest(vcpu);
 
 	do {
+		trace_hyp_hyp_exit();
+
 		/* Jump in the fire! */
 		exit_code = __guest_enter(vcpu);
+
+		trace_hyp_hyp_enter(kvm_vcpu_get_esr(vcpu), vcpu_get_reg(vcpu, 0),
+				   atomic64_read(&mmu->vmid.id));
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
