@@ -60,7 +60,7 @@ int __pkvm_enable_event(unsigned short id, bool enable);
 
 #define HYP_EVENT(__name, __proto, __struct, __assign, __printk)		\
 	HYP_EVENT_FORMAT(__name, __struct);					\
-	extern atomic_t __name##_enabled;					\
+	DECLARE_STATIC_KEY_FALSE(__name##_enabled);				\
 	extern unsigned short hyp_event_id_##__name;				\
 	static inline void trace_hyp_##__name(__proto)				\
 	{									\
@@ -68,7 +68,7 @@ int __pkvm_enable_event(unsigned short id, bool enable);
 		struct hyp_rb_per_cpu *rb = this_cpu_ptr(&trace_rb);		\
 		struct trace_hyp_format_##__name *__entry;			\
 										\
-		if (!atomic_read(&__name##_enabled))				\
+		if (!static_branch_unlikely(&__name##_enabled))			\
 			return;							\
 		if (!__start_write_hyp_rb(rb))					\
 			return;							\
