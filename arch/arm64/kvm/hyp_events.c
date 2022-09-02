@@ -20,8 +20,10 @@ struct hyp_event {
 		struct ht_iterator *ht_iter = (struct ht_iterator *)iter;	\
 		struct trace_hyp_format_##__name __maybe_unused *__entry =	\
 			(struct trace_hyp_format_##__name *)ht_iter->ent;	\
-		trace_seq_printf(&ht_iter->seq, __printk);				\
-		trace_seq_putc(&ht_iter->seq, '\n');					\
+		trace_seq_puts(&ht_iter->seq, #__name);				\
+		trace_seq_putc(&ht_iter->seq, ' ');				\
+		trace_seq_printf(&ht_iter->seq, __printk);			\
+		trace_seq_putc(&ht_iter->seq, '\n');				\
 		return TRACE_TYPE_HANDLED;					\
 	}
 #include <asm/kvm_hypevents.h>
