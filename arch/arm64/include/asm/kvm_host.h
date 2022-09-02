@@ -51,6 +51,10 @@
 #define KVM_DIRTY_LOG_MANUAL_CAPS   (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE | \
 				     KVM_DIRTY_LOG_INITIALLY_SET)
 
+#ifdef __KVM_NVHE_HYPERVISOR__
+#include <asm/kvm_hypevents.h>
+#endif
+
 /*
  * Mode of operation configurable with kvm-arm.mode early param.
  * See Documentation/admin-guide/kernel-parameters.txt for more information.
@@ -83,6 +87,9 @@ static inline void push_hyp_memcache(struct kvm_hyp_memcache *mc,
 	*p = mc->head;
 	mc->head = to_pa(p);
 	mc->nr_pages++;
+#ifdef __KVM_NVHE_HYPERVISOR__
+	trace_hyp_push_hyp_memcache((u64)mc, to_pa(p), mc->nr_pages);
+#endif
 }
 
 static inline void *pop_hyp_memcache(struct kvm_hyp_memcache *mc,
@@ -95,7 +102,9 @@ static inline void *pop_hyp_memcache(struct kvm_hyp_memcache *mc,
 
 	mc->head = *p;
 	mc->nr_pages--;
-
+#ifdef __KVM_NVHE_HYPERVISOR__
+	trace_hyp_pop_hyp_memcache((u64)mc, mc->head, mc->nr_pages - 1);
+#endif
 	return p;
 }
 
