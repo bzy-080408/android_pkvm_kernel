@@ -1,5 +1,7 @@
+#include <linux/tracefs.h>
 #include <linux/trace_events.h>
 
+#include <asm/kvm_host.h>
 #include <asm/kvm_hypevents_defs.h>
 
 #include "hyp_trace.h"
@@ -7,6 +9,7 @@
 struct hyp_event {
 	struct trace_event_call *call;
 	char name[32];
+	bool *enabled;
 };
 
 #define HYP_EVENT(__name, __proto, __struct, __assign, __printk)		\
@@ -54,9 +57,11 @@ struct hyp_event {
 		.class = &hyp_event_class_##__name,				\
 		.event.funcs = &hyp_event_funcs_##__name,			\
 	};									\
+	static bool hyp_event_enabled_##__name = false;				\
 	struct hyp_event __section("_hyp_events") hyp_event_##__name = {	\
 		.name = #__name,						\
 		.call = &hyp_event_call_##__name,				\
+		.enabled = &hyp_event_enabled_##__name,				\
 	}
 
 #undef __ARM64_KVM_HYPEVENTS_H_
@@ -65,37 +70,86 @@ struct hyp_event {
 extern struct hyp_event __start_hyp_events[];
 extern struct hyp_event __stop_hyp_events[];
 
-/* hyp_event section used by the hypervisor*/
-extern unsigned short __hyp_event_ids_start[];
-extern unsigned short __hyp_event_ids_end[];
+/* hyp_event section used by the hypervisor */
+extern struct hyp_event_id __hyp_event_ids_start[];
+extern struct hyp_event_id __hyp_event_ids_end[];
 
-/*
- * Let's abuse a bit the host tracing... so everything is tied to a trace_array,
- * including events. The hypervisor tracing doesn't declare a trace_array and
- * isn't part of the global one. However, we still would like to have a user
- * interface for our events... so let's just add the hyp events somewhere!
- *
- * TODO: It might not be the best approach. As stated above alternatively, hyp
- * tracing could be:
- *
- *   A. a separated trace_array (i.e. instance) even if it wouldn't make much use
- *   of it.
- *
- *   B. part of the global trace_array with a separated ring_buffer and pipe
- *   interface!
- *
- */
-void kvm_hyp_init_events_tracefs(void)
+static ssize_t
+hyp_event_write(struct file *filp, const char __user *ubuf, size_t cnt, loff_t *ppos)
+{
+	struct hyp_event *evt = (struct hyp_event *)((struct seq_file *)filp->private_data)->private;
+	unsigned short id = evt->call->event.type;
+	bool enabling;
+	int ret;
+	char c;
+
+	if (cnt != 2)
+		return -EINVAL;
+
+	if (get_user(c, ubuf))
+		return -EFAULT;
+
+	switch (c) {
+	case '1':
+		enabling = true;
+		break;
+	case '0':
+		enabling = false;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (enabling != *evt->enabled) {
+		ret = kvm_call_hyp_nvhe(__pkvm_enable_event, id, enabling);
+		if (ret)
+			return ret;
+	}
+
+	*evt->enabled = enabling;
+
+	return cnt;
+}
+
+static int hyp_event_show(struct seq_file *m, void *v)
+{
+	struct hyp_event *evt = (struct hyp_event *)m->private;
+
+	/* lock ?? Ain't no time for that ! */
+	seq_printf(m, "%d\n", *evt->enabled);
+
+	return 0;
+}
+
+static int hyp_event_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hyp_event_show, inode->i_private);
+}
+
+static const struct file_operations hyp_event_fops = {
+	.open		= hyp_event_open,
+	.write		= hyp_event_write,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+void kvm_hyp_init_events_tracefs(struct dentry *parent)
 {
 	struct hyp_event *event = __start_hyp_events;
-	int ret;
+	struct dentry *d;
 
-	return;
+	parent = tracefs_create_dir("events", parent);
+	if (!parent) {
+		pr_err("Failed to create tracefs folder for hyp events\n");
+		return;
+	}
 
 	for (; (unsigned long)event < (unsigned long)__stop_hyp_events; event++) {
-		ret = trace_add_event_call(event->call);
-		if (ret)
-			pr_warn("Couldn't register event call for %s\n", event->name);
+		d = tracefs_create_file(event->name, 0700, parent, (void *)event,
+					&hyp_event_fops);
+		if (!d)
+			pr_err("Failed to create event folder for %s\n", event->name);
 	}
 }
 
@@ -105,7 +159,7 @@ void kvm_hyp_init_events_tracefs(void)
 int kvm_hyp_init_events(void)
 {
 	struct hyp_event *event = __start_hyp_events;
-	unsigned short *hyp_event_id = __hyp_event_ids_start;
+	struct hyp_event_id *hyp_event_id = __hyp_event_ids_start;
 	int ret, err = -ENODEV;
 
 	/* TODO: BUILD_BUG nr events host side / hyp side */
@@ -124,9 +178,9 @@ int kvm_hyp_init_events(void)
 		 * declarations from kvm_hypevents.h. We have then a 1:1
 		 * mapping.
 		 */
-		*hyp_event_id = ret;
+		hyp_event_id->id = ret;
 
-		printk("%s: hyp_event_id@%px=%d", __func__, hyp_event_id, *hyp_event_id);
+		printk("%s: hyp_event_id@%px=%d", __func__, hyp_event_id, hyp_event_id->id);
 
 		err = 0;
 	}
