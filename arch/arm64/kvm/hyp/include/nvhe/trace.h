@@ -49,6 +49,7 @@ int __pkvm_start_tracing(unsigned long pack_va, size_t pack_size);
 void __pkvm_stop_tracing(void);
 int __pkvm_rb_swap_reader_page(int cpu);
 int __pkvm_rb_update_footers(int cpu);
+int __pkvm_enable_event(unsigned short id, bool enable);
 
 #define HYP_EVENT(__name, __proto, __struct, __assign, __printk)		\
 	HYP_EVENT_FORMAT(__name, __struct);					\
@@ -60,6 +61,8 @@ int __pkvm_rb_update_footers(int cpu);
 		struct hyp_rb_per_cpu *rb = this_cpu_ptr(&trace_rb);		\
 		struct trace_hyp_format_##__name *__entry;			\
 										\
+		if (!atomic_read(&__name##_enabled))				\
+			return;							\
 		if (!__start_write_hyp_rb(rb))					\
 			return;							\
 		__entry = rb_reserve_trace_entry(rb, length);			\
