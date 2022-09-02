@@ -1,6 +1,11 @@
 #ifndef __ARM64_KVM_HYPEVENTS_DEFS_H
 #define __ARM64_KVM_HYPEVENTS_DEFS_H
 
+struct hyp_event_id {
+	unsigned short id;
+	void *data;
+};
+
 struct hyp_entry_hdr {
 	unsigned short id;
 };

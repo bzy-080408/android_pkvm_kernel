@@ -552,6 +552,8 @@ static const struct file_operations hyp_trace_pipe_fops = {
 	.llseek		= no_llseek,
 };
 
+void kvm_hyp_init_events_tracefs(struct dentry *parent);
+
 static int __init hyp_tracing_debugfs(void)
 {
 	struct dentry *d, *folder;
@@ -585,6 +587,8 @@ static int __init hyp_tracing_debugfs(void)
 		if (!d)
 			pr_warn("Failed create hyp/trace for CPU %lu\n", cpu);
 	}
+
+	kvm_hyp_init_events_tracefs(folder);
 
 	return 0;
 }
