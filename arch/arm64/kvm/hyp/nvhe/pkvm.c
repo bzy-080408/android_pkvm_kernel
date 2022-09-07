@@ -770,7 +770,7 @@ err_unlock:
 err_remove_mappings:
 	unmap_donated_memory(vm, shadow_size);
 	unmap_donated_memory(last_ran, last_ran_size);
-	unmap_donated_memory_noclear(pgd, pgd_size);
+	unmap_donated_memory(pgd, pgd_size);
 err_unpin_kvm:
 	hyp_unpin_shared_mem(kvm, kvm + 1);
 	return ret;
