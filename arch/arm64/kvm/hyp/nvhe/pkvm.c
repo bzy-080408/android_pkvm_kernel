@@ -543,7 +543,7 @@ err_unlock:
 	hyp_spin_unlock(&shadow_lock);
 err_remove_mappings:
 	unmap_donated_memory(vm, shadow_size);
-	unmap_donated_memory_noclear(pgd, pgd_size);
+	unmap_donated_memory(pgd, pgd_size);
 err_unpin_kvm:
 	hyp_unpin_shared_mem(kvm, kvm + 1);
 	return ret;
