@@ -34,8 +34,8 @@ struct kvm_shadow_vm {
 
 	struct kvm_pgtable pgt;
 
-	/* Array containing the shadow state for each vcpu. */
-	struct kvm_shadow_vcpu_state shadow_vcpu_states[0];
+	/* Array of the shadow state pointers per vcpu. */
+	struct kvm_shadow_vcpu_state *shadow_vcpu_states[0];
 };
 
 static inline struct kvm_shadow_vcpu_state *get_shadow_state(struct kvm_vcpu *shadow_vcpu)
@@ -52,7 +52,8 @@ void hyp_shadow_table_init(void *tbl);
 int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 		       size_t shadow_size, unsigned long pgd_hva);
 int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
-			    struct kvm_vcpu *host_vcpu);
+			    struct kvm_vcpu *host_vcpu,
+			    unsigned long shadow_vcpu_hva);
 int __pkvm_teardown_shadow(unsigned int shadow_handle);
 
 #endif /* __ARM64_KVM_NVHE_PKVM_H__ */
