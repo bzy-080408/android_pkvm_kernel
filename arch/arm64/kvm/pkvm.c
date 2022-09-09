@@ -138,8 +138,7 @@ static int __kvm_shadow_create(struct kvm *kvm)
 	}
 
 	/* Donate the shadow memory to hyp and let hyp initialize it. */
-	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow, kvm, shadow_addr, shadow_sz,
-				pgd);
+	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow, kvm, shadow_addr, pgd);
 	if (ret < 0)
 		goto free_shadow;
 
