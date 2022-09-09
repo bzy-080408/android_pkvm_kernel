@@ -77,6 +77,7 @@ enum __kvm_host_smccc_func {
 	__KVM_HOST_SMCCC_FUNC___vgic_v3_restore_aprs,
 	__KVM_HOST_SMCCC_FUNC___pkvm_vcpu_init_traps,
 	__KVM_HOST_SMCCC_FUNC___pkvm_init_shadow,
+	__KVM_HOST_SMCCC_FUNC___pkvm_init_shadow_vcpu,
 	__KVM_HOST_SMCCC_FUNC___pkvm_teardown_shadow,
 };
 

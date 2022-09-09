@@ -249,7 +249,7 @@ pkvm_load_shadow_vcpu_state(unsigned int shadow_handle, unsigned int vcpu_idx)
 
 	hyp_spin_lock(&shadow_lock);
 	vm = find_shadow_by_handle(shadow_handle);
-	if (!vm || vm->kvm.created_vcpus <= vcpu_idx)
+	if (!vm || vm->nr_vcpus <= vcpu_idx)
 		goto unlock;
 
 	shadow_state = &vm->shadow_vcpu_states[vcpu_idx];
@@ -285,30 +285,6 @@ static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
 		unpin_host_vcpu(&shadow_vcpu_states[i]);
 }
 
-static int set_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
-			  unsigned int nr_vcpus,
-			  struct kvm_vcpu **vcpu_array,
-			  size_t vcpu_array_size)
-{
-	int i;
-
-	if (vcpu_array_size < sizeof(*vcpu_array) * nr_vcpus)
-		return -EINVAL;
-
-	for (i = 0; i < nr_vcpus; i++) {
-		struct kvm_vcpu *host_vcpu = kern_hyp_va(vcpu_array[i]);
-
-		if (hyp_pin_shared_mem(host_vcpu, host_vcpu + 1)) {
-			unpin_host_vcpus(shadow_vcpu_states, i);
-			return -EBUSY;
-		}
-
-		shadow_vcpu_states[i].host_vcpu = host_vcpu;
-	}
-
-	return 0;
-}
-
 static void init_shadow_vm(struct kvm *kvm,
 			   struct kvm_shadow_vm *vm,
 			   unsigned int nr_vcpus)
@@ -319,11 +295,23 @@ static void init_shadow_vm(struct kvm *kvm,
 }
 
 static int init_shadow_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state,
-			    struct kvm_shadow_vm *vm, int vcpu_idx)
+			    struct kvm_shadow_vm *vm,
+			    struct kvm_vcpu *host_vcpu,
+			    int vcpu_idx)
 {
 	struct kvm_vcpu *shadow_vcpu = &shadow_vcpu_state->shadow_vcpu;
-	struct kvm_vcpu *host_vcpu = shadow_vcpu_state->host_vcpu;
+	int ret = 0;
 
+	host_vcpu = kern_hyp_va(host_vcpu);
+	if (hyp_pin_shared_mem(host_vcpu, host_vcpu + 1))
+		return -EBUSY;
+
+	if (host_vcpu->vcpu_idx != vcpu_idx) {
+		ret = -EINVAL;
+		goto done;
+	}
+
+	shadow_vcpu_state->host_vcpu = host_vcpu;
 	shadow_vcpu_state->shadow_vm = vm;
 
 	shadow_vcpu->kvm = &vm->kvm;
@@ -332,25 +320,10 @@ static int init_shadow_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state,
 
 	shadow_vcpu->arch.hw_mmu = &vm->kvm.arch.mmu;
 	shadow_vcpu->arch.cflags = READ_ONCE(host_vcpu->arch.cflags);
-
-	return 0;
-}
-
-static int init_shadow_structs(struct kvm *kvm, struct kvm_shadow_vm *vm,
-			       unsigned int nr_vcpus)
-{
-	int i;
-
-	init_shadow_vm(kvm, vm, nr_vcpus);
-
-	for (i = 0; i < nr_vcpus; i++) {
-		int ret = init_shadow_vcpu(&vm->shadow_vcpu_states[i], vm, i);
-
-		if (ret)
-			return ret;
-	}
-
-	return 0;
+done:
+	if (ret)
+		unpin_host_vcpu(shadow_vcpu_state);
+	return ret;
 }
 
 static int find_free_shadow_entry(struct kvm *host_kvm)
@@ -515,8 +488,6 @@ static void unmap_donated_memory_noclear(void *va, size_t size)
  * pgd_hva: The host va of the area being donated for the stage-2 PGD for
  *	    the VM. Must be page aligned. Its size is implied by the VM's
  *	    VTCR.
- * Note: An array to the host KVM VCPUs (host VA) is passed via the pgd, as to
- *	 not to be dependent on how the VCPU's are layed out in struct kvm.
  *
  * Return a unique handle to the protected VM on success,
  * negative error code on failure.
@@ -551,19 +522,13 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 	if (!pgd)
 		goto err_remove_mappings;
 
-	ret = set_host_vcpus(vm->shadow_vcpu_states, nr_vcpus, pgd, pgd_size);
-	if (ret)
-		goto err_remove_mappings;
-
-	ret = init_shadow_structs(kvm, vm, nr_vcpus);
-	if (ret < 0)
-		goto err_unpin_host_vcpus;
+	init_shadow_vm(kvm, vm, nr_vcpus);
 
 	/* Add the entry to the shadow table. */
 	hyp_spin_lock(&shadow_lock);
 	ret = insert_shadow_table(kvm, vm, shadow_size);
 	if (ret < 0)
-		goto err_unlock_unpin_host_vcpus;
+		goto err_unlock;
 
 	ret = kvm_guest_prepare_stage2(vm, pgd);
 	if (ret)
@@ -574,15 +539,54 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 
 err_remove_shadow_table:
 	remove_shadow_table(vm->kvm.arch.pkvm.shadow_handle);
-err_unlock_unpin_host_vcpus:
+err_unlock:
 	hyp_spin_unlock(&shadow_lock);
-err_unpin_host_vcpus:
-	unpin_host_vcpus(vm->shadow_vcpu_states, nr_vcpus);
 err_remove_mappings:
 	unmap_donated_memory(vm, shadow_size);
 	unmap_donated_memory_noclear(pgd, pgd_size);
 err_unpin_kvm:
 	hyp_unpin_shared_mem(kvm, kvm + 1);
+	return ret;
+}
+
+/*
+ * Initialize the protected vcpu state shadow copy in host-donated memory.
+ *
+ * shadow_handle: The handle for the protected vm.
+ * host_vcpu: A pointer to the corresponding host vcpu (host va).
+ *
+ * Return 0 on success, negative error code on failure.
+ */
+int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
+			    struct kvm_vcpu *host_vcpu)
+{
+	struct kvm_shadow_vm *vm;
+	struct kvm_shadow_vcpu_state *shadow_vcpu_state;
+	unsigned int idx;
+	int ret;
+
+	hyp_spin_lock(&shadow_lock);
+
+	vm = find_shadow_by_handle(shadow_handle);
+	if (!vm) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	idx = vm->nr_vcpus;
+	if (idx >= vm->kvm.created_vcpus) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	shadow_vcpu_state = &vm->shadow_vcpu_states[idx];
+	ret = init_shadow_vcpu(shadow_vcpu_state, vm, host_vcpu, idx);
+	if (ret)
+		goto unlock;
+
+	vm->nr_vcpus++;
+unlock:
+	hyp_spin_unlock(&shadow_lock);
 	return ret;
 }
 
@@ -600,6 +604,7 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 {
 	struct kvm_hyp_memcache *mc;
 	struct kvm_shadow_vm *vm;
+	unsigned int nr_vcpus;
 	int err;
 
 	/* Lookup then remove entry from the shadow table. */
@@ -618,12 +623,13 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	/* Ensure the VMID is clean before it can be reallocated */
 	__kvm_tlb_flush_vmid(&vm->kvm.arch.mmu);
 	remove_shadow_table(shadow_handle);
+	nr_vcpus = vm->nr_vcpus;
 	hyp_spin_unlock(&shadow_lock);
 
 	/* Reclaim guest pages (including page-table pages) */
 	mc = &vm->host_kvm->arch.pkvm.teardown_mc;
 	reclaim_guest_pages(vm, mc);
-	unpin_host_vcpus(vm->shadow_vcpu_states, vm->kvm.created_vcpus);
+	unpin_host_vcpus(vm->shadow_vcpu_states, nr_vcpus);
 
 	hyp_unpin_shared_mem(vm->host_kvm, vm->host_kvm + 1);
 
