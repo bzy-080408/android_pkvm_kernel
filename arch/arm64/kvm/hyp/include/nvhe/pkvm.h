@@ -50,7 +50,7 @@ static inline struct kvm_shadow_vm *get_shadow_vm(struct kvm_vcpu *shadow_vcpu)
 
 void hyp_shadow_table_init(void *tbl);
 int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
-		       size_t shadow_size, unsigned long pgd_hva);
+		       unsigned long pgd_hva);
 int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
 			    struct kvm_vcpu *host_vcpu,
 			    unsigned long shadow_vcpu_hva);

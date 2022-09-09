@@ -374,25 +374,6 @@ static size_t pkvm_get_shadow_size(unsigned int nr_vcpus)
 		size_mul(sizeof(struct kvm_shadow_vcpu_state *), nr_vcpus));
 }
 
-/*
- * Check whether the size of the area donated by the host is sufficient for
- * the shadow structures required for nr_vcpus as well as the shadow vm.
- */
-static int check_shadow_size(unsigned int nr_vcpus, size_t shadow_size)
-{
-	if (nr_vcpus < 1 || nr_vcpus > KVM_MAX_VCPUS)
-		return -EINVAL;
-
-	/*
-	 * Shadow size is rounded up when allocated and donated by the host,
-	 * so it's likely to be larger than the sum of the struct sizes.
-	 */
-	if (shadow_size < pkvm_get_shadow_size(nr_vcpus))
-		return -ENOMEM;
-
-	return 0;
-}
-
 static void *map_donated_memory_noclear(unsigned long host_va, size_t size)
 {
 	void *va = (void *)kern_hyp_va(host_va);
@@ -449,8 +430,6 @@ static void unmap_donated_memory_noclear(void *va, size_t size)
  * kvm: A pointer to the host's struct kvm (host va).
  * shadow_hva: The host va of the area being donated for the shadow state.
  *	       Must be page aligned.
- * shadow_size: The size of the area being donated for the shadow state.
- *		Must be a multiple of the page size.
  * pgd_hva: The host va of the area being donated for the stage-2 PGD for
  *	    the VM. Must be page aligned. Its size is implied by the VM's
  *	    VTCR.
@@ -459,11 +438,11 @@ static void unmap_donated_memory_noclear(void *va, size_t size)
  * negative error code on failure.
  */
 int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
-		       size_t shadow_size, unsigned long pgd_hva)
+		       unsigned long pgd_hva)
 {
 	struct kvm_shadow_vm *vm = NULL;
 	unsigned int nr_vcpus;
-	size_t pgd_size = 0;
+	size_t shadow_size, pgd_size;
 	void *pgd = NULL;
 	int ret;
 
@@ -473,9 +452,13 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 		return ret;
 
 	nr_vcpus = READ_ONCE(kvm->created_vcpus);
-	ret = check_shadow_size(nr_vcpus, shadow_size);
-	if (ret)
+	if (nr_vcpus < 1) {
+		ret = -EINVAL;
 		goto err_unpin_kvm;
+	}
+
+	shadow_size = pkvm_get_shadow_size(nr_vcpus);
+	pgd_size = kvm_pgtable_stage2_pgd_size(host_kvm.arch.vtcr);
 
 	ret = -ENOMEM;
 
@@ -483,7 +466,6 @@ int __pkvm_init_shadow(struct kvm *kvm, unsigned long shadow_hva,
 	if (!vm)
 		goto err_remove_mappings;
 
-	pgd_size = kvm_pgtable_stage2_pgd_size(host_kvm.arch.vtcr);
 	pgd = map_donated_memory_noclear(pgd_hva, pgd_size);
 	if (!pgd)
 		goto err_remove_mappings;
