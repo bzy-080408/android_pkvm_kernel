@@ -35,7 +35,7 @@ struct kvm_shadow_vm {
 	struct kvm_pgtable pgt;
 
 	/* Array of the shadow state pointers per vcpu. */
-	struct kvm_shadow_vcpu_state *shadow_vcpu_states[0];
+	struct kvm_shadow_vcpu_state *shadow_vcpu_states[];
 };
 
 static inline struct kvm_shadow_vcpu_state *get_shadow_state(struct kvm_vcpu *shadow_vcpu)

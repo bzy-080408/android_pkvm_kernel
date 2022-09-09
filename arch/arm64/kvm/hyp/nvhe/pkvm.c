@@ -370,8 +370,8 @@ static void remove_shadow_table(unsigned int shadow_handle)
 static size_t pkvm_get_shadow_size(unsigned int nr_vcpus)
 {
 	/* Shadow space for the vm struct and all of its vcpu states. */
-	return sizeof(struct kvm_shadow_vm) +
-	       sizeof(struct kvm_shadow_vcpu_state *) * nr_vcpus;
+	return size_add(sizeof(struct kvm_shadow_vm),
+		size_mul(sizeof(struct kvm_shadow_vcpu_state *), nr_vcpus));
 }
 
 /*
