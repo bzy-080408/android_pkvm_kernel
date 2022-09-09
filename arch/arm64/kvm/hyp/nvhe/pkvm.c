@@ -252,7 +252,7 @@ pkvm_load_shadow_vcpu_state(unsigned int shadow_handle, unsigned int vcpu_idx)
 	if (!vm || vm->nr_vcpus <= vcpu_idx)
 		goto unlock;
 
-	shadow_state = &vm->shadow_vcpu_states[vcpu_idx];
+	shadow_state = vm->shadow_vcpu_states[vcpu_idx];
 	hyp_page_ref_inc(hyp_virt_to_page(vm));
 unlock:
 	hyp_spin_unlock(&shadow_lock);
@@ -276,13 +276,13 @@ static void unpin_host_vcpu(struct kvm_shadow_vcpu_state *shadow_vcpu_state)
 		hyp_unpin_shared_mem(host_vcpu, host_vcpu + 1);
 }
 
-static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states,
+static void unpin_host_vcpus(struct kvm_shadow_vcpu_state *shadow_vcpu_states[],
 			     unsigned int nr_vcpus)
 {
 	int i;
 
 	for (i = 0; i < nr_vcpus; i++)
-		unpin_host_vcpu(&shadow_vcpu_states[i]);
+		unpin_host_vcpu(shadow_vcpu_states[i]);
 }
 
 static void init_shadow_vm(struct kvm *kvm,
@@ -405,7 +405,7 @@ static size_t pkvm_get_shadow_size(unsigned int nr_vcpus)
 {
 	/* Shadow space for the vm struct and all of its vcpu states. */
 	return sizeof(struct kvm_shadow_vm) +
-	       sizeof(struct kvm_shadow_vcpu_state) * nr_vcpus;
+	       sizeof(struct kvm_shadow_vcpu_state *) * nr_vcpus;
 }
 
 /*
@@ -554,16 +554,24 @@ err_unpin_kvm:
  *
  * shadow_handle: The handle for the protected vm.
  * host_vcpu: A pointer to the corresponding host vcpu (host va).
- *
+ * shadow_vcpu_hva: The host va of the area being donated for the vcpu state.
+ *		    Must be page aligned. The size of the area must be equal to
+ *		    the paged-aligned size of kvm_shadow_vcpu_state.
  * Return 0 on success, negative error code on failure.
  */
 int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
-			    struct kvm_vcpu *host_vcpu)
+			    struct kvm_vcpu *host_vcpu,
+			    unsigned long shadow_vcpu_hva)
 {
 	struct kvm_shadow_vm *vm;
 	struct kvm_shadow_vcpu_state *shadow_vcpu_state;
+	size_t vcpu_state_sz = sizeof(*shadow_vcpu_state);
 	unsigned int idx;
 	int ret;
+
+	shadow_vcpu_state = map_donated_memory(shadow_vcpu_hva, vcpu_state_sz);
+	if (!shadow_vcpu_state)
+		return -ENOMEM;
 
 	hyp_spin_lock(&shadow_lock);
 
@@ -579,14 +587,18 @@ int __pkvm_init_shadow_vcpu(unsigned int shadow_handle,
 		goto unlock;
 	}
 
-	shadow_vcpu_state = &vm->shadow_vcpu_states[idx];
 	ret = init_shadow_vcpu(shadow_vcpu_state, vm, host_vcpu, idx);
 	if (ret)
 		goto unlock;
 
+	vm->shadow_vcpu_states[idx] = shadow_vcpu_state;
 	vm->nr_vcpus++;
 unlock:
 	hyp_spin_unlock(&shadow_lock);
+
+	if (ret)
+		unmap_donated_memory(shadow_vcpu_state, vcpu_state_sz);
+
 	return ret;
 }
 
@@ -605,6 +617,7 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	struct kvm_hyp_memcache *mc;
 	struct kvm_shadow_vm *vm;
 	unsigned int nr_vcpus;
+	int i;
 	int err;
 
 	/* Lookup then remove entry from the shadow table. */
@@ -632,6 +645,10 @@ int __pkvm_teardown_shadow(unsigned int shadow_handle)
 	unpin_host_vcpus(vm->shadow_vcpu_states, nr_vcpus);
 
 	hyp_unpin_shared_mem(vm->host_kvm, vm->host_kvm + 1);
+
+	for (i = 0; i < nr_vcpus; i++)
+		teardown_donated_memory(mc, vm->shadow_vcpu_states[i],
+					sizeof(vm->shadow_vcpu_states[i]));
 
 	teardown_donated_memory(mc, vm, vm->shadow_area_size);
 	return 0;
