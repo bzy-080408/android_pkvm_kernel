@@ -20,3 +20,8 @@ quiet_cmd_gen_cpucaps = GEN     $@
 
 $(kapi)/cpucaps.h: $(src)/gen-cpucaps.awk $(src)/cpucaps FORCE
 	$(call if_changed,gen_cpucaps)
+
+HOST_EXTRACFLAGS += -I$(objtree)/include
+hostprogs += gen-hyprel
+PHONY += gen-hyprel
+gen-hyprel: $(obj)/gen-hyprel
