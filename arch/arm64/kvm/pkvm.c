@@ -108,7 +108,7 @@ void __init kvm_hyp_reserve(void)
  */
 static int __kvm_shadow_create(struct kvm *kvm)
 {
-	struct kvm_vcpu *vcpu, **vcpu_array;
+	struct kvm_vcpu *vcpu;
 	unsigned int shadow_handle;
 	size_t pgd_sz, shadow_sz, vcpu_state_sz;
 	void *pgd, *shadow_addr;
@@ -137,19 +137,6 @@ static int __kvm_shadow_create(struct kvm *kvm)
 		goto free_pgd;
 	}
 
-	/* Stash the vcpu pointers into the PGD */
-	BUILD_BUG_ON(KVM_MAX_VCPUS > (PAGE_SIZE / sizeof(u64)));
-	vcpu_array = pgd;
-	kvm_for_each_vcpu(idx, vcpu, kvm) {
-		/* Indexing of the vcpus to be sequential starting at 0. */
-		if (WARN_ON(vcpu->vcpu_idx != idx)) {
-			ret = -EINVAL;
-			goto free_shadow;
-		}
-
-		vcpu_array[idx] = vcpu;
-	}
-
 	/* Donate the shadow memory to hyp and let hyp initialize it. */
 	ret = kvm_call_hyp_nvhe(__pkvm_init_shadow, kvm, shadow_addr, shadow_sz,
 				pgd);
@@ -158,7 +145,6 @@ static int __kvm_shadow_create(struct kvm *kvm)
 
 	shadow_handle = ret;
 
-	/* Store the shadow handle given by hyp for future call reference. */
 	kvm->arch.pkvm.shadow_handle = shadow_handle;
 	kvm->arch.pkvm.hyp_donations.pgd = pgd;
 	kvm->arch.pkvm.hyp_donations.shadow = shadow_addr;
