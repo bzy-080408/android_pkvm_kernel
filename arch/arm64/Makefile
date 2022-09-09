@@ -182,6 +182,11 @@ vdso_install:
 archclean:
 	$(Q)$(MAKE) $(clean)=$(boot)
 
+ifeq ($(CONFIG_KVM),y)
+archscripts:
+	$(Q)$(MAKE) $(build)=arch/arm64/tools gen-hyprel
+endif
+
 ifeq ($(KBUILD_EXTMOD),)
 # We need to generate vdso-offsets.h before compiling certain files in kernel/.
 # In order to do that, we should use the archprepare target, but we can't since
