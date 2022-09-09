@@ -129,8 +129,8 @@ static int __kvm_shadow_create(struct kvm *kvm)
 		return -ENOMEM;
 
 	/* Allocate memory to donate to hyp for vm, and vcpu state pointers. */
-	shadow_sz = PAGE_ALIGN(KVM_SHADOW_VM_SIZE +
-			       sizeof(void *) * kvm->created_vcpus);
+	shadow_sz = PAGE_ALIGN(size_add(KVM_SHADOW_VM_SIZE,
+			       size_mul(sizeof(void *),	kvm->created_vcpus)));
 	shadow_addr = alloc_pages_exact(shadow_sz, GFP_KERNEL_ACCOUNT);
 	if (!shadow_addr) {
 		ret = -ENOMEM;
