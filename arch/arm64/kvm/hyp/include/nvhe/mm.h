@@ -12,6 +12,7 @@
 
 extern struct kvm_pgtable pkvm_pgtable;
 extern hyp_spinlock_t pkvm_pgd_lock;
+extern const struct pkvm_module_ops module_ops;
 
 int hyp_create_pcpu_fixmap(void);
 void *hyp_fixmap_map(phys_addr_t phys);
@@ -28,4 +29,6 @@ int __pkvm_create_private_mapping(phys_addr_t phys, size_t size,
 				  unsigned long *haddr);
 int pkvm_alloc_private_va_range(size_t size, unsigned long *haddr);
 
+int __pkvm_map_module_page(u64 pfn, void *va, enum kvm_pgtable_prot prot);
+void *__pkvm_alloc_module_va(u64 nr_pages);
 #endif /* __KVM_HYP_MM_H */
