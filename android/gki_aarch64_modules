@@ -1,0 +1,3 @@
+mm/zsmalloc.ko
+drivers/block/zram/zram.ko
+drivers/misc/pkvm-pl011/pkvm_pl011.ko
