@@ -1,5 +1,6 @@
 mm/zsmalloc.ko
 drivers/block/zram/zram.ko
+drivers/misc/pkvm-pl011/pkvm_pl011.ko
 drivers/net/can/dev/can-dev.ko
 drivers/net/can/vcan.ko
 drivers/net/can/slcan.ko
