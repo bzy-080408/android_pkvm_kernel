@@ -19,6 +19,7 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/pkvm.h>
+#include <nvhe/serial.h>
 #include <nvhe/trap_handler.h>
 
 #include <linux/irqchip/arm-gic-v3.h>
@@ -1052,8 +1053,15 @@ static void handle___pkvm_init_module(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(void *, ptr, host_ctxt, 1);
 	int (*do_module_init)(const struct pkvm_module_ops *ops) = ptr;
+	int ret;
 
-	cpu_reg(host_ctxt, 1) = do_module_init(&module_ops);
+	ret = do_module_init(&module_ops);
+	if (!ret)
+		hyp_puts("Module loaded at EL2!");
+	else
+		hyp_puts("Failed to load EL2 module");
+
+	cpu_reg(host_ctxt, 1) = ret;
 }
 
 typedef void (*hcall_t)(struct kvm_cpu_context *);
