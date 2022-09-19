@@ -17,6 +17,7 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/pkvm.h>
+#include <nvhe/serial.h>
 #include <nvhe/trap_handler.h>
 
 unsigned long hyp_nr_cpus;
@@ -33,6 +34,7 @@ static struct hyp_pool hpool;
 
 const struct pkvm_module_ops module_ops = {
 	.create_private_mapping = __pkvm_create_private_mapping,
+	.register_serial_driver = __pkvm_register_serial_driver,
 };
 
 static int divide_memory_pool(void *virt, unsigned long size)
