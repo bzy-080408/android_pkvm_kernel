@@ -31,7 +31,9 @@ static void *host_s2_pgt_base;
 static struct kvm_pgtable_mm_ops pkvm_pgtable_mm_ops;
 static struct hyp_pool hpool;
 
-const struct pkvm_module_ops module_ops = { };
+const struct pkvm_module_ops module_ops = {
+	.create_private_mapping = __pkvm_create_private_mapping,
+};
 
 static int divide_memory_pool(void *virt, unsigned long size)
 {
