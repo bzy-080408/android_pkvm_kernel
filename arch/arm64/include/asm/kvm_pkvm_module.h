@@ -9,6 +9,7 @@
 struct pkvm_module_ops {
 	unsigned long (*create_private_mapping)(phys_addr_t phys, size_t size,
 						enum kvm_pgtable_prot prot);
+	int (*register_serial_driver)(void (*hyp_putc_cb)(char));
 };
 
 struct pkvm_module_section {
