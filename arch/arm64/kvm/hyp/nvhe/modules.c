@@ -20,6 +20,10 @@ int __pkvm_init_module(void *module_init)
 	int ret;
 
 	ret = do_module_init(&module_ops);
+	if (!ret)
+		hyp_puts("Module loaded at EL2!");
+	else
+		hyp_puts("Failed to load EL2 module");
 
 	return ret;
 }
