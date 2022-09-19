@@ -96,6 +96,9 @@ err_unmap:
 	WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn((void *)args), 1));
 	hyp_spin_unlock(&modules_lock);
 
+	hyp_puts(ret ? "Failed to load EL2 module" :
+		       "Module loaded at EL2");
+
 	return ret;
 }
 
