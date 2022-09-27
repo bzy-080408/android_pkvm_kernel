@@ -6,6 +6,8 @@
 #include <asm/kvm_pgtable.h>
 #include <linux/export.h>
 
+typedef void (*dyn_hcall_t)(struct kvm_cpu_context *);
+
 struct pkvm_module_ops {
 	unsigned long (*create_private_mapping)(phys_addr_t phys, size_t size,
 						enum kvm_pgtable_prot prot);
@@ -19,6 +21,11 @@ struct pkvm_module_section {
 
 typedef s32 kvm_nvhe_reloc_t;
 
+struct pkvm_el2_map {
+	void *kern_va;
+	void *hyp_va;
+};
+
 struct pkvm_el2_module {
 	struct pkvm_module_section text;
 	struct pkvm_module_section bss;
@@ -26,6 +33,7 @@ struct pkvm_el2_module {
 	struct pkvm_module_section data;
 	kvm_nvhe_reloc_t *relocs;
 	unsigned int nr_relocs;
+	struct pkvm_el2_map el2_map;
 	int (*init)(const struct pkvm_module_ops *ops);
 };
 
@@ -68,6 +76,13 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this);
 	__pkvm_load_el2_module(&mod, THIS_MODULE);			\
 })
 
+int __pkvm_register_el2_call(struct pkvm_el2_map *map, dyn_hcall_t hfn);
+static __always_inline int
+pkvm_register_el2_mod_call(struct pkvm_el2_module *mod, dyn_hcall_t hfn)
+{
+	return __pkvm_register_el2_call(&mod->el2_map, hfn);
+}
+
 static inline void init_pkvm_module_sections(struct pkvm_el2_module *mod)
 {
 	extern char __kvm_nvhe___hypmod_text_start[];
@@ -94,5 +109,15 @@ static inline void init_pkvm_module_sections(struct pkvm_el2_module *mod)
 				  sizeof(*mod->relocs);
 }
 
+#define pkvm_el2_mod_call(id, ...)					\
+	({								\
+		struct arm_smccc_res res;				\
+									\
+		arm_smccc_1_1_hvc(KVM_HOST_SMCCC_ID(id),		\
+				  ##__VA_ARGS__, &res);			\
+		WARN_ON(res.a0 != SMCCC_RET_SUCCESS);			\
+									\
+		res.a1;							\
+	})
 #endif
 #endif

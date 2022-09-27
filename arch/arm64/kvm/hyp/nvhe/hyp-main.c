@@ -1075,6 +1075,13 @@ static void handle___pkvm_init_module(struct kvm_cpu_context *host_ctxt)
 	cpu_reg(host_ctxt, 1) = __pkvm_init_module(ptr);
 }
 
+static void handle___pkvm_register_hcall(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(void *, ptr, host_ctxt, 1);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_register_hcall(ptr);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -1115,6 +1122,7 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_alloc_module_va),
 	HANDLE_FUNC(__pkvm_map_module_page),
 	HANDLE_FUNC(__pkvm_init_module),
+	HANDLE_FUNC(__pkvm_register_hcall),
 };
 
 static inline u64 kernel__text_addr(void)
@@ -1152,9 +1160,16 @@ static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
 	unsigned long hcall_min = 0;
 	hcall_t hfn;
 
+	/* TODO: Fix provenance check */
+
 	/* Check for the provenance of the HC */
+#if 0
 	if (unlikely(elr < kernel__text_addr() || elr >= kernel__etext_addr()))
 		goto inval;
+#endif
+
+	if (handle_host_dynamic_hcall(host_ctxt) == HCALL_HANDLED)
+		return;
 
 	/*
 	 * If pKVM has been initialised then reject any calls to the

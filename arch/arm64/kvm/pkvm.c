@@ -404,6 +404,21 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
 	}
 	offset = (size_t)((void *)mod->init - start);
 
+	mod->el2_map.hyp_va = hyp_va;
+	mod->el2_map.kern_va = start;
+
 	return kvm_call_hyp_nvhe(__pkvm_init_module, hyp_va + offset);
 }
 EXPORT_SYMBOL_GPL(__pkvm_load_el2_module);
+
+int __pkvm_register_el2_call(struct pkvm_el2_map *map, dyn_hcall_t hfn)
+{
+	dyn_hcall_t hfn_hyp_va;
+	int ret;
+
+	hfn_hyp_va = (dyn_hcall_t)((void *)hfn - map->kern_va + map->hyp_va);
+	ret = kvm_call_hyp_nvhe(__pkvm_register_hcall, hfn_hyp_va);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(__pkvm_register_el2_call);
