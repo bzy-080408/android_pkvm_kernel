@@ -14,11 +14,11 @@
 #include <asm/kvm_host.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
-#include <asm/kvm_pkvm_module.h>
 
 #include <nvhe/ffa.h>
 #include <nvhe/iommu.h>
 #include <nvhe/mem_protect.h>
+#include <nvhe/modules.h>
 #include <nvhe/mm.h>
 #include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
@@ -1070,9 +1070,8 @@ static void handle___pkvm_map_module_page(struct kvm_cpu_context *host_ctxt)
 static void handle___pkvm_init_module(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(void *, ptr, host_ctxt, 1);
-	int (*do_module_init)(const struct pkvm_module_ops *ops) = ptr;
 
-	cpu_reg(host_ctxt, 1) = do_module_init(&module_ops);
+	cpu_reg(host_ctxt, 1) = __pkvm_init_module(ptr);
 }
 
 typedef void (*hcall_t)(struct kvm_cpu_context *);

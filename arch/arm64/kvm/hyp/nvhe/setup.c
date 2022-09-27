@@ -9,7 +9,6 @@
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/kvm_pkvm.h>
-#include <asm/kvm_pkvm_module.h>
 
 #include <nvhe/early_alloc.h>
 #include <nvhe/ffa.h>
@@ -36,8 +35,6 @@ static void *host_s2_pgt_base;
 static void *ffa_proxy_pages;
 static struct kvm_pgtable_mm_ops pkvm_pgtable_mm_ops;
 static struct hyp_pool hpool;
-
-const struct pkvm_module_ops module_ops = { };
 
 static int divide_memory_pool(void *virt, unsigned long size)
 {
