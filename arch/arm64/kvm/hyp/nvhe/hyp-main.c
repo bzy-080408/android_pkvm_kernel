@@ -1074,6 +1074,14 @@ static void handle___pkvm_init_module(struct kvm_cpu_context *host_ctxt)
 	cpu_reg(host_ctxt, 1) = __pkvm_init_module(args_hva);
 }
 
+static void handle___pkvm_register_hcall(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(unsigned long, hfn_kern_va, host_ctxt, 1);
+	DECLARE_REG(unsigned long, module_id, host_ctxt, 2);
+
+	cpu_reg(host_ctxt, 1) = __pkvm_register_hcall(hfn_kern_va, module_id);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -1114,6 +1122,7 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_alloc_module_va),
 	HANDLE_FUNC(__pkvm_map_module_page),
 	HANDLE_FUNC(__pkvm_init_module),
+	HANDLE_FUNC(__pkvm_register_hcall),
 };
 
 static inline u64 kernel__text_addr(void)
@@ -1150,6 +1159,9 @@ static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
 	u64 elr = read_sysreg_el2(SYS_ELR) - 4;
 	unsigned long hcall_min = 0;
 	hcall_t hfn;
+
+	if (handle_host_dynamic_hcall(host_ctxt) == HCALL_HANDLED)
+		return;
 
 	/* Check for the provenance of the HC */
 	if (unlikely(elr < kernel__text_addr() || elr >= kernel__etext_addr()))
