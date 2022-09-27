@@ -1310,6 +1310,7 @@
   pkvm_iommu_suspend
   pkvm_iommu_sysmmu_sync_register
   __pkvm_load_el2_module
+  __pkvm_register_el2_call
   platform_bus_type
   platform_device_add
   platform_device_add_data
