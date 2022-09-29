@@ -65,4 +65,26 @@ HYP_EVENT(hyp_exit,
 	),
 	HE_PRINTK(" ")
 );
+
+HYP_EVENT(admit_host_page,
+	  HE_PROTO(u64 time),
+	  HE_STRUCT(
+		  he_field(u64, time)
+	  ),
+	  HE_ASSIGN(
+		  __entry->time = time;
+	  ),
+	  HE_PRINTK("time=%llu", __entry->time)
+);
+
+HYP_EVENT(wait_for_invalidation_complete,
+	  HE_PROTO(u64 time),
+	  HE_STRUCT(
+		  he_field(u64, time)
+	  ),
+	  HE_ASSIGN(
+		  __entry->time = time;
+	  ),
+	  HE_PRINTK("time=%llu", __entry->time)
+);
 #endif

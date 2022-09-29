@@ -17,6 +17,8 @@
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
+#include <nvhe/trace.h>
+#include <nvhe/clock.h>
 
 struct kvm_pgtable pkvm_pgtable;
 hyp_spinlock_t pkvm_pgd_lock;
@@ -325,9 +327,12 @@ int hyp_create_idmap(u32 hyp_va_bits)
 static void *admit_host_page(void *arg)
 {
 	struct kvm_hyp_memcache *host_mc = arg;
+	u64 ts;
 
 	if (!host_mc->nr_pages)
 		return NULL;
+
+	ts = hyp_clock();
 
 	/*
 	 * The host still owns the pages in its memcache, so we need to go
@@ -337,6 +342,8 @@ static void *admit_host_page(void *arg)
 	 */
 	if (__pkvm_host_donate_hyp(hyp_phys_to_pfn(host_mc->head), 1))
 		return NULL;
+
+	trace_hyp_admit_host_page(hyp_clock() - ts);
 
 	return pop_hyp_memcache(host_mc, hyp_phys_to_virt);
 }

@@ -18,6 +18,8 @@
 #include <nvhe/mm.h>
 #include <nvhe/spinlock.h>
 #include <nvhe/trap_handler.h>
+#include <nvhe/trace.h>
+#include <nvhe/clock.h>
 
 #define SMC_CMD_PREPARE_PD_ONOFF	0x82000410
 #define SMC_MODE_POWER_UP		1
@@ -175,6 +177,7 @@ static void __wait_while(void __iomem *addr, u32 mask)
 static void __wait_for_invalidation_complete(struct pkvm_iommu *dev)
 {
 	struct pkvm_iommu *sync;
+	u64 ts = hyp_clock();
 
 	/*
 	 * Wait for transactions to drain if SysMMU_SYNCs were registered.
@@ -184,6 +187,8 @@ static void __wait_for_invalidation_complete(struct pkvm_iommu *dev)
 		writel_relaxed(SYNC_CMD_SYNC, sync->va + REG_NS_SYNC_CMD);
 		__wait_until(sync->va + REG_NS_SYNC_COMP, SYNC_COMP_COMPLETE);
 	}
+
+	trace_hyp_wait_for_invalidation_complete(hyp_clock() - ts);
 
 	/* Must not access SFRs while S2MPU is busy invalidating (v9 only). */
 	if (is_version(dev, S2MPU_VERSION_9)) {
