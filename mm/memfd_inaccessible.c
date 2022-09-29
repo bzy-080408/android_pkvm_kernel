@@ -232,6 +232,8 @@ void inaccessible_register_notifier(struct file *file,
 {
 	struct inaccessible_data *data = file->f_mapping->private_data;
 
+	BUG_ON(!data);
+
 	mutex_lock(&data->lock);
 	list_add(&notifier->list, &data->notifiers);
 	mutex_unlock(&data->lock);
