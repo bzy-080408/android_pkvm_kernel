@@ -87,4 +87,15 @@ HYP_EVENT(wait_for_invalidation_complete,
 	  ),
 	  HE_PRINTK("time=%llu", __entry->time)
 );
+
+HYP_EVENT(pkvm_iommu_host_stage2_idmap,
+	  HE_PROTO(u64 time),
+	  HE_STRUCT(
+		  he_field(u64, time)
+	  ),
+	  HE_ASSIGN(
+		  __entry->time = time;
+	  ),
+	  HE_PRINTK("time=%llu", __entry->time)
+);
 #endif

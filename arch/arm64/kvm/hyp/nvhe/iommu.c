@@ -15,6 +15,9 @@
 #include <nvhe/iommu.h>
 #include <nvhe/mm.h>
 
+#include <nvhe/trace.h>
+#include <nvhe/clock.h>
+
 enum {
 	IOMMU_DRIVER_NOT_READY = 0,
 	IOMMU_DRIVER_INITIALIZING,
@@ -533,6 +536,7 @@ void pkvm_iommu_host_stage2_idmap(phys_addr_t start, phys_addr_t end,
 	struct pkvm_iommu_driver *drv;
 	struct pkvm_iommu *dev;
 	size_t i;
+	u64 ts = hyp_clock();
 
 	assert_host_component_locked();
 
@@ -546,4 +550,6 @@ void pkvm_iommu_host_stage2_idmap(phys_addr_t start, phys_addr_t end,
 		if (dev->powered && dev->ops->host_stage2_idmap_apply)
 			dev->ops->host_stage2_idmap_apply(dev, start, end);
 	}
+
+	trace_hyp_pkvm_iommu_host_stage2_idmap(hyp_clock() - ts);
 }
