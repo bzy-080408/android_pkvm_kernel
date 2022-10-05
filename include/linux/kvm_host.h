@@ -1154,6 +1154,7 @@ unsigned long gfn_to_hva_prot(struct kvm *kvm, gfn_t gfn, bool *writable);
 unsigned long gfn_to_hva_memslot(struct kvm_memory_slot *slot, gfn_t gfn);
 unsigned long gfn_to_hva_memslot_prot(struct kvm_memory_slot *slot, gfn_t gfn,
 				      bool *writable);
+bool kvm_is_error_memslot(struct kvm_memory_slot *slot, bool write);
 void kvm_release_page_clean(struct page *page);
 void kvm_release_page_dirty(struct page *page);
 

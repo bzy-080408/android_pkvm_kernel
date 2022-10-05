@@ -2565,6 +2565,17 @@ static bool memslot_is_readonly(const struct kvm_memory_slot *slot)
 	return slot->flags & KVM_MEM_READONLY;
 }
 
+bool kvm_is_error_memslot(struct kvm_memory_slot *slot, bool write)
+{
+	if (!slot || slot->flags & KVM_MEMSLOT_INVALID)
+		return true;
+
+	if (memslot_is_readonly(slot) && write)
+		return true;
+
+	return false;
+}
+
 /*
  * Return the memslot of a @gfn and the R/W attribute if slot is valid, or NULL
  * if slot is not valid.
