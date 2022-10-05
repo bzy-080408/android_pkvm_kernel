@@ -199,7 +199,8 @@ int inaccessible_get_pfn(struct file *file, pgoff_t offset, pfn_t *pfn,
 		return ret;
 
 	*pfn = page_to_pfn_t(page);
-	*order = thp_order(compound_head(page));
+	if (order)
+		*order = thp_order(compound_head(page));
 	SetPageUptodate(page);
 	unlock_page(page);
 
