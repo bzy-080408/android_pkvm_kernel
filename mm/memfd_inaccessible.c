@@ -13,6 +13,24 @@ struct inaccessible_data {
 	struct list_head notifiers;
 };
 
+static vm_fault_t inaccessible_fault(struct vm_fault *vmf)
+{
+	struct inaccessible_data *data = vmf->vma->vm_file->f_mapping->private_data;
+	struct file *memfd = data->memfd;
+	struct inode *inode = file_inode(memfd);
+	int err;
+
+	err = shmem_getpage(inode, vmf->pgoff, &vmf->page, SGP_WRITE);
+	if (err)
+		return vmf_error(err);
+
+	return VM_FAULT_LOCKED;
+}
+
+static const struct vm_operations_struct inaccessible_vm_ops = {
+	.fault = inaccessible_fault,
+};
+
 static void inaccessible_notifier_invalidate(struct inaccessible_data *data,
 				 pgoff_t start, pgoff_t end)
 {
@@ -51,7 +69,25 @@ static long inaccessible_fallocate(struct file *file, int mode,
 	return ret;
 }
 
+static int inaccessible_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	/* No support for private mappings to avoid COW.  */
+	if ((vma->vm_flags & (VM_SHARED | VM_MAYSHARE)) !=
+	    (VM_SHARED | VM_MAYSHARE)) {
+		return -EINVAL;
+	}
+
+	/* For now do not allow mapping. */
+	if (true)
+		return -EFAULT;
+
+	file_accessed(file);
+	vma->vm_ops = &inaccessible_vm_ops;
+	return 0;
+}
+
 static const struct file_operations inaccessible_fops = {
+	.mmap = inaccessible_mmap,
 	.release = inaccessible_release,
 	.fallocate = inaccessible_fallocate,
 };
