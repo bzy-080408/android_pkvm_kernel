@@ -1722,6 +1722,9 @@ __gfn_to_hva_memslot(const struct kvm_memory_slot *slot, gfn_t gfn)
 	 * the guest's registered memslots.
 	 */
 	unsigned long offset = gfn - slot->base_gfn;
+
+	BUG_ON(slot->flags & KVM_MEM_PRIVATE);
+
 	offset = array_index_nospec(offset, slot->npages);
 	return slot->userspace_addr + offset * PAGE_SIZE;
 }
