@@ -742,6 +742,10 @@ static void stage2_unmap_memslot(struct kvm *kvm,
 	phys_addr_t size = PAGE_SIZE * memslot->npages;
 	hva_t reg_end = hva + size;
 
+	/* This will never be mapped by the host because it's private. */
+	if ((memslot->flags & KVM_MEM_PRIVATE) && !hva)
+		return;
+
 	/*
 	 * A memory region could potentially cover multiple VMAs, and any holes
 	 * between them, so iterate over all of them to find out if we should
@@ -999,6 +1003,10 @@ static bool fault_supports_stage2_huge_mapping(struct kvm_memory_slot *memslot,
 
 	uaddr_start = memslot->userspace_addr;
 	uaddr_end = uaddr_start + size;
+
+	/* This will never be mapped by the host because it's private. */
+	if ((memslot->flags & KVM_MEM_PRIVATE) && !uaddr_start)
+		return false;
 
 	/*
 	 * Pages belonging to memslots that don't have the same alignment
@@ -1874,6 +1882,10 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 
 	hva = new->userspace_addr;
 	reg_end = hva + (new->npages << PAGE_SHIFT);
+
+	/* This will never be mapped by the host because it's private. */
+	if ((new->flags & KVM_MEM_PRIVATE) && !hva)
+		return 0;
 
 	mmap_read_lock(current->mm);
 	/*
