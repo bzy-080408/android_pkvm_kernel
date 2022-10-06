@@ -83,6 +83,9 @@ enum __kvm_host_smccc_func {
 	__KVM_HOST_SMCCC_FUNC___pkvm_iommu_register,
 	__KVM_HOST_SMCCC_FUNC___pkvm_iommu_pm_notify,
 	__KVM_HOST_SMCCC_FUNC___pkvm_iommu_finalize,
+	__KVM_HOST_SMCCC_FUNC___pkvm_alloc_module_va,
+	__KVM_HOST_SMCCC_FUNC___pkvm_map_module_page,
+	__KVM_HOST_SMCCC_FUNC___pkvm_init_module,
 };
 
 #define DECLARE_KVM_VHE_SYM(sym)	extern char sym[]

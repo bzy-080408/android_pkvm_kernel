@@ -81,6 +81,32 @@ out:
 	return addr;
 }
 
+void *__pkvm_alloc_module_va(u64 nr_pages)
+{
+	unsigned long addr;
+
+	/* TODO: block once deprivileged */
+
+	hyp_spin_lock(&pkvm_pgd_lock);
+	addr = hyp_alloc_private_va_range(nr_pages << PAGE_SHIFT);
+	hyp_spin_unlock(&pkvm_pgd_lock);
+
+	return (void *)addr;
+}
+
+int __pkvm_map_module_page(u64 pfn, void *va, enum kvm_pgtable_prot prot)
+{
+	int ret;
+
+	/* TODO: block once deprivileged */
+
+	ret = __pkvm_host_donate_hyp(pfn, 1);
+	if (ret)
+		return ret;
+
+	return __pkvm_create_mappings((unsigned long)va, PAGE_SIZE, hyp_pfn_to_phys(pfn), prot);
+}
+
 int pkvm_create_mappings_locked(void *from, void *to, enum kvm_pgtable_prot prot)
 {
 	unsigned long start = (unsigned long)from;

@@ -14,6 +14,7 @@
 #include <asm/kvm_host.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
+#include <asm/kvm_pkvm_module.h>
 
 #include <nvhe/ffa.h>
 #include <nvhe/iommu.h>
@@ -1050,6 +1051,30 @@ static void handle___pkvm_iommu_finalize(struct kvm_cpu_context *host_ctxt)
 	cpu_reg(host_ctxt, 1) = __pkvm_iommu_finalize();
 }
 
+static void handle___pkvm_alloc_module_va(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(u64, nr_pages, host_ctxt, 1);
+
+	cpu_reg(host_ctxt, 1) = (u64)__pkvm_alloc_module_va(nr_pages);
+}
+
+static void handle___pkvm_map_module_page(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(u64, pfn, host_ctxt, 1);
+	DECLARE_REG(void *, va, host_ctxt, 2);
+	DECLARE_REG(enum kvm_pgtable_prot, prot, host_ctxt, 3);
+
+	cpu_reg(host_ctxt, 1) = (u64)__pkvm_map_module_page(pfn, va, prot);
+}
+
+static void handle___pkvm_init_module(struct kvm_cpu_context *host_ctxt)
+{
+	DECLARE_REG(void *, ptr, host_ctxt, 1);
+	int (*do_module_init)(const struct pkvm_module_ops *ops) = ptr;
+
+	cpu_reg(host_ctxt, 1) = do_module_init(&module_ops);
+}
+
 typedef void (*hcall_t)(struct kvm_cpu_context *);
 
 #define HANDLE_FUNC(x)	[__KVM_HOST_SMCCC_FUNC_##x] = (hcall_t)handle_##x
@@ -1087,6 +1112,9 @@ static const hcall_t host_hcall[] = {
 	HANDLE_FUNC(__pkvm_iommu_register),
 	HANDLE_FUNC(__pkvm_iommu_pm_notify),
 	HANDLE_FUNC(__pkvm_iommu_finalize),
+	HANDLE_FUNC(__pkvm_alloc_module_va),
+	HANDLE_FUNC(__pkvm_map_module_page),
+	HANDLE_FUNC(__pkvm_init_module),
 };
 
 static inline u64 kernel__text_addr(void)

@@ -13,7 +13,9 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/sort.h>
 
+#include <asm/kvm_mmu.h>
 #include <asm/kvm_pkvm.h>
+#include <asm/kvm_pkvm_module.h>
 
 #include "hyp_constants.h"
 
@@ -332,3 +334,73 @@ int kvm_init_pvm(struct kvm *kvm, unsigned long type)
 	kvm->arch.pkvm.enabled = true;
 	return 0;
 }
+
+static bool offset_in_section(size_t offset, void *start, struct pkvm_module_section *sec)
+{
+	void *addr = start + offset;
+
+	return (addr >= sec->start) && (addr < sec->end);
+}
+
+int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
+{
+	void *start, *end, *hyp_va;
+	enum kvm_pgtable_prot prot;
+	kvm_nvhe_reloc_t *endrel;
+	size_t offset, size;
+	u64 pfn;
+	int ret;
+
+	if (!PAGE_ALIGNED(mod->text.start) ||
+	    !PAGE_ALIGNED(mod->bss.start) ||
+	    !PAGE_ALIGNED(mod->rodata.start) ||
+	    !PAGE_ALIGNED(mod->data.start)) {
+		kvm_err("EL2 sections are not page-aligned\n");
+		return -EINVAL;
+	}
+
+	if (!try_module_get(this)) {
+		kvm_err("Kernel module has been unloaded\n");
+		return -ENODEV;
+	}
+
+	start = mod->text.start;
+	end = mod->data.end;
+	size = PAGE_ALIGN((size_t)(end - start));
+
+	hyp_va = (void *)kvm_call_hyp_nvhe(__pkvm_alloc_module_va, size >> PAGE_SHIFT);
+	if (!hyp_va) {
+		kvm_err("Failed to allocate hypervisor VA space for EL2 module\n");
+		module_put(this);
+		return -ENOMEM;
+	}
+	endrel = (void *)mod->relocs + mod->nr_relocs * sizeof(*endrel);
+	kvm_apply_hyp_module_relocations(start, hyp_va, mod->relocs, endrel);
+
+	for (offset = 0; offset < size; offset += PAGE_SIZE) {
+		if (offset_in_section(offset, start, &mod->text))
+			prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_X;
+		else if (offset_in_section(offset, start, &mod->bss) ||
+				offset_in_section(offset, start, &mod->data))
+			prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W;
+		else if (offset_in_section(offset, start, &mod->rodata))
+			prot = KVM_PGTABLE_PROT_R;
+		else
+			continue;
+
+		pfn = vmalloc_to_pfn(start + offset);
+		ret = kvm_call_hyp_nvhe(__pkvm_map_module_page, pfn,
+					hyp_va + offset, prot);
+		if (ret) {
+			kvm_err("Failed to map EL2 module page: %d\n", ret);
+			/* Don't let the module go if we've lost access to pages */
+			if (!offset)
+				module_put(this);
+			return ret;
+		}
+	}
+	offset = (size_t)((void *)mod->init - start);
+
+	return kvm_call_hyp_nvhe(__pkvm_init_module, hyp_va + offset);
+}
+EXPORT_SYMBOL_GPL(__pkvm_load_el2_module);
