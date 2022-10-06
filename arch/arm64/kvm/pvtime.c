@@ -94,7 +94,7 @@ int kvm_arm_pvtime_set_attr(struct kvm_vcpu *vcpu,
 
 	/* Check the address is in a valid memslot */
 	idx = srcu_read_lock(&kvm->srcu);
-	if (kvm_is_error_hva(gfn_to_hva(kvm, ipa >> PAGE_SHIFT)))
+	if (kvm_is_error_memslot(gfn_to_memslot(kvm, ipa >> PAGE_SHIFT), true))
 		ret = -EINVAL;
 	srcu_read_unlock(&kvm->srcu, idx);
 
