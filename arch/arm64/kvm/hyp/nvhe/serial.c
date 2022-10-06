@@ -6,6 +6,8 @@
 #include <nvhe/pkvm.h>
 #include <nvhe/spinlock.h>
 
+#include "../debug-pl011.h"
+
 static void (*__hyp_putc)(char c);
 
 static inline void __hyp_putx4(unsigned int x)
@@ -39,8 +41,11 @@ static inline bool hyp_serial_enabled(void)
 
 void hyp_puts(const char *s)
 {
-	if (!hyp_serial_enabled())
+	if (!hyp_serial_enabled()) {
+		/* fallback to debug-pl011.h */
+		___hyp_puts(s);
 		return;
+	}
 
 	while (*s)
 		__hyp_putc(*s++);
@@ -52,12 +57,18 @@ void hyp_putx64(u64 x)
 {
 	if (hyp_serial_enabled())
 		__hyp_putx4n(x, 64);
+	else
+		/* fallback to debug-pl011.h */
+		___hyp_putx64(x);
 }
 
 void hyp_putc(char c)
 {
 	if (hyp_serial_enabled())
 		__hyp_putc(c);
+	else
+		/* fallback to debug-pl011.h */
+		___hyp_putc(c);
 }
 
 int __pkvm_register_serial_driver(void (*hyp_putc_cb)(char))
