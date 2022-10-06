@@ -1193,6 +1193,12 @@ int kvm_write_guest_offset_cached(struct kvm *kvm, struct gfn_to_hva_cache *ghc,
 int kvm_gfn_to_hva_cache_init(struct kvm *kvm, struct gfn_to_hva_cache *ghc,
 			      gpa_t gpa, unsigned long len);
 
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+#define __kvm_get_guest(kvm, gfn, offset, v)				\
+({									\
+	kvm_read_guest_page(kvm, gfn, &(v), offset, sizeof(v));		\
+})
+#else
 #define __kvm_get_guest(kvm, gfn, offset, v)				\
 ({									\
 	unsigned long __addr = gfn_to_hva(kvm, gfn);			\
@@ -1203,6 +1209,7 @@ int kvm_gfn_to_hva_cache_init(struct kvm *kvm, struct gfn_to_hva_cache *ghc,
 		__ret = get_user(v, __uaddr);				\
 	__ret;								\
 })
+#endif
 
 #define kvm_get_guest(kvm, gpa, v)					\
 ({									\
@@ -1213,6 +1220,14 @@ int kvm_gfn_to_hva_cache_init(struct kvm *kvm, struct gfn_to_hva_cache *ghc,
 			offset_in_page(__gpa), v);			\
 })
 
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+#define __kvm_put_guest(kvm, gfn, offset, v)				\
+({									\
+	typeof(v) data = v;						\
+									\
+	kvm_write_guest_page(kvm, gfn, &(data), offset, sizeof(data));	\
+})
+#else
 #define __kvm_put_guest(kvm, gfn, offset, v)				\
 ({									\
 	unsigned long __addr = gfn_to_hva(kvm, gfn);			\
@@ -1225,6 +1240,7 @@ int kvm_gfn_to_hva_cache_init(struct kvm *kvm, struct gfn_to_hva_cache *ghc,
 		mark_page_dirty(kvm, gfn);				\
 	__ret;								\
 })
+#endif
 
 #define kvm_put_guest(kvm, gpa, v)					\
 ({									\

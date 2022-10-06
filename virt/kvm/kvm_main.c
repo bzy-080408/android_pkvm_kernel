@@ -3181,6 +3181,21 @@ static int __kvm_read_guest_page(struct kvm_memory_slot *slot, gfn_t gfn,
 	int r;
 	unsigned long addr;
 
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+	if ((slot->flags & KVM_MEM_PRIVATE && !slot->userspace_addr)) {
+		u64 pfn;
+		struct page *page;
+
+		r = kvm_private_mem_get_pfn(slot, gfn, &pfn, NULL);
+		if (r)
+			return -EFAULT;
+
+		page = pfn_to_page(pfn);
+		memcpy(data, page_address(page) + offset, len);
+		kvm_private_mem_put_pfn(slot, pfn);
+		return 0;
+	}
+#endif
 	addr = gfn_to_hva_memslot_prot(slot, gfn, NULL);
 	if (kvm_is_error_hva(addr))
 		return -EFAULT;
@@ -3282,6 +3297,23 @@ static int __kvm_write_guest_page(struct kvm *kvm,
 {
 	int r;
 	unsigned long addr;
+
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+	if ((memslot->flags & KVM_MEM_PRIVATE && !memslot->userspace_addr)) {
+		u64 pfn;
+		struct page *page;
+
+		r = kvm_private_mem_get_pfn(memslot, gfn, &pfn, NULL);
+		if (r)
+			return -EFAULT;
+
+		page = pfn_to_page(pfn);
+		memcpy(page_address(page) + offset, data, len);
+		mark_page_dirty_in_slot(kvm, memslot, gfn);
+		kvm_private_mem_put_pfn(memslot, pfn);
+		return 0;
+	}
+#endif
 
 	addr = gfn_to_hva_memslot(memslot, gfn);
 	if (kvm_is_error_hva(addr))
