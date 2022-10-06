@@ -351,6 +351,9 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
 	u64 pfn;
 	int ret;
 
+	if (!is_protected_kvm_enabled())
+		return -EOPNOTSUPP;
+
 	if (!PAGE_ALIGNED(mod->text.start) ||
 	    !PAGE_ALIGNED(mod->bss.start) ||
 	    !PAGE_ALIGNED(mod->rodata.start) ||
