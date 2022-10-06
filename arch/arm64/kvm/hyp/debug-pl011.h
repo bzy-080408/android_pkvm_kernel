@@ -12,8 +12,8 @@
  * It's slow and racy, but you'll be fine. Patches unwelcome.
  */
 
-#ifndef __ARM64_KVM_HYP_DEBUG_PL011_H__
-#define __ARM64_KVM_HYP_DEBUG_PL011_H__
+#ifndef ___ARM64_KVM_HYP_DEBUG_PL011_H___
+#define ___ARM64_KVM_HYP_DEBUG_PL011_H___
 
 #ifdef CONFIG_KVM_ARM_HYP_DEBUG_UART
 
@@ -23,7 +23,7 @@
 #define HYP_PL011_UARTFR_BUSY	2
 #define HYP_PL011_UARTFR_FULL	(BIT(1) | BIT(2))
 
-#ifdef __ASSEMBLY__
+#ifdef ___ASSEMBLY___
 
 .macro hyp_pl011_base, tmp
 	mrs		\tmp, sctlr_el2
@@ -48,7 +48,7 @@ alternative_cb_end
  * 'c' is a W register containing the character to transmit. Preserved.
  * 'tmpnr' is the number of another scratch register. Clobbered.
  */
-.macro hyp_putc, c, tmpnr
+.macro ___hyp_putc, c, tmpnr
 9992:	hyp_pl011_base	x\tmpnr
 	ldr		w\tmpnr, [x\tmpnr, HYP_PL011_UARTFR]
 	tbnz		w\tmpnr, HYP_PL011_UARTFR_FULL, 9992b
@@ -66,50 +66,50 @@ alternative_cb_end
  * The string must be mapped, so it's best to use a combination of '.ascii'
  * and PC-relative addressing (i.e. an ADR instruction)
  */
-.macro hyp_puts, s, tmpnr1, tmpnr2
+.macro ___hyp_puts, s, tmpnr1, tmpnr2
 9993:	ldrb		w\tmpnr1, [\s]
 	cbz		w\tmpnr1, 9993f
-	hyp_putc	w\tmpnr1, \tmpnr2
+	___hyp_putc	w\tmpnr1, \tmpnr2
 	add		\s, \s, #1
 	b		9993b
 9993:	mov		w\tmpnr1, '\n'
-	hyp_putc	w\tmpnr1, \tmpnr2
+	___hyp_putc	w\tmpnr1, \tmpnr2
 .endm
 
-.macro __hyp_putx4, xnr, tmpnr
+.macro ___hyp_putx4, xnr, tmpnr
 	bic		x\xnr, x\xnr, #0xfffffff0
 	sub		w\tmpnr, w\xnr, #10
 	tbnz		w\tmpnr, #31, 9994f
 	add		x\xnr, x\xnr, #0x27
 9994:	add		x\xnr, x\xnr, #0x30
-	hyp_putc	w\xnr, \tmpnr
+	___hyp_putc	w\xnr, \tmpnr
 .endm
 
 /*
  * 'x' is an X register containing a value to printed in hex. Preserved.
  * 'tmpnr1' and  'tmpnr2' are numbers of other scratch registers. Clobbered.
  */
-.macro hyp_putx64, x, tmpnr1, tmpnr2
+.macro ___hyp_putx64, x, tmpnr1, tmpnr2
 	mov		w\tmpnr1, '0'
-	hyp_putc	w\tmpnr1, \tmpnr2
+	___hyp_putc	w\tmpnr1, \tmpnr2
 	mov		w\tmpnr1, 'x'
-	hyp_putc	w\tmpnr1, \tmpnr2
+	___hyp_putc	w\tmpnr1, \tmpnr2
 	movz		x\tmpnr1, #15, lsl #32
 9995:	bfxil		x\tmpnr1, \x, #60, #4
 	ror		\x, \x, #60
-	__hyp_putx4	\tmpnr1, \tmpnr2
+	___hyp_putx4	\tmpnr1, \tmpnr2
 	ror		x\tmpnr1, x\tmpnr1, #32
 	cbz		w\tmpnr1, 9995f
 	sub		x\tmpnr1, x\tmpnr1, #1
 	ror		x\tmpnr1, x\tmpnr1, #32
 	b		9995b
 9995:	mov		w\tmpnr1, '\n'
-	hyp_putc	w\tmpnr1, \tmpnr2
+	___hyp_putc	w\tmpnr1, \tmpnr2
 .endm
 
 #else
 
-static inline void *__hyp_pl011_base(void)
+static inline void *___hyp_pl011_base(void)
 {
 	unsigned long ioaddr;
 
@@ -124,25 +124,25 @@ static inline void *__hyp_pl011_base(void)
 	return *((void **)kern_hyp_va(ioaddr));
 }
 
-static inline unsigned int __hyp_readw(void *ioaddr)
+static inline unsigned int ___hyp_readw(void *ioaddr)
 {
 	unsigned int val;
 	asm volatile("ldr %w0, [%1]" : "=r" (val) : "r" (ioaddr));
 	return val;
 }
 
-static inline void __hyp_writew(unsigned int val, void *ioaddr)
+static inline void ___hyp_writew(unsigned int val, void *ioaddr)
 {
 	asm volatile("str %w0, [%1]" : : "r" (val), "r" (ioaddr));
 }
 
-static inline void hyp_putc(char c)
+static inline void ___hyp_putc(char c)
 {
-	void *base = __hyp_pl011_base();
+	void *base = ___hyp_pl011_base();
 
-	while (!(__hyp_readw(base + HYP_PL011_UARTFR) & HYP_PL011_UARTFR_FULL)) {}
+	while (!(___hyp_readw(base + HYP_PL011_UARTFR) & HYP_PL011_UARTFR_FULL)) {}
 	dmb(sy);
-	__hyp_writew(c, base + HYP_PL011_UARTTX);
+	___hyp_writew(c, base + HYP_PL011_UARTTX);
 	dmb(sy);
 }
 
@@ -150,46 +150,46 @@ static inline void hyp_putc(char c)
  * Caller needs to ensure string is mapped. If it lives in .rodata, you should
  * be good as long as we're using PC-relative addressing (probably true).
  */
-static inline void hyp_puts(const char *s)
+static inline void ___hyp_puts(const char *s)
 {
 	while (*s)
-		hyp_putc(*s++);
-	hyp_putc('\n');
-	hyp_putc('\r');
+		___hyp_putc(*s++);
+	___hyp_putc('\n');
+	___hyp_putc('\r');
 }
 
-static inline void __hyp_putx4(unsigned int x)
+static inline void ___hyp_putx4(unsigned int x)
 {
 	x &= 0xf;
 	if (x <= 9)
 		x += '0';
 	else
 		x += ('a' - 0xa);
-	hyp_putc(x);
+	___hyp_putc(x);
 }
 
-static inline void __hyp_putx4n(unsigned long x, int n)
+static inline void ___hyp_putx4n(unsigned long x, int n)
 {
 	int i = n >> 2;
 
-	hyp_putc('0');
-	hyp_putc('x');
+	___hyp_putc('0');
+	___hyp_putc('x');
 
 	while (i--)
-		__hyp_putx4(x >> (4 * i));
+		___hyp_putx4(x >> (4 * i));
 
-	hyp_putc('\n');
-	hyp_putc('\r');
+	___hyp_putc('\n');
+	___hyp_putc('\r');
 }
 
-static inline void hyp_putx32(unsigned int x)
+static inline void ___hyp_putx32(unsigned int x)
 {
-	__hyp_putx4n(x, 32);
+	___hyp_putx4n(x, 32);
 }
 
-static inline void hyp_putx64(unsigned long x)
+static inline void ___hyp_putx64(unsigned long x)
 {
-	__hyp_putx4n(x, 64);
+	___hyp_putx4n(x, 64);
 }
 
 #endif
@@ -198,25 +198,25 @@ static inline void hyp_putx64(unsigned long x)
 
 #warning "Please don't include debug-pl011.h if you're not debugging"
 
-#ifdef __ASSEMBLY__
+#ifdef ___ASSEMBLY___
 
-.macro hyp_putc, c, tmpnr
+.macro ___hyp_putc, c, tmpnr
 .endm
 
-.macro hyp_puts, s, tmpnr1, tmpnr2
+.macro ___hyp_puts, s, tmpnr1, tmpnr2
 .endm
 
-.macro hyp_putx64, x, tmpnr1, tmpnr2
+.macro ___hyp_putx64, x, tmpnr1, tmpnr2
 .endm
 
 #else
 
-static inline void hyp_putc(char c) { }
-static inline void hyp_puts(const char *s) { }
-static inline void hyp_putx32(unsigned int x) { }
-static inline void hyp_putx64(unsigned long x) { }
+static inline void ___hyp_putc(char c) { }
+static inline void ___hyp_puts(const char *s) { }
+static inline void ___hyp_putx32(unsigned int x) { }
+static inline void ___hyp_putx64(unsigned long x) { }
 
 #endif
 
 #endif	/* CONFIG_KVM_ARM_HYP_DEBUG_UART */
-#endif	/* __ARM64_KVM_HYP_DEBUG_PL011_H__ */
+#endif	/* ___ARM64_KVM_HYP_DEBUG_PL011_H___ */
