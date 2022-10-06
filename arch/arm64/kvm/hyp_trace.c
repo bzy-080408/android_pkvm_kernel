@@ -554,39 +554,49 @@ void kvm_hyp_init_events_tracefs(struct dentry *parent);
 
 static int __init hyp_tracing_debugfs(void)
 {
-	struct dentry *d, *folder;
-	char trace_name[16];
+	struct dentry *d, *root_dir, *per_cpu_root_dir, *per_cpu_subdir;
+	char per_cpu_name[16];
 	unsigned long cpu;
 
-	folder = tracefs_create_dir("hyp", NULL);
-	if (!folder) {
+	root_dir = tracefs_create_dir("hyp", NULL);
+	if (!root_dir) {
 		pr_err("Failed to create tracefs folder for hyp\n");
 		return -ENODEV;
 	}
 
-	d = tracefs_create_file("tracing_on", 0700, folder, NULL, &hyp_tracing_on_fops);
+	d = tracefs_create_file("tracing_on", 0700, root_dir, NULL, &hyp_tracing_on_fops);
 	if (!d) {
 		pr_err("Failed to create file tracefs hyp/tracing_on\n");
 		return -ENODEV;
 	}
 
+        per_cpu_root_dir = tracefs_create_dir("per_cpu", root_dir);
+        if (!per_cpu_root_dir) {
+                pr_err("Failed to create hyp/per_cpu directory\n");
+                return -ENODEV;
+        }
+
 	for_each_possible_cpu(cpu) {
-		snprintf(trace_name, sizeof(trace_name), "trace.%lu", cpu);
-		d = tracefs_create_file(trace_name, 0600, folder,
+		snprintf(per_cpu_name, sizeof(per_cpu_name), "cpu%lu", cpu);
+                per_cpu_subdir = tracefs_create_dir(per_cpu_name, per_cpu_root_dir);
+                if (!per_cpu_subdir) {
+                      pr_warn("Failed to create hyp/per_cpu/cpu%lu\n", cpu);
+                      continue;
+                }
+		d = tracefs_create_file("trace", 0600, per_cpu_subdir,
 				(void *)cpu,
 				&hyp_trace_fops);
 		if (!d)
-			pr_warn("Failed create hyp/trace for CPU %lu\n", cpu);
+			pr_warn("Failed create hyp/per_cpu/cpu%lu/trace\n", cpu);
 
-		snprintf(trace_name, sizeof(trace_name), "trace_pipe.%lu", cpu);
-		d = tracefs_create_file(trace_name, 0600, folder,
+		d = tracefs_create_file("trace_pipe", 0600, per_cpu_subdir,
 				(void *)cpu,
 				&hyp_trace_pipe_fops);
 		if (!d)
-			pr_warn("Failed create hyp/trace for CPU %lu\n", cpu);
+			pr_warn("Failed create hyp/per_cpu/cpu%lu/trace_pipe\n", cpu);
 	}
 
-	kvm_hyp_init_events_tracefs(folder);
+	kvm_hyp_init_events_tracefs(root_dir);
 
 	return 0;
 }
