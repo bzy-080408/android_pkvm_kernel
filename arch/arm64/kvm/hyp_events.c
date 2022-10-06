@@ -147,11 +147,22 @@ void kvm_hyp_init_events_tracefs(struct dentry *parent)
 		return;
 	}
 
+	parent = tracefs_create_dir("hyp", parent);
+	if (!parent) {
+		pr_err("Failed to create tracefs folder events/hyp\n");
+		return;
+	}
+
 	for (; (unsigned long)event < (unsigned long)__stop_hyp_events; event++) {
-		d = tracefs_create_file(event->name, 0700, parent, (void *)event,
+                d = tracefs_create_dir(event->name, parent);
+                if (!d) {
+                        pr_err("Failed to create events/hyp/%s\n", event->name);
+                        continue;
+                }
+		d = tracefs_create_file("enable", 0700, d, (void *)event,
 					&hyp_event_fops);
 		if (!d)
-			pr_err("Failed to create event folder for %s\n", event->name);
+			pr_err("Failed to create events/hyp/%s/enable\n", event->name);
 	}
 }
 
