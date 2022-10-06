@@ -382,6 +382,7 @@ static inline bool aarch64_insn_is_adr_adrp(u32 insn)
 
 int aarch64_insn_read(void *addr, u32 *insnp);
 int aarch64_insn_write(void *addr, u32 insn);
+int aarch64_addr_write(void *addr, u64 dst);
 enum aarch64_insn_encoding_class aarch64_get_insn_class(u32 insn);
 bool aarch64_insn_uses_literal(u32 insn);
 bool aarch64_insn_is_branch(u32 insn);
