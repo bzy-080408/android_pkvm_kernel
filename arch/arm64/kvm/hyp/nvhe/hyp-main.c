@@ -1069,9 +1069,9 @@ static void handle___pkvm_map_module_page(struct kvm_cpu_context *host_ctxt)
 
 static void handle___pkvm_init_module(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(void *, ptr, host_ctxt, 1);
+	DECLARE_REG(unsigned long, args_hva, host_ctxt, 1);
 
-	cpu_reg(host_ctxt, 1) = __pkvm_init_module(ptr);
+	cpu_reg(host_ctxt, 1) = __pkvm_init_module(args_hva);
 }
 
 typedef void (*hcall_t)(struct kvm_cpu_context *);

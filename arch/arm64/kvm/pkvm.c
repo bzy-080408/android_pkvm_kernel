@@ -341,6 +341,7 @@ static bool offset_in_section(size_t offset, void *start, struct pkvm_module_sec
 
 int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
 {
+	struct pkvm_el2_module_args *args;
 	void *start, *end, *hyp_va;
 	enum kvm_pgtable_prot prot;
 	kvm_nvhe_reloc_t *endrel;
@@ -399,8 +400,17 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
 			return ret;
 		}
 	}
-	offset = (size_t)((void *)mod->init - start);
 
-	return kvm_call_hyp_nvhe(__pkvm_init_module, hyp_va + offset);
+	args = (struct pkvm_el2_module_args *)page_to_virt(alloc_page(GFP_KERNEL));
+
+	args->id = (unsigned long)this;
+	args->hyp_text = hyp_va;
+	args->hyp_init_offset = (void *)((void *)mod->init - start);
+
+	ret = kvm_call_hyp_nvhe(__pkvm_init_module, (unsigned long)args);
+
+	free_page((unsigned long)args);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(__pkvm_load_el2_module);
