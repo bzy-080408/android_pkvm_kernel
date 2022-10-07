@@ -9,6 +9,7 @@
 #include <nvhe/mm.h>
 #include <nvhe/serial.h>
 #include <nvhe/spinlock.h>
+#include <nvhe/iommu.h>
 #include <nvhe/trap_handler.h>
 
 #define MAX_DYNAMIC_HCALLS 16
@@ -67,10 +68,27 @@ int __pkvm_register_hcall(void *hfn_ptr)
 
 	return reserved_id + __KVM_HOST_SMCCC_FUNC___dynamic_hcalls;
 };
+static phys_addr_t __module_hyp_pa(phys_addr_t x){
+	return __hyp_pa(x);
+}
+static phys_addr_t __module_kern_hyp_va(phys_addr_t x){
+	return kern_hyp_va(x);
+}
 
 const struct pkvm_module_ops module_ops = {
 	.create_private_mapping = __pkvm_create_private_mapping,
 	.register_serial_driver = __pkvm_register_serial_driver,
+	.pkvm_host_donate_hyp = __pkvm_host_donate_hyp,
+	.pkvm_hyp_donate_host = __pkvm_hyp_donate_host,
+	.register_serial_driver = __pkvm_register_serial_driver,
+	.register_iommu_driver = __pkvm_register_iommu_driver,
+	.memcpy = memcpy,
+	.memset = memset,
+	.dcache_clean_inval_poc = dcache_clean_inval_poc,
+	.hyp_puts = hyp_puts,
+	.module_hyp_pa = __module_hyp_pa,
+	.module_kern_hyp_va = __module_kern_hyp_va,
+
 };
 
 int __pkvm_init_module(void *module_init)

@@ -21,12 +21,8 @@ enum {
 	IOMMU_DRIVER_READY,
 };
 
-struct pkvm_iommu_driver {
-	const struct pkvm_iommu_ops *ops;
-	atomic_t state;
-};
-
-static struct pkvm_iommu_driver iommu_drivers[PKVM_IOMMU_NR_DRIVERS];
+/*list of registerd IOMMU drivers*/
+static LIST_HEAD(iommu_drivers);
 
 /* IOMMU device list. Must only be accessed with host_kvm.lock held. */
 static LIST_HEAD(iommu_list);
@@ -51,32 +47,32 @@ static void host_unlock_component(void)
 {
 	hyp_spin_unlock(&host_kvm.lock);
 }
+int __pkvm_register_iommu_driver(struct pkvm_iommu_driver *drv){
+       //TODO, check for collision in ids
+       if(!drv) 
+			return -EINVAL;
+       list_add_tail(&drv->list, &iommu_drivers);
+
+       return 0;
+}
+
 
 /*
  * Find IOMMU driver by its ID. The input ID is treated as unstrusted
  * and is properly validated.
  */
-static inline struct pkvm_iommu_driver *get_driver(enum pkvm_iommu_driver_id id)
+static inline struct pkvm_iommu_driver *get_driver(int id)
 {
-	size_t index = (size_t)id;
-
-	if (index >= ARRAY_SIZE(iommu_drivers))
-		return NULL;
-
-	return &iommu_drivers[index];
-}
-
-static const struct pkvm_iommu_ops *get_driver_ops(enum pkvm_iommu_driver_id id)
-{
-	switch (id) {
-	case PKVM_IOMMU_DRIVER_S2MPU:
-		return IS_ENABLED(CONFIG_KVM_S2MPU) ? &pkvm_s2mpu_ops : NULL;
-	case PKVM_IOMMU_DRIVER_SYSMMU_SYNC:
-		return IS_ENABLED(CONFIG_KVM_S2MPU) ? &pkvm_sysmmu_sync_ops : NULL;
-	default:
-		return NULL;
+	struct pkvm_iommu_driver *drv;
+	list_for_each_entry(drv, &iommu_drivers, list) {
+	        if (drv->id == id)
+	                return drv;
 	}
+	return NULL;
+
 }
+
+
 
 static inline bool driver_acquire_init(struct pkvm_iommu_driver *drv)
 {
@@ -247,7 +243,7 @@ static struct pkvm_iommu *find_iommu_by_id(unsigned long id)
  * arguments are passed in a shared memory buffer. The driver is expected to
  * initialize it's page-table bookkeeping.
  */
-int __pkvm_iommu_driver_init(enum pkvm_iommu_driver_id id, void *data, size_t size)
+int __pkvm_iommu_driver_init(int id, void *data, size_t size)
 {
 	struct pkvm_iommu_driver *drv;
 	const struct pkvm_iommu_ops *ops;
@@ -261,10 +257,9 @@ int __pkvm_iommu_driver_init(enum pkvm_iommu_driver_id id, void *data, size_t si
 		ret = -EPERM;
 		goto out_unlock;
 	}
-
+	
 	drv = get_driver(id);
-	ops = get_driver_ops(id);
-	if (!drv || !ops) {
+	if (!drv || !drv->ops) {
 		ret = -EINVAL;
 		goto out_unlock;
 	}
@@ -274,7 +269,7 @@ int __pkvm_iommu_driver_init(enum pkvm_iommu_driver_id id, void *data, size_t si
 		goto out_unlock;
 	}
 
-	drv->ops = ops;
+	ops = drv->ops  ;
 
 	/* This can change stage-2 mappings. */
 	if (ops->init) {
@@ -293,8 +288,10 @@ int __pkvm_iommu_driver_init(enum pkvm_iommu_driver_id id, void *data, size_t si
 	 */
 	host_lock_component();
 	ret = snapshot_host_stage2(drv);
-	if (!ret)
+
+	if (!ret){
 		driver_release_init(drv, /*success=*/true);
+	}
 	host_unlock_component();
 
 out_release:
@@ -307,7 +304,7 @@ out_unlock:
 }
 
 int __pkvm_iommu_register(unsigned long dev_id,
-			  enum pkvm_iommu_driver_id drv_id,
+			  int drv_id,
 			  phys_addr_t dev_pa, size_t dev_size,
 			  unsigned long parent_id,
 			  void *kern_mem_va, size_t mem_size)
@@ -532,12 +529,10 @@ void pkvm_iommu_host_stage2_idmap(phys_addr_t start, phys_addr_t end,
 {
 	struct pkvm_iommu_driver *drv;
 	struct pkvm_iommu *dev;
-	size_t i;
 
 	assert_host_component_locked();
 
-	for (i = 0; i < ARRAY_SIZE(iommu_drivers); i++) {
-		drv = get_driver(i);
+	list_for_each_entry(drv, &iommu_drivers, list) {
 		if (drv && is_driver_ready(drv) && drv->ops->host_stage2_idmap_prepare)
 			drv->ops->host_stage2_idmap_prepare(start, end, prot);
 	}

@@ -1156,7 +1156,6 @@ static inline u64 kernel__etext_addr(void)
 static void handle_host_hcall(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(unsigned long, id, host_ctxt, 0);
-	u64 elr = read_sysreg_el2(SYS_ELR) - 4;
 	unsigned long hcall_min = 0;
 	hcall_t hfn;
 
