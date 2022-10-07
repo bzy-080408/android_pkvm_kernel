@@ -8,6 +8,8 @@
 
 typedef void (*dyn_hcall_t)(struct kvm_cpu_context *);
 
+struct pkvm_iommu_driver; /* TODO: Remove the need for forward declaration? */
+
 struct pkvm_module_ops {
 	unsigned long (*create_private_mapping)(phys_addr_t phys, size_t size,
 						enum kvm_pgtable_prot prot);
@@ -19,6 +21,13 @@ struct pkvm_module_ops {
 	void (*flush_dcache_to_poc)(void *addr, size_t size);
 	int (*register_host_perm_fault_handler)(int (*cb)(struct kvm_cpu_context *ctxt, u64 esr, u64 addr));
 	int (*protect_host_page)(u64 pfn, enum kvm_pgtable_prot prot);
+	int (*pkvm_host_donate_hyp)(u64 pfn, u64 nr_pages);
+	int (*pkvm_hyp_donate_host)(u64 pfn, u64 nr_pages);
+	void* (*memcpy)(void *to, const void *from, size_t count);
+	void* (*memset)(void *dst, int c, size_t count);
+	phys_addr_t (*module_hyp_pa)(void *x);
+	phys_addr_t (*module_kern_hyp_va)(phys_addr_t x);
+	int (*register_iommu_driver)(struct pkvm_iommu_driver *driver);
 };
 
 struct pkvm_module_section {

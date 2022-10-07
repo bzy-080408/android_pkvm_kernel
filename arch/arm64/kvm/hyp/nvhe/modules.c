@@ -12,6 +12,7 @@
 #include <nvhe/mm.h>
 #include <nvhe/serial.h>
 #include <nvhe/spinlock.h>
+#include <nvhe/iommu.h>
 #include <nvhe/trap_handler.h>
 
 static void __kvm_flush_dcache_to_poc(void *addr, size_t size)
@@ -32,6 +33,11 @@ struct pkvm_module {
 
 static struct pkvm_module modules[MAX_MODULES];
 
+static phys_addr_t __module_kern_hyp_va(phys_addr_t x)
+{
+	return kern_hyp_va(x);
+}
+
 const struct pkvm_module_ops module_ops = {
 	.create_private_mapping = __pkvm_create_private_mapping,
 	.register_serial_driver = __pkvm_register_serial_driver,
@@ -42,6 +48,13 @@ const struct pkvm_module_ops module_ops = {
 	.flush_dcache_to_poc = __kvm_flush_dcache_to_poc,
 	.register_host_perm_fault_handler = hyp_register_host_perm_fault_handler,
 	.protect_host_page = hyp_protect_host_page,
+	.pkvm_host_donate_hyp = __pkvm_host_donate_hyp,
+	.pkvm_hyp_donate_host = __pkvm_hyp_donate_host,
+	.memcpy = memcpy,
+	.memset = memset,
+	.module_hyp_pa = hyp_virt_to_phys,
+	.module_kern_hyp_va = __module_kern_hyp_va,
+	.register_iommu_driver = __pkvm_register_iommu_driver,
 };
 
 struct pkvm_module *pkvm_module_next_empty(void)
