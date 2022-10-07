@@ -12,12 +12,12 @@ static unsigned long dev_to_id(struct device *dev)
 	return (unsigned long)dev;
 }
 
-int pkvm_iommu_driver_init(enum pkvm_iommu_driver_id id, void *data, size_t size)
+int pkvm_iommu_driver_init(int id, void *data, size_t size)
 {
 	return kvm_call_hyp_nvhe(__pkvm_iommu_driver_init, id, data, size);
 }
 
-int pkvm_iommu_register(struct device *dev, enum pkvm_iommu_driver_id drv_id,
+int pkvm_iommu_register(struct device *dev, int drv_id,
 			phys_addr_t pa, size_t size, struct device *parent)
 {
 	void *mem;

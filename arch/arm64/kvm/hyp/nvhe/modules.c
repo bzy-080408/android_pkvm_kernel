@@ -12,6 +12,7 @@
 #include <nvhe/mm.h>
 #include <nvhe/serial.h>
 #include <nvhe/spinlock.h>
+#include <nvhe/iommu.h>
 #include <nvhe/trap_handler.h>
 
 #define MAX_MODULES 16
@@ -27,9 +28,22 @@ struct pkvm_module {
 
 static struct pkvm_module modules[MAX_MODULES];
 
+static phys_addr_t __module_kern_hyp_va(phys_addr_t x)
+{
+	return kern_hyp_va(x);
+}
+
 const struct pkvm_module_ops module_ops = {
 	.create_private_mapping = __pkvm_create_private_mapping,
 	.register_serial_driver = __pkvm_register_serial_driver,
+	.pkvm_host_donate_hyp = __pkvm_host_donate_hyp,
+	.pkvm_hyp_donate_host = __pkvm_hyp_donate_host,
+	.memcpy = memcpy,
+	.memset = memset,
+	.dcache_clean_inval_poc = dcache_clean_inval_poc,
+	.module_hyp_pa = hyp_virt_to_phys,
+	.module_kern_hyp_va = __module_kern_hyp_va,
+	.register_iommu_driver = __pkvm_register_iommu_driver,
 };
 
 struct pkvm_module *pkvm_module_next_empty(void)
