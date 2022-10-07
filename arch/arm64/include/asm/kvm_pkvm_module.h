@@ -36,6 +36,12 @@ struct pkvm_el2_module {
 	int (*init)(const struct pkvm_module_ops *ops);
 };
 
+struct pkvm_el2_module_args {
+	unsigned long id;
+	void *hyp_text;
+	void *hyp_init_offset;
+};
+
 #ifdef MODULE
 int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this);
 
