@@ -47,13 +47,24 @@ static void host_unlock_component(void)
 {
 	hyp_spin_unlock(&host_kvm.lock);
 }
+static bool validate_driver_id_unique(struct pkvm_iommu_driver *drv)
+{
+	struct pkvm_iommu_driver *cur;
+	list_for_each_entry(cur, &iommu_drivers, list) {
+	    if (drv->id == cur->id)
+	    	return false;
+	}
+	return true;
+}
 int __pkvm_register_iommu_driver(struct pkvm_iommu_driver *drv){
-       //TODO, check for collision in ids
-       if(!drv) 
-			return -EINVAL;
-       list_add_tail(&drv->list, &iommu_drivers);
+	//TODO, check for collision in ids
+	if(!drv) 
+		return -EINVAL;
+	if(!validate_driver_id_unique(drv))
+		return -EEXIST;
+	list_add_tail(&drv->list, &iommu_drivers);
 
-       return 0;
+	return 0;
 }
 
 
@@ -65,8 +76,8 @@ static inline struct pkvm_iommu_driver *get_driver(int id)
 {
 	struct pkvm_iommu_driver *drv;
 	list_for_each_entry(drv, &iommu_drivers, list) {
-	        if (drv->id == id)
-	                return drv;
+	    if (drv->id == id)
+	    	return drv;
 	}
 	return NULL;
 

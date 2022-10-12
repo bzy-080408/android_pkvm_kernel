@@ -19,11 +19,11 @@ struct pkvm_module_ops {
        int (*pkvm_hyp_donate_host)(u64 pfn, u64 nr_pages);
        void* (*memcpy)(void *to, const void *from, size_t count);
        void* (*memset)( void  *dst, int c, size_t count)  ;
-       void (*dcache_clean_inval_poc)(unsigned long addr, size_t );
+       void (*dcache_clean_inval_poc)(unsigned long , unsigned long  );
        int (*register_serial_driver)(void (*hyp_putc_cb)(char));
        int (*register_iommu_driver)(struct pkvm_iommu_driver*);
        void (*hyp_puts)(const char *s);
-       phys_addr_t (*module_hyp_pa)(phys_addr_t x);
+       phys_addr_t (*module_hyp_pa)(void* x);
        phys_addr_t (*module_kern_hyp_va)(phys_addr_t x);
  };
 

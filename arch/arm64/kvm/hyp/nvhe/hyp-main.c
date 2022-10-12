@@ -1017,7 +1017,7 @@ static void handle___pkvm_teardown_shadow(struct kvm_cpu_context *host_ctxt)
 
 static void handle___pkvm_iommu_driver_init(struct kvm_cpu_context *host_ctxt)
 {
-	DECLARE_REG(enum pkvm_iommu_driver_id, id, host_ctxt, 1);
+	DECLARE_REG(int, id, host_ctxt, 1);
 	DECLARE_REG(void *, data, host_ctxt, 2);
 	DECLARE_REG(size_t, size, host_ctxt, 3);
 
@@ -1027,7 +1027,7 @@ static void handle___pkvm_iommu_driver_init(struct kvm_cpu_context *host_ctxt)
 static void handle___pkvm_iommu_register(struct kvm_cpu_context *host_ctxt)
 {
 	DECLARE_REG(unsigned long, dev_id, host_ctxt, 1);
-	DECLARE_REG(enum pkvm_iommu_driver_id, drv_id, host_ctxt, 2);
+	DECLARE_REG(int, drv_id, host_ctxt, 2);
 	DECLARE_REG(phys_addr_t, dev_pa, host_ctxt, 3);
 	DECLARE_REG(size_t, dev_size, host_ctxt, 4);
 	DECLARE_REG(unsigned long, parent_id, host_ctxt, 5);

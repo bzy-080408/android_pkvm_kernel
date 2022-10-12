@@ -195,6 +195,12 @@ enum s2mpu_version {
 	S2MPU_VERSION_9 = 0x20000000,
 };
 
+enum pkvm_iommu_driver_id {
+	PKVM_IOMMU_DRIVER_S2MPU,
+	PKVM_IOMMU_DRIVER_SYSMMU_SYNC,
+	PKVM_IOMMU_NR_DRIVERS,
+};
+
 enum mpt_prot {
 	MPT_PROT_NONE	= 0,
 	MPT_PROT_R	= BIT(0),

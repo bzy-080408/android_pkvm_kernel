@@ -68,9 +68,7 @@ int __pkvm_register_hcall(void *hfn_ptr)
 
 	return reserved_id + __KVM_HOST_SMCCC_FUNC___dynamic_hcalls;
 };
-static phys_addr_t __module_hyp_pa(phys_addr_t x){
-	return __hyp_pa(x);
-}
+
 static phys_addr_t __module_kern_hyp_va(phys_addr_t x){
 	return kern_hyp_va(x);
 }
@@ -86,7 +84,7 @@ const struct pkvm_module_ops module_ops = {
 	.memset = memset,
 	.dcache_clean_inval_poc = dcache_clean_inval_poc,
 	.hyp_puts = hyp_puts,
-	.module_hyp_pa = __module_hyp_pa,
+	.module_hyp_pa = hyp_virt_to_phys,
 	.module_kern_hyp_va = __module_kern_hyp_va,
 
 };
