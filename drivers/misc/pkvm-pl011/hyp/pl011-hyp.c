@@ -35,6 +35,18 @@ static void pl011_hyp_putc(char c)
 	dmb(sy);
 }
 
+static void pl011_hyp_puts(const char *str)
+{
+	while (*str)
+		pl011_hyp_putc(*str++);
+	pl011_hyp_putc('\n');
+}
+
+void pl011_hyp_test_hcall(struct kvm_cpu_context *unused)
+{
+	pl011_hyp_puts("Yes I am!");
+}
+
 int pl011_hyp_init(const struct pkvm_module_ops *ops)
 {
 	uart_addr = ops->create_private_mapping(HYP_PL011_BASE_PHYS, PAGE_SIZE,
