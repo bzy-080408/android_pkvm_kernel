@@ -101,5 +101,9 @@ static inline int __pkvm_rb_update_footers(int cpu)
 #define HYP_EVENT(__name, __proto, __struct, __assign, __printk)	\
 	static inline void trace_hyp_##__name(__proto) {}
 
+static inline int __pkvm_enable_event(unsigned short id, bool enable)
+{
+	return -ENODEV;
+}
 #endif
 #endif
