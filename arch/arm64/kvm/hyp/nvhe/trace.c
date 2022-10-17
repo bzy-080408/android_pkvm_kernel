@@ -317,8 +317,9 @@ static void rb_cpu_teardown(struct hyp_rb_per_cpu *cpu_buffer)
 
 	/* Wait for release of the buffer */
 	do {
-		prev_status = atomic_cmpxchg_relaxed(&cpu_buffer->status,
-						     HYP_RB_READY, HYP_RB_UNUSED);
+		prev_status = atomic_cmpxchg_acquire(&cpu_buffer->status,
+						     HYP_RB_READY,
+						     HYP_RB_UNUSED);
 	} while (prev_status == HYP_RB_WRITE);
 
 	if (prev_status == HYP_RB_READY)
@@ -393,10 +394,13 @@ static int rb_cpu_init(struct ring_buffer_pack *rb_pack, struct hyp_buffer_page 
 	rb_footer_reader_status(cpu_buffer->head_page, RB_PAGE_FT_HEAD);
 	rb_footer_writer_status(cpu_buffer->head_page, RB_PAGE_FT_COMMIT);
 
-	atomic_set(&cpu_buffer->status, HYP_RB_READY);
-
 	atomic_set(&cpu_buffer->overrun, 0);
 	atomic64_set(&cpu_buffer->write_stamp, 0);
+
+	/*
+	 * Paired with __start_write_hyp_rb()
+	 */
+	atomic_set_release(&cpu_buffer->status, HYP_RB_READY);
 
 	return 0;
 err:
@@ -546,6 +550,8 @@ int __pkvm_start_tracing(unsigned long pack_hva, size_t pack_size)
 
 	bpage_backing_start = (struct hyp_buffer_page *)hyp_buffer_pages_backing.start;
 
+	hyp_clock_setup(pack->epoch_ns, pack->epoch_cyc);
+
 	for_each_ring_buffer_pack(rb_pack, cpu, trace_pack) {
 		struct hyp_rb_per_cpu *cpu_buffer;
 		int cpu = rb_pack->cpu;
@@ -564,8 +570,6 @@ int __pkvm_start_tracing(unsigned long pack_hva, size_t pack_size)
 		/* reader page + nr pages in rb */
 		bpage_backing_start += 1 + rb_pack->nr_pages;
 	}
-
-	hyp_clock_setup(pack->epoch_ns, pack->epoch_cyc);
 
 err_remove_mappings:
 	WARN_ON(__pkvm_hyp_donate_host(hyp_virt_to_pfn((void *)pack),

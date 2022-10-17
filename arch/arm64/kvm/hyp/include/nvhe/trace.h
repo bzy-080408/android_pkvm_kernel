@@ -38,13 +38,19 @@ struct hyp_rb_per_cpu {
 
 static inline bool __start_write_hyp_rb(struct hyp_rb_per_cpu *rb)
 {
-	return atomic_cmpxchg_relaxed(&rb->status, HYP_RB_READY, HYP_RB_WRITE)
+	/*
+	 * Paired with rb_cpu_init()
+	 */
+	return atomic_cmpxchg_acquire(&rb->status, HYP_RB_READY, HYP_RB_WRITE)
 		!= HYP_RB_UNUSED;
 }
 
 static inline void __stop_write_hyp_rb(struct hyp_rb_per_cpu *rb)
 {
-	atomic_set(&rb->status, HYP_RB_READY);
+	/*
+	 * Paired with rb_cpu_teardown()
+	 */
+	atomic_set_release(&rb->status, HYP_RB_READY);
 }
 
 struct hyp_rb_per_cpu;
