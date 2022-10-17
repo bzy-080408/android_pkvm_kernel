@@ -22,6 +22,7 @@ static int hyp_trace_readers;
 static struct trace_buffer *hyp_trace_buffer;
 static struct hyp_buffer_pages_backing hyp_buffer_pages_backing;
 static DEFINE_MUTEX(hyp_trace_lock);
+static DEFINE_PER_CPU(struct mutex, hyp_trace_reader_lock);
 
 static int bpage_backing_setup(struct hyp_trace_pack *pack)
 {
@@ -280,6 +281,16 @@ static const struct file_operations hyp_tracing_on_fops = {
 	.write  = hyp_tracing_on,
 };
 
+static inline void hyp_trace_read_start(int cpu)
+{
+	mutex_lock(&per_cpu(hyp_trace_reader_lock, cpu));
+}
+
+static inline void hyp_trace_read_stop(int cpu)
+{
+	mutex_unlock(&per_cpu(hyp_trace_reader_lock, cpu));
+}
+
 static void ht_print_trace_time(struct ht_iterator *iter)
 {
 	unsigned long usecs_rem;
@@ -348,10 +359,17 @@ static void *ht_start(struct seq_file *m, loff_t *pos)
 		return iter;
 	}
 
+	hyp_trace_read_start(iter->cpu);
+
 	return ht_next(m, NULL, pos);
 }
 
-static void ht_stop(struct seq_file *m, void *v) { }
+static void ht_stop(struct seq_file *m, void *v)
+{
+	struct ht_iterator *iter = m->private;
+
+	hyp_trace_read_stop(iter->cpu);
+}
 
 static int ht_show(struct seq_file *m, void *v)
 {
@@ -465,12 +483,14 @@ again:
 	if (ret < 0)
 		return ret;
 
+	hyp_trace_read_start(iter->cpu);
 	while (trace_buffer_peek(iter)) {
 		unsigned long lost_events;
 
 		ht_print_trace_fmt(iter);
 		ring_buffer_consume(iter->trace_buffer, iter->cpu, NULL, &lost_events);
 	}
+	hyp_trace_read_stop(iter->cpu);
 
 	ret = trace_seq_to_user(&iter->seq, ubuf, cnt);
 	if (ret == -EBUSY)
@@ -562,9 +582,10 @@ hyp_trace_raw_read(struct file *file, char __user *ubuf,
 	if (iter->copy_leftover)
 		goto read;
 again:
-	/* TODO: serialize readers to the same CPU */
+	hyp_trace_read_start(iter->cpu);
 	ret = ring_buffer_read_page(trace_buffer, &iter->spare,
 				    cnt, iter->cpu, 0);
+	hyp_trace_read_stop(iter->cpu);
 	if (ret < 0) {
 		if (!ring_buffer_empty_cpu(iter->trace_buffer, iter->cpu))
 			return 0;
