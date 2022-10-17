@@ -17,4 +17,9 @@ struct ht_iterator {
 	int cpu;
 };
 
+#ifdef CONFIG_TRACING
+int init_hyp_tracefs(void);
+#else
+int init_hyp_tracefs(void) { return 0; }
+#endif
 #endif

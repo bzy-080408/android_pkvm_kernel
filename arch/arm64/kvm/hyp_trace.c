@@ -651,11 +651,14 @@ static const struct file_operations hyp_trace_raw_fops = {
 
 void kvm_hyp_init_events_tracefs(struct dentry *parent);
 
-static int __init hyp_tracing_debugfs(void)
+int init_hyp_tracefs(void)
 {
 	struct dentry *d, *root_dir, *per_cpu_root_dir, *per_cpu_subdir;
 	char per_cpu_name[16];
 	unsigned long cpu;
+
+	if (!is_protected_kvm_enabled())
+		return 0;
 
 	root_dir = tracefs_create_dir("hyp", NULL);
 	if (!root_dir) {
@@ -704,4 +707,3 @@ static int __init hyp_tracing_debugfs(void)
 
 	return 0;
 }
-late_initcall(hyp_tracing_debugfs);
