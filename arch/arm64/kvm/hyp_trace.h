@@ -2,6 +2,7 @@
 #define __ARM64_KVM_HYP_TRACE_H__
 
 #include <linux/workqueue.h>
+#include <linux/trace_seq.h>
 
 struct ht_iterator {
 	struct ring_buffer_iter *buf_iter;
