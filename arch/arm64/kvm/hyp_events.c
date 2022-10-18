@@ -138,23 +138,23 @@ static const struct file_operations hyp_event_fops = {
 
 static int hyp_event_id_show(struct seq_file *m, void *v)
 {
-  struct hyp_event *evt = (struct hyp_event *)m->private;
+	struct hyp_event *evt = (struct hyp_event *)m->private;
 
-  seq_printf(m, "%d\n", evt->call->event.type);
+	seq_printf(m, "%d\n", evt->call->event.type);
 
-  return 0;
+	return 0;
 }
 
 static int hyp_event_id_open(struct inode *inode, struct file *filp)
 {
-  return single_open(filp, hyp_event_id_show, inode->i_private);
+	return single_open(filp, hyp_event_id_show, inode->i_private);
 }
 
 static const struct file_operations hyp_event_id_fops = {
-  .open = hyp_event_id_open,
-  .read = seq_read,
-  .llseek = seq_lseek,
-  .release = single_release,
+	.open = hyp_event_id_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
 void kvm_hyp_init_events_tracefs(struct dentry *parent)
@@ -175,20 +175,20 @@ void kvm_hyp_init_events_tracefs(struct dentry *parent)
 	}
 
 	for (; (unsigned long)event < (unsigned long)__stop_hyp_events; event++) {
-    event_dir = tracefs_create_dir(event->name, parent);
-    if (!event_dir) {
-      pr_err("Failed to create events/hyp/%s\n", event->name);
-      continue;
-    }
+		event_dir = tracefs_create_dir(event->name, parent);
+		if (!event_dir) {
+			pr_err("Failed to create events/hyp/%s\n", event->name);
+			continue;
+		}
 		d = tracefs_create_file("enable", 0700, event_dir, (void *)event,
-					&hyp_event_fops);
+				&hyp_event_fops);
 		if (!d)
 			pr_err("Failed to create events/hyp/%s/enable\n", event->name);
 
-    d = tracefs_create_file("id", 0400, event_dir, (void *)event,
-          &hyp_event_id_fops);
-    if (!d)
-      pr_err("Failed to create events/hyp/%s/id\n", event->name);
+		d = tracefs_create_file("id", 0400, event_dir, (void *)event,
+				&hyp_event_id_fops);
+		if (!d)
+			pr_err("Failed to create events/hyp/%s/id\n", event->name);
 	}
 }
 
