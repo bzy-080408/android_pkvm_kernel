@@ -881,13 +881,18 @@ static struct page *follow_page_mask(struct vm_area_struct *vma,
 	return follow_p4d_mask(vma, address, pgd, flags, ctx);
 }
 
+static bool vma_is_guppable(struct vm_area_struct *vma)
+{
+	return vma_is_secretmem(vma);
+}
+
 struct page *follow_page(struct vm_area_struct *vma, unsigned long address,
 			 unsigned int foll_flags)
 {
 	struct follow_page_context ctx = { NULL };
 	struct page *page;
 
-	if (vma_is_secretmem(vma))
+	if (!vma_is_guppable(vma))
 		return NULL;
 
 	if (foll_flags & FOLL_PIN)
@@ -1039,7 +1044,7 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 	if ((gup_flags & FOLL_LONGTERM) && vma_is_fsdax(vma))
 		return -EOPNOTSUPP;
 
-	if (vma_is_secretmem(vma))
+	if (!vma_is_guppable(vma))
 		return -EFAULT;
 
 	if (write) {
