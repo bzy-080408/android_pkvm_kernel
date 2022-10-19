@@ -31,6 +31,13 @@ static const struct vm_operations_struct inaccessible_vm_ops = {
 	.fault = inaccessible_fault,
 };
 
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+bool vma_is_inaccessible(struct vm_area_struct *vma)
+{
+	return vma->vm_ops == &inaccessible_vm_ops;
+}
+#endif
+
 static void inaccessible_notifier_invalidate(struct inaccessible_data *data,
 				 pgoff_t start, pgoff_t end)
 {

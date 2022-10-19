@@ -39,4 +39,13 @@ void inaccessible_put_pfn(struct file *file, pfn_t pfn);
 
 struct file *memfd_mkinaccessible(struct file *memfd);
 
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+bool vma_is_inaccessible(struct vm_area_struct *vma);
+#else
+static inline bool vma_is_inaccessible(struct vm_area_struct *vma)
+{
+	return false;
+}
+#endif
+
 #endif /* __LINUX_MEMFD_H */
