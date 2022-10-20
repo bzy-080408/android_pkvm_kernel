@@ -1007,8 +1007,40 @@ static void kvm_private_notifier_invalidate(struct inaccessible_notifier *notifi
 	kvm_zap_gfn_range(slot->kvm, start_gfn, end_gfn);
 }
 
+bool __weak kvm_arch_slot_ismappable(struct kvm *kvm,
+				     gfn_t gfn_start, gfn_t gfn_end)
+{
+	return false;
+}
+
+static bool kvm_private_notifier_ismappable(struct inaccessible_notifier *notifier,
+					    struct vm_area_struct *vma)
+{
+	struct kvm_memory_slot *slot = container_of(notifier,
+						    struct kvm_memory_slot,
+						    notifier);
+	unsigned long base_pgoff = slot->private_offset >> PAGE_SHIFT;
+	gfn_t start_gfn = slot->base_gfn;
+	gfn_t end_gfn = slot->base_gfn + slot->npages;
+	unsigned long nr_pages = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	pgoff_t start = vma->vm_pgoff;
+	pgoff_t end = start + nr_pages;
+
+	if (start > base_pgoff)
+		start_gfn = slot->base_gfn + start - base_pgoff;
+
+	if (end < base_pgoff + slot->npages)
+		end_gfn = slot->base_gfn + end - base_pgoff;
+
+	if (start_gfn >= end_gfn)
+		return true;
+
+	return kvm_arch_slot_ismappable(slot->kvm, start_gfn, end_gfn);
+}
+
 static struct inaccessible_notifier_ops kvm_private_notifier_ops = {
 	.invalidate = kvm_private_notifier_invalidate,
+	.ismappable = kvm_private_notifier_ismappable,
 };
 
 static inline void kvm_private_mem_register(struct kvm_memory_slot *slot)
