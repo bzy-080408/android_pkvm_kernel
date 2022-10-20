@@ -155,7 +155,7 @@ static int __pkvm_create_hyp_vm(struct kvm *host_kvm)
 
 	handle = ret;
 
-	host_kvm->arch.pkvm.handle = handle;
+	WRITE_ONCE(host_kvm->arch.pkvm.handle, handle);
 
 	/* Donate memory for the vcpus at hyp and initialize it. */
 	hyp_vcpu_sz = PAGE_ALIGN(PKVM_HYP_VCPU_SIZE);
@@ -196,12 +196,17 @@ free_pgd:
 	return ret;
 }
 
+bool pkvm_is_hyp_created(struct kvm *host_kvm)
+{
+	return READ_ONCE(host_kvm->arch.pkvm.handle);
+}
+
 int pkvm_create_hyp_vm(struct kvm *host_kvm)
 {
 	int ret = 0;
 
 	mutex_lock(&host_kvm->arch.pkvm.vm_lock);
-	if (!host_kvm->arch.pkvm.handle)
+	if (!pkvm_is_hyp_created(host_kvm))
 		ret = __pkvm_create_hyp_vm(host_kvm);
 	mutex_unlock(&host_kvm->arch.pkvm.vm_lock);
 
@@ -214,7 +219,7 @@ void pkvm_destroy_hyp_vm(struct kvm *host_kvm)
 	struct mm_struct *mm = current->mm;
 	struct list_head *ppages;
 
-	if (host_kvm->arch.pkvm.handle) {
+	if (pkvm_is_hyp_created(host_kvm)) {
 		WARN_ON(kvm_call_hyp_nvhe(__pkvm_teardown_vm,
 					  host_kvm->arch.pkvm.handle));
 	}
