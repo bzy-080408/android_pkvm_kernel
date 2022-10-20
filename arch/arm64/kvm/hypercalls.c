@@ -141,6 +141,20 @@ static int kvm_vcpu_exit_hcall(struct kvm_vcpu *vcpu, u32 nr, u32 nr_args)
 	return 0;
 }
 
+static int kvm_vcpu_handle_xshare(struct kvm_vcpu *vcpu, u32 nr)
+{
+	gpa_t gpa = vcpu_get_reg(vcpu, 1);
+	gpa_t size = PAGE_SIZE;
+	bool is_private = (nr == ARM_SMCCC_KVM_FUNC_MEM_UNSHARE);
+	int ret;
+
+	ret = kvm_vm_ioctl_set_mem_attr(vcpu->kvm, gpa, size, is_private);
+	if (ret)
+		return ret;
+
+	return kvm_vcpu_exit_hcall(vcpu, nr, 3);
+}
+
 int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 {
 	struct kvm_smccc_features *smccc_feat = &vcpu->kvm->arch.smccc_feat;
@@ -234,11 +248,11 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		kvm_ptp_get_time(vcpu, val);
 		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_SHARE_FUNC_ID:
-		if (!kvm_vcpu_exit_hcall(vcpu, ARM_SMCCC_KVM_FUNC_MEM_SHARE, 3))
+		if (!kvm_vcpu_handle_xshare(vcpu, ARM_SMCCC_KVM_FUNC_MEM_SHARE))
 			return 0;
 		break;
 	case ARM_SMCCC_VENDOR_HYP_KVM_MEM_UNSHARE_FUNC_ID:
-		if (!kvm_vcpu_exit_hcall(vcpu, ARM_SMCCC_KVM_FUNC_MEM_UNSHARE, 3))
+		if (!kvm_vcpu_handle_xshare(vcpu, ARM_SMCCC_KVM_FUNC_MEM_UNSHARE))
 			return 0;
 		break;
 	case ARM_SMCCC_TRNG_VERSION:
