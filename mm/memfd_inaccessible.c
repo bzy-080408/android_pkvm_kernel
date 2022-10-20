@@ -43,6 +43,25 @@ static void inaccessible_notifier_invalidate(struct inaccessible_data *data,
 	mutex_unlock(&data->lock);
 }
 
+static bool inaccessible_notifier_ismappable(struct inaccessible_data *data,
+					     struct vm_area_struct *vma)
+{
+	struct inaccessible_notifier *notifier;
+	bool ret = true;
+
+	mutex_lock(&data->lock);
+	list_for_each_entry(notifier, &data->notifiers, list) {
+		if (!notifier->ops->ismappable ||
+		    !notifier->ops->ismappable(notifier, vma)) {
+			ret = false;
+			break;
+		    }
+	}
+	mutex_unlock(&data->lock);
+
+	return ret;
+}
+
 static int inaccessible_release(struct inode *inode, struct file *file)
 {
 	struct inaccessible_data *data = inode->i_mapping->private_data;
@@ -71,14 +90,15 @@ static long inaccessible_fallocate(struct file *file, int mode,
 
 static int inaccessible_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	struct inaccessible_data *data = file->f_mapping->private_data;
+
 	/* No support for private mappings to avoid COW.  */
 	if ((vma->vm_flags & (VM_SHARED | VM_MAYSHARE)) !=
 	    (VM_SHARED | VM_MAYSHARE)) {
 		return -EINVAL;
 	}
 
-	/* For now do not allow mapping. */
-	if (true)
+	if (!inaccessible_notifier_ismappable(data, vma))
 		return -EFAULT;
 
 	file_accessed(file);

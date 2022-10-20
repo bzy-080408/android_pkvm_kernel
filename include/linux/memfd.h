@@ -19,6 +19,8 @@ struct inaccessible_notifier;
 struct inaccessible_notifier_ops {
 	void (*invalidate)(struct inaccessible_notifier *notifier,
 			   pgoff_t start, pgoff_t end);
+	bool (*ismappable)(struct inaccessible_notifier *notifier,
+			   struct vm_area_struct *vma);
 };
 
 struct inaccessible_notifier {
