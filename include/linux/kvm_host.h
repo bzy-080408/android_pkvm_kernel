@@ -1400,6 +1400,17 @@ void *kvm_mmu_memory_cache_alloc(struct kvm_mmu_memory_cache *mc);
 void kvm_mmu_invalidate_begin(struct kvm *kvm, gfn_t start, gfn_t end);
 void kvm_mmu_invalidate_end(struct kvm *kvm, gfn_t start, gfn_t end);
 
+#ifdef CONFIG_HAVE_KVM_PRIVATE_MEM
+int kvm_vm_ioctl_set_mem_attr(struct kvm *kvm, gpa_t gpa, gpa_t size,
+			      bool is_private);
+#else
+static inline int kvm_vm_ioctl_set_mem_attr(struct kvm *kvm, gpa_t gpa,
+					    gpa_t size, bool is_private)
+{
+	return 0;
+}
+#endif
+
 long kvm_arch_dev_ioctl(struct file *filp,
 			unsigned int ioctl, unsigned long arg);
 long kvm_arch_vcpu_ioctl(struct file *filp,
