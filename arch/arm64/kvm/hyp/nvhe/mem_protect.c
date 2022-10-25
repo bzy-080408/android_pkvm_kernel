@@ -666,6 +666,31 @@ static void host_inject_abort(struct kvm_cpu_context *host_ctxt)
 	write_sysreg_el2(spsr, SYS_SPSR);
 }
 
+static int (*perm_fault_handler)(struct kvm_cpu_context *host_ctxt, u64 esr, u64 addr);
+
+int hyp_register_host_perm_fault_handler(int (*cb)(struct kvm_cpu_context *ctxt, u64 esr, u64 addr))
+{
+	static DEFINE_HYP_SPINLOCK(lock);
+	int ret = 0;
+
+	hyp_spin_lock(&lock);
+	if (!perm_fault_handler)
+		WRITE_ONCE(perm_fault_handler, cb);
+	else
+		ret = -EBUSY;
+	hyp_spin_unlock(&lock);
+
+	return ret;
+}
+
+static int handle_host_perm_fault(struct kvm_cpu_context *host_ctxt, u64 esr, u64 addr)
+{
+	int (*cb)(struct kvm_cpu_context *host_ctxt, u64 esr, u64 addr);
+
+	cb = READ_ONCE(perm_fault_handler);
+	return cb ? cb(host_ctxt, esr, addr) : -EPERM;
+}
+
 void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 {
 	struct kvm_vcpu_fault_info fault;
@@ -677,6 +702,11 @@ void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 
 	addr = (fault.hpfar_el2 & HPFAR_MASK) << 8;
 	addr |= fault.far_el2 & FAR_MASK;
+
+	if ((esr & ESR_ELx_FSC_TYPE) == FSC_PERM) {
+		ret = handle_host_perm_fault(host_ctxt, esr, addr);
+		goto out;
+	}
 
 	host_lock_component();
 
@@ -691,6 +721,7 @@ void handle_host_mem_abort(struct kvm_cpu_context *host_ctxt)
 
 	host_unlock_component();
 
+out:
 	if (ret == -EPERM)
 		host_inject_abort(host_ctxt);
 	else
