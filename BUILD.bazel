@@ -53,6 +53,8 @@ define_common_kernels(target_configs = {
         "module_implicit_outs": [
             "drivers/block/zram/zram.ko",
             "mm/zsmalloc.ko",
+	    "drivers/misc/pkvm-pl011/pkvm_pl011.ko",
+	    "drivers/misc/pkvm-text-prot/pkvm_text_prot.ko",
         ],
         "kmi_symbol_list": "android/abi_gki_aarch64",
         "additional_kmi_symbol_lists": _aarch64_additional_kmi_symbol_lists,
