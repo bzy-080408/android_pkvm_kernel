@@ -1035,6 +1035,7 @@
   kvfree
   kvfree_call_rcu
   kvmalloc_node
+  kvm_get_kernel_pa
   led_classdev_register_ext
   led_classdev_unregister
   __list_add_valid

@@ -947,4 +947,5 @@ void __init kvm_hyp_reserve(void);
 static inline void kvm_hyp_reserve(void) { }
 #endif
 
+void kvm_get_kernel_pa(phys_addr_t *start, phys_addr_t *end);
 #endif /* __ARM64_KVM_HOST_H__ */
