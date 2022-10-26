@@ -1117,4 +1117,5 @@ static inline void kvm_hyp_reserve(void) { }
 void kvm_arm_vcpu_power_off(struct kvm_vcpu *vcpu);
 bool kvm_arm_vcpu_stopped(struct kvm_vcpu *vcpu);
 
+void kvm_get_kernel_pa(phys_addr_t *start, phys_addr_t *end);
 #endif /* __ARM64_KVM_HOST_H__ */
