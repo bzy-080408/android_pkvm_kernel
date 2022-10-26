@@ -12,6 +12,8 @@ struct pkvm_module_ops {
 	int (*register_serial_driver)(void (*hyp_putc_cb)(char));
 	void (*puts)(const char *str);
 	void (*putx64)(u64 num);
+	void *(*fixmap_map)(phys_addr_t phys);
+	int (*fixmap_unmap)(void);
 };
 
 struct pkvm_module_section {
