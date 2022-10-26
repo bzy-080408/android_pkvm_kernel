@@ -319,3 +319,10 @@ void kvm_compute_final_ctr_el0(struct alt_instr *alt,
 	generate_mov_q(read_sanitised_ftr_reg(SYS_CTR_EL0),
 		       origptr, updptr, nr_inst);
 }
+
+void kvm_get_kernel_pa(phys_addr_t *start, phys_addr_t *end)
+{
+	*start = virt_to_phys(_stext);
+	*end = virt_to_phys(_etext);
+}
+EXPORT_SYMBOL_GPL(kvm_get_kernel_pa);
