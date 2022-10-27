@@ -1190,6 +1190,7 @@ static int memfd_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	struct kvm_hyp_memcache *hyp_memcache = &vcpu->arch.pkvm_memcache;
 	struct kvm_private_fd_page *fd_page;
 	struct kvm *kvm = vcpu->kvm;
+	struct page *page;
 	u64 gfn = fault_ipa >> PAGE_SHIFT;
 	u64 pfn;
 	int ret;
@@ -1205,6 +1206,12 @@ static int memfd_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	ret = kvm_private_mem_get_pfn(memslot, gfn, &pfn, NULL);
 	if (ret)
 		goto free_page;
+
+	page = pfn_to_page(pfn);
+	if (kvm_vm_is_protected(vcpu->kvm) && page_mapcount(page)) {
+		ret = -EFAULT;
+		goto put_page;
+	}
 
 	write_lock(&kvm->mmu_lock);
 	ret = pkvm_host_map_guest(pfn, fault_ipa >> PAGE_SHIFT);
@@ -1224,6 +1231,7 @@ static int memfd_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 unlock:
 	write_unlock(&kvm->mmu_lock);
+put_page:
 	kvm_private_mem_put_pfn(memslot, pfn);
 free_page:
 	kfree(fd_page);
