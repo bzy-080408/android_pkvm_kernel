@@ -791,6 +791,7 @@ int __pkvm_teardown_vm(pkvm_handle_t handle)
 	struct pkvm_hyp_vm *hyp_vm;
 	unsigned int idx;
 	int err;
+	struct kvm *host_kvm;
 
 	hyp_spin_lock(&vm_table_lock);
 	hyp_vm = get_vm_by_handle(handle);
@@ -804,6 +805,8 @@ int __pkvm_teardown_vm(pkvm_handle_t handle)
 		goto err_unlock;
 	}
 
+	host_kvm = hyp_vm->host_kvm;
+
 	/* Ensure the VMID is clean before it can be reallocated */
 	__kvm_tlb_flush_vmid(&hyp_vm->kvm.arch.mmu);
 	remove_vm_table_entry(handle);
@@ -815,8 +818,6 @@ int __pkvm_teardown_vm(pkvm_handle_t handle)
 	unpin_host_vcpus(hyp_vm->vcpus, hyp_vm->nr_vcpus);
 
 	/* Push the metadata pages to the teardown memcache */
-	hyp_unpin_shared_mem(hyp_vm->host_kvm, hyp_vm->host_kvm + 1);
-
 	for (idx = 0; idx < hyp_vm->nr_vcpus; ++idx) {
 		struct pkvm_hyp_vcpu *hyp_vcpu = hyp_vm->vcpus[idx];
 
@@ -826,6 +827,8 @@ int __pkvm_teardown_vm(pkvm_handle_t handle)
 	teardown_donated_memory(mc, hyp_vm->kvm.arch.mmu.last_vcpu_ran,
 				hyp_vm->last_ran_size);
 	teardown_donated_memory(mc, hyp_vm, hyp_vm->donated_memory_size);
+
+	hyp_unpin_shared_mem(host_kvm, host_kvm + 1);
 	return 0;
 
 err_unlock:
