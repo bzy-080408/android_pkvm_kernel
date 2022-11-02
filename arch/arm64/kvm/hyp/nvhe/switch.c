@@ -21,6 +21,7 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
+#include <asm/kvm_hypevents.h>
 #include <asm/kvm_mmu.h>
 #include <asm/fpsimd.h>
 #include <asm/debug-monitors.h>
@@ -318,8 +319,12 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	__debug_switch_to_guest(vcpu);
 
 	do {
+		trace_hyp_enter();
+
 		/* Jump in the fire! */
 		exit_code = __guest_enter(vcpu);
+
+		trace_hyp_exit();
 
 		/* And we're baaack! */
 	} while (fixup_guest_exit(vcpu, &exit_code));
