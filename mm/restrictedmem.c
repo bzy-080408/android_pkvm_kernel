@@ -47,6 +47,25 @@ static void restrictedmem_notifier_invalidate(struct restrictedmem_data *data,
 	mutex_unlock(&data->lock);
 }
 
+static bool restrictedmem_notifier_ismappable(struct restrictedmem_data *data,
+					      struct vm_area_struct *vma)
+{
+	struct restrictedmem_notifier *notifier;
+	bool ret = true;
+
+	mutex_lock(&data->lock);
+	list_for_each_entry(notifier, &data->notifiers, list) {
+		if (!notifier->ops->ismappable ||
+		    !notifier->ops->ismappable(notifier, vma)) {
+			ret = false;
+			break;
+		}
+	}
+	mutex_unlock(&data->lock);
+
+	return ret;
+}
+
 static int restrictedmem_release(struct inode *inode, struct file *file)
 {
 	struct restrictedmem_data *data = inode->i_mapping->private_data;
@@ -76,14 +95,15 @@ static long restrictedmem_fallocate(struct file *file, int mode,
 
 static int restrictedmem_mmap(struct file *file, struct vm_area_struct *vma)
 {
+	struct restrictedmem_data *data = file->f_mapping->private_data;
+
 	/* No support for private mappings to avoid COW.  */
 	if ((vma->vm_flags & (VM_SHARED | VM_MAYSHARE)) !=
 	    (VM_SHARED | VM_MAYSHARE)) {
 		return -EINVAL;
 	}
 
-	/* For now do not allow mapping. */
-	if (true)
+	if (!restrictedmem_notifier_ismappable(data, vma))
 		return -EFAULT;
 
 	file_accessed(file);

@@ -12,6 +12,8 @@ struct restrictedmem_notifier_ops {
 				 pgoff_t start, pgoff_t end);
 	void (*invalidate_end)(struct restrictedmem_notifier *notifier,
 			       pgoff_t start, pgoff_t end);
+	bool (*ismappable)(struct restrictedmem_notifier *notifier,
+			   struct vm_area_struct *vma);
 };
 
 struct restrictedmem_notifier {
