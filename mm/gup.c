@@ -7,6 +7,7 @@
 #include <linux/mm.h>
 #include <linux/memremap.h>
 #include <linux/pagemap.h>
+#include <linux/restrictedmem.h>
 #include <linux/rmap.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
@@ -883,7 +884,7 @@ static struct page *follow_page_mask(struct vm_area_struct *vma,
 
 static bool vma_is_guppable(struct vm_area_struct *vma)
 {
-	return !vma_is_secretmem(vma);
+	return !vma_is_secretmem(vma) && !vma_is_restrictedmem(vma);
 }
 
 struct page *follow_page(struct vm_area_struct *vma, unsigned long address,

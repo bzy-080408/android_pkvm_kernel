@@ -36,6 +36,8 @@ static inline bool file_is_restrictedmem(struct file *file)
 	return file->f_inode->i_sb->s_magic == RESTRICTEDMEM_MAGIC;
 }
 
+bool vma_is_restrictedmem(struct vm_area_struct *vma);
+
 #else
 
 static inline void restrictedmem_register_notifier(struct file *file,
@@ -55,6 +57,11 @@ static inline int restrictedmem_get_page(struct file *file, pgoff_t offset,
 }
 
 static inline bool file_is_restrictedmem(struct file *file)
+{
+	return false;
+}
+
+static inline bool vma_is_restrictedmem(struct vm_area_struct *vma)
 {
 	return false;
 }

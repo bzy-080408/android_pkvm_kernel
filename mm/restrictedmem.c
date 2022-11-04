@@ -32,6 +32,11 @@ static const struct vm_operations_struct restrictedmem_vm_ops = {
 	.fault = restrictedmem_fault,
 };
 
+bool vma_is_restrictedmem(struct vm_area_struct *vma)
+{
+	return vma->vm_ops == &restrictedmem_vm_ops;
+}
+
 static void restrictedmem_notifier_invalidate(struct restrictedmem_data *data,
 				 pgoff_t start, pgoff_t end, bool notify_start)
 {
