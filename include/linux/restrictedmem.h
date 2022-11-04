@@ -40,6 +40,8 @@ static inline bool file_is_restrictedmem(struct file *file)
 
 void restrictedmem_error_page(struct page *page, struct address_space *mapping);
 
+bool vma_is_restrictedmem(struct vm_area_struct *vma);
+
 #else
 
 static inline void restrictedmem_register_notifier(struct file *file,
@@ -66,6 +68,11 @@ static inline bool file_is_restrictedmem(struct file *file)
 static inline void restrictedmem_error_page(struct page *page,
 					    struct address_space *mapping)
 {
+}
+
+static inline bool vma_is_restrictedmem(struct vm_area_struct *vma)
+{
+	return false;
 }
 
 #endif /* CONFIG_RESTRICTEDMEM */
