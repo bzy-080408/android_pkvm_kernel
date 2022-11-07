@@ -972,8 +972,8 @@ static void kvm_unmap_mem_range(struct kvm *kvm, gfn_t start, gfn_t end,
 		kvm_flush_remote_tlbs(kvm);
 }
 
-static int kvm_vm_ioctl_set_mem_attr(struct kvm *kvm, gpa_t gpa, gpa_t size,
-				     bool is_private)
+int kvm_vm_ioctl_set_mem_attr(struct kvm *kvm, gpa_t gpa, gpa_t size,
+			      bool is_private)
 {
 	gfn_t start, end;
 	unsigned long i;
@@ -2920,7 +2920,7 @@ static int hva_to_pfn_remapped(struct vm_area_struct *vma,
 	 * tail pages of non-compound higher order allocations, which
 	 * would then underflow the refcount when the caller does the
 	 * required put_page. Don't allow those pages here.
-	 */ 
+	 */
 	if (!kvm_try_get_pfn(pfn))
 		r = -EFAULT;
 

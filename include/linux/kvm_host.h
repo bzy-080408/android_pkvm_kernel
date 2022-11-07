@@ -2311,12 +2311,21 @@ static inline void kvm_arch_update_mem_attr(struct kvm *kvm,
 }
 #endif
 
+int kvm_vm_ioctl_set_mem_attr(struct kvm *kvm, gpa_t gpa, gpa_t size,
+			      bool is_private);
+
 static inline bool kvm_mem_is_private(struct kvm *kvm, gfn_t gfn)
 {
 	return !xa_load(&kvm->mem_attr_array, gfn);
 }
 
 #else /* !CONFIG_KVM_GENERIC_PRIVATE_MEM */
+
+static inline int kvm_vm_ioctl_set_mem_attr(struct kvm *kvm, gpa_t gpa,
+					    gpa_t size, bool is_private)
+{
+	return 0;
+}
 
 static inline bool kvm_mem_is_private(struct kvm *kvm, gfn_t gfn)
 {
