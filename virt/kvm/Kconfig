@@ -19,6 +19,9 @@ config HAVE_KVM_IRQ_ROUTING
 config HAVE_KVM_DIRTY_RING
        bool
 
+config HAVE_KVM_MEMORY_ATTRIBUTES
+       bool
+
 config HAVE_KVM_EVENTFD
        bool
        select EVENTFD
