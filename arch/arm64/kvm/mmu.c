@@ -1763,7 +1763,7 @@ out_unlock:
 
 bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	if (is_protected_kvm_enabled())
+	if (is_protected_kvm_enabled() && kvm->arch.pkvm.enabled)
 		return false;
 
 	__unmap_stage2_range(&kvm->arch.mmu, range->start << PAGE_SHIFT,
