@@ -185,6 +185,8 @@ static void *guest_s2_zalloc_page(void *mc)
 	struct hyp_page *p;
 	void *addr;
 
+	WARN_ON(!mc);
+
 	addr = hyp_alloc_pages(&current_vm->pool, 0);
 	if (addr)
 		return addr;
