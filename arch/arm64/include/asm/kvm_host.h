@@ -184,9 +184,12 @@ struct kvm_protected_vm {
 	pkvm_handle_t handle;
 	struct kvm_hyp_memcache teardown_mc;
 	struct rb_root pinned_pages;
+	unsigned long pages_locked;
 	gpa_t pvmfw_load_addr;
 	bool enabled;
 };
+
+int pkvm_account_locked_pages(struct kvm *kvm, unsigned long npages, bool inc);
 
 struct kvm_arch {
 	struct kvm_s2_mmu mmu;

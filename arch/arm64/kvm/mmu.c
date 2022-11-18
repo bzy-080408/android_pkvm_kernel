@@ -141,7 +141,6 @@ static void invalidate_icache_guest_page(void *va, size_t size)
 
 static int pkvm_unmap_guest(struct kvm *kvm, struct kvm_pinned_page *ppage)
 {
-	struct mm_struct *mm = kvm->mm;
 	int ret;
 
 	ret = kvm_call_hyp_nvhe(__pkvm_host_unmap_guest,
@@ -151,7 +150,7 @@ static int pkvm_unmap_guest(struct kvm *kvm, struct kvm_pinned_page *ppage)
 	if (ret)
 		return ret;
 
-	account_locked_vm(mm, 1, false);
+	pkvm_account_locked_pages(kvm, 1, false);
 	unpin_user_pages_dirty_lock(&ppage->page, 1, true);
 	rb_erase(&ppage->node, &kvm->arch.pkvm.pinned_pages);
 	kfree(ppage);
@@ -1284,6 +1283,25 @@ static int insert_ppage(struct kvm *kvm, struct kvm_pinned_page *ppage)
 	return 0;
 }
 
+int pkvm_account_locked_pages(struct kvm *kvm, unsigned long npages, bool inc)
+{
+	unsigned long locked, lock_limit;
+
+	lockdep_assert_held(&kvm->mmu_lock);
+	locked = kvm->arch.pkvm.pages_locked;
+	if (inc)
+		locked += npages;
+	else
+		locked -= npages;
+	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+	if (locked > lock_limit && !capable(CAP_IPC_LOCK))
+		return -ENOMEM;
+
+	kvm->arch.pkvm.pages_locked = locked;
+
+	return 0;
+}
+
 static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 			  unsigned long hva)
 {
@@ -1303,10 +1321,6 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (!ppage)
 		return -ENOMEM;
 
-	ret = account_locked_vm(mm, 1, true);
-	if (ret)
-		goto free_ppage;
-
 	mmap_read_lock(mm);
 	ret = pin_user_pages(hva, 1, flags, &page, NULL);
 	mmap_read_unlock(mm);
@@ -1314,10 +1328,10 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (ret == -EHWPOISON) {
 		kvm_send_hwpoison_signal(hva, PAGE_SHIFT);
 		ret = 0;
-		goto dec_account;
+		goto free_ppage;
 	} else if (ret != 1) {
 		ret = -EFAULT;
-		goto dec_account;
+		goto free_ppage;
 	} else if (!PageSwapBacked(page)) {
 		/*
 		 * We really can't deal with page-cache pages returned by GUP
@@ -1334,16 +1348,19 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		 * prevent try_to_unmap() from succeeding.
 		 */
 		ret = -EIO;
-		goto dec_account;
+		goto free_ppage;
 	}
 
 	write_lock(&kvm->mmu_lock);
+	ret = pkvm_account_locked_pages(kvm, 1, true);
+	if (ret)
+		goto unpin;
 	pfn = page_to_pfn(page);
 	ret = pkvm_host_map_guest(pfn, fault_ipa >> PAGE_SHIFT);
 	if (ret) {
 		if (ret == -EAGAIN)
 			ret = 0;
-		goto unpin;
+		goto dec_account;
 	}
 
 	ppage->page = page;
@@ -1353,11 +1370,11 @@ static int pkvm_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	return 0;
 
+dec_account:
+	pkvm_account_locked_pages(kvm, 1, false);
 unpin:
 	write_unlock(&kvm->mmu_lock);
 	unpin_user_pages(&page, 1);
-dec_account:
-	account_locked_vm(mm, 1, false);
 free_ppage:
 	kfree(ppage);
 

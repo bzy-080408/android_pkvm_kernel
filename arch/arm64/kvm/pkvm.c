@@ -218,7 +218,6 @@ int pkvm_create_hyp_vm(struct kvm *host_kvm)
 void pkvm_destroy_hyp_vm(struct kvm *host_kvm)
 {
 	struct kvm_pinned_page *ppage;
-	struct mm_struct *mm = current->mm;
 	struct rb_node *node;
 
 	if (host_kvm->arch.pkvm.handle) {
@@ -236,7 +235,8 @@ void pkvm_destroy_hyp_vm(struct kvm *host_kvm)
 					  page_to_pfn(ppage->page)));
 		cond_resched();
 
-		account_locked_vm(mm, 1, false);
+		/* TODO: take mmu lock ? */
+		pkvm_account_locked_pages(host_kvm, 1, false);
 		unpin_user_pages_dirty_lock(&ppage->page, 1, true);
 		node = rb_next(node);
 		rb_erase(&ppage->node, &host_kvm->arch.pkvm.pinned_pages);
@@ -270,7 +270,6 @@ static int rb_ppage_cmp(const void *key, const struct rb_node *node)
 void pkvm_host_reclaim_page(struct kvm *host_kvm, phys_addr_t ipa)
 {
 	struct kvm_pinned_page *ppage;
-	struct mm_struct *mm = current->mm;
 	struct rb_node *node;
 
 	write_lock(&host_kvm->mmu_lock);
@@ -278,6 +277,7 @@ void pkvm_host_reclaim_page(struct kvm *host_kvm, phys_addr_t ipa)
 		       rb_ppage_cmp);
 	if (node)
 		rb_erase(node, &host_kvm->arch.pkvm.pinned_pages);
+	pkvm_account_locked_pages(host_kvm, 1, false);
 	write_unlock(&host_kvm->mmu_lock);
 
 	WARN_ON(!node);
@@ -289,7 +289,6 @@ void pkvm_host_reclaim_page(struct kvm *host_kvm, phys_addr_t ipa)
 	WARN_ON(kvm_call_hyp_nvhe(__pkvm_host_reclaim_page,
 				  page_to_pfn(ppage->page)));
 
-	account_locked_vm(mm, 1, false);
 	unpin_user_pages_dirty_lock(&ppage->page, 1, true);
 	kfree(ppage);
 }
