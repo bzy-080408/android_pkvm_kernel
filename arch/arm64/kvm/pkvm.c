@@ -9,11 +9,13 @@
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/mutex.h>
+#include <linux/of_address.h>
 #include <linux/of_fdt.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/sort.h>
 
 #include <asm/kvm_mmu.h>
+#include <asm/kvm_pgtable.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/kvm_pkvm_module.h>
 
@@ -426,3 +428,45 @@ int __pkvm_register_el2_call(dyn_hcall_t hfn, struct module *this)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(__pkvm_register_el2_call);
+
+static const char pkvm_compat_string[] = "pkvm,protected-region";
+
+#define for_each_protected_region(np)	\
+	for (np = of_find_compatible_node(NULL, NULL, pkvm_compat_string);	\
+	     np;								\
+	     np = of_find_compatible_node(np, NULL, pkvm_compat_string))
+
+int pkvm_protect_regions(void)
+{
+	enum kvm_pgtable_prot prot;
+	struct device_node *np;
+	struct resource res;
+	phys_addr_t addr;
+	int ret;
+
+	for_each_protected_region(np) {
+		ret = of_address_to_resource(np, 0, &res);
+		if (ret) {
+			pr_warn("Failed to parse protected KVM region: %s\n", np->name);
+			continue;
+		}
+
+		prot = KVM_PGTABLE_PROT_RWX;
+		if (of_property_read_bool(np, "read-only"))
+			prot &= ~KVM_PGTABLE_PROT_W;
+
+		if (of_property_read_bool(np, "non-executable"))
+			prot &= ~KVM_PGTABLE_PROT_X;
+
+		if (prot == KVM_PGTABLE_PROT_RWX)
+			continue;
+
+		for (addr = res.start; addr < res.end; addr += PAGE_SIZE) {
+			ret = kvm_call_hyp_nvhe(__pkvm_protect_page, __phys_to_pfn(addr), prot);
+			if (WARN_ON(ret))
+				return ret;
+		}
+	}
+
+	return 0;
+}

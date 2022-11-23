@@ -2168,9 +2168,14 @@ static int pkvm_drop_host_privileges(void)
 
 static int finalize_hyp_mode(void)
 {
+	int ret;
+
 	if (!is_protected_kvm_enabled())
 		return 0;
 
+	ret = pkvm_protect_regions();
+	if (ret)
+		return ret;
 	/*
 	 * Exclude HYP sections from kmemleak so that they don't get peeked
 	 * at, which would end badly once inaccessible.

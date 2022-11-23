@@ -23,6 +23,7 @@ int kvm_arm_vm_ioctl_pkvm(struct kvm *kvm, struct kvm_enable_cap *cap);
 int kvm_init_pvm(struct kvm *kvm, unsigned long type);
 int create_el2_shadow(struct kvm *kvm);
 void kvm_shadow_destroy(struct kvm *kvm);
+int pkvm_protect_regions(void);
 
 /*
  * Definitions for features to be allowed or restricted for guest virtual
