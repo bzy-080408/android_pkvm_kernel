@@ -380,6 +380,60 @@ int host_stage2_unmap_dev_locked(phys_addr_t start, u64 size)
 	return 0;
 }
 
+struct check_walk_data {
+	enum pkvm_page_state	desired;
+	enum pkvm_page_state	(*get_page_state)(kvm_pte_t pte);
+};
+
+static enum pkvm_page_state host_get_dev_page_state(kvm_pte_t pte)
+{
+	enum pkvm_page_state state = 0;
+	enum kvm_pgtable_prot prot;
+
+	if (!kvm_pte_valid(pte) && pte)
+		return PKVM_NOPAGE;
+
+	prot = kvm_pgtable_stage2_pte_prot(pte);
+	if (kvm_pte_valid(pte) && ((prot & KVM_PGTABLE_PROT_RWX) != PKVM_HOST_MMIO_PROT))
+		state = PKVM_PAGE_RESTRICTED_PROT;
+
+	return state | pkvm_getstate(prot);
+}
+
+static int check_page_state_range(struct kvm_pgtable *pgt, u64 addr, u64 size,
+				  struct check_walk_data *data);
+
+static int __host_check_dev_page_state_range(u64 addr, u64 size,
+					     enum pkvm_page_state state)
+{
+	struct check_walk_data d = {
+		.desired	= state,
+		.get_page_state	= host_get_dev_page_state,
+	};
+
+	hyp_assert_lock_held(&host_kvm.lock);
+	return check_page_state_range(&host_kvm.pgt, addr, size, &d);
+}
+
+static int host_stage2_unmap_dev_range(phys_addr_t start, u64 size)
+{
+	phys_addr_t addr, end = start + size;
+	int ret;
+
+	hyp_assert_lock_held(&host_kvm.lock);
+
+	for (addr = start; addr < end; addr += PAGE_SIZE) {
+		/* Be careful not to drop pages in a non-default state */
+		ret = __host_check_dev_page_state_range(addr, PAGE_SIZE, PKVM_PAGE_OWNED);
+		if (!ret)
+			ret = host_stage2_unmap_dev_locked(addr, PAGE_SIZE);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int host_stage2_unmap_dev_all(void)
 {
 	struct kvm_pgtable *pgt = &host_kvm.pgt;
@@ -390,11 +444,11 @@ static int host_stage2_unmap_dev_all(void)
 	/* Unmap all non-memory regions to recycle the pages */
 	for (i = 0; i < hyp_memblock_nr; i++, addr = reg->base + reg->size) {
 		reg = &hyp_memory[i];
-		ret = host_stage2_unmap_dev_locked(addr, reg->base - addr);
+		ret = host_stage2_unmap_dev_range(addr, reg->base - addr);
 		if (ret)
 			return ret;
 	}
-	return host_stage2_unmap_dev_locked(addr, BIT(pgt->ia_bits) - addr);
+	return host_stage2_unmap_dev_range(addr, BIT(pgt->ia_bits) - addr);
 }
 
 struct kvm_mem_range {
@@ -809,11 +863,6 @@ static pkvm_id completer_owner_id(const struct pkvm_mem_transition *tx)
 		return -1;
 	}
 }
-
-struct check_walk_data {
-	enum pkvm_page_state	desired;
-	enum pkvm_page_state	(*get_page_state)(kvm_pte_t pte);
-};
 
 static int __check_page_state_visitor(u64 addr, u64 end, u32 level,
 				      kvm_pte_t *ptep,
