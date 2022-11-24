@@ -117,16 +117,6 @@ static int kvm_host_page_count(void *addr)
 	return page_count(virt_to_page(addr));
 }
 
-static phys_addr_t kvm_host_pa(void *addr)
-{
-	return __pa(addr);
-}
-
-static void *kvm_host_va(phys_addr_t phys)
-{
-	return __va(phys);
-}
-
 static void clean_dcache_guest_page(void *va, size_t size)
 {
 	__clean_dcache_guest_page(va, size);
@@ -803,16 +793,6 @@ void kvm_free_stage2_pgd(struct kvm_s2_mmu *mmu)
 	}
 }
 
-static void hyp_mc_free_fn(void *addr, void *unused)
-{
-	free_page((unsigned long)addr);
-}
-
-static void *hyp_mc_alloc_fn(void *unused)
-{
-	return (void *)__get_free_page(GFP_KERNEL_ACCOUNT);
-}
-
 void free_hyp_memcache(struct kvm_hyp_memcache *mc)
 {
 	if (is_protected_kvm_enabled())
@@ -828,7 +808,7 @@ int topup_hyp_memcache(struct kvm_vcpu *vcpu)
 	return __topup_hyp_memcache(&vcpu->arch.pkvm_memcache,
 				    kvm_mmu_cache_min_pages(vcpu->kvm),
 				    hyp_mc_alloc_fn,
-				    kvm_host_pa, NULL);
+				    kvm_host_pa, (void *)GFP_KERNEL_ACCOUNT);
 }
 
 /**

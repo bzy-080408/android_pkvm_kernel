@@ -127,6 +127,26 @@ static inline void __free_hyp_memcache(struct kvm_hyp_memcache *mc,
 void free_hyp_memcache(struct kvm_hyp_memcache *mc);
 int topup_hyp_memcache(struct kvm_vcpu *vcpu);
 
+static inline void hyp_mc_free_fn(void *addr, void *unused)
+{
+	free_page((unsigned long)addr);
+}
+
+static inline void *hyp_mc_alloc_fn(void *gfp_mask)
+{
+	return (void *)__get_free_page((u64)gfp_mask);
+}
+
+static inline phys_addr_t kvm_host_pa(void *addr)
+{
+	return __pa(addr);
+}
+
+static inline void *kvm_host_va(phys_addr_t phys)
+{
+	return __va(phys);
+}
+
 struct kvm_vmid {
 	/* The VMID generation used for the virt. memory system */
 	u64    vmid_gen;
