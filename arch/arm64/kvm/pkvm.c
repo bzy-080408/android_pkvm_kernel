@@ -10,6 +10,7 @@
 #include <linux/mutex.h>
 #include <linux/sort.h>
 
+#include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/kvm_pkvm_module.h>
@@ -250,6 +251,16 @@ int pkvm_init_host_vm(struct kvm *host_kvm, unsigned long type)
 	host_kvm->arch.pkvm.enabled = true;
 	return 0;
 }
+
+#ifdef CONFIG_MODULES
+static int __init early_pkvm_enable_modules(char *arg)
+{
+	kvm_nvhe_sym(__pkvm_modules_enabled) = true;
+
+	return 0;
+}
+early_param("kvm-arm.protected_modules", early_pkvm_enable_modules);
+#endif
 
 struct pkvm_mod_sec_mapping {
 	struct pkvm_module_section *sec;
