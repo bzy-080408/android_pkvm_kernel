@@ -59,10 +59,6 @@ enum __kvm_host_smccc_func {
 	__KVM_HOST_SMCCC_FUNC___kvm_enable_ssbs,
 	__KVM_HOST_SMCCC_FUNC___vgic_v3_init_lrs,
 	__KVM_HOST_SMCCC_FUNC___vgic_v3_get_gic_config,
-	__KVM_HOST_SMCCC_FUNC___pkvm_alloc_module_va,
-	__KVM_HOST_SMCCC_FUNC___pkvm_map_module_page,
-	__KVM_HOST_SMCCC_FUNC___pkvm_unmap_module_page,
-	__KVM_HOST_SMCCC_FUNC___pkvm_init_module,
 	__KVM_HOST_SMCCC_FUNC___pkvm_prot_finalize,
 
 	/* Hypercalls available after pKVM finalisation */
@@ -90,6 +86,11 @@ enum __kvm_host_smccc_func {
 	__KVM_HOST_SMCCC_FUNC___pkvm_iommu_pm_notify,
 	__KVM_HOST_SMCCC_FUNC___pkvm_iommu_finalize,
 	__KVM_HOST_SMCCC_FUNC___pkvm_register_hcall,
+	__KVM_HOST_SMCCC_FUNC___pkvm_alloc_module_va,
+	__KVM_HOST_SMCCC_FUNC___pkvm_map_module_page,
+	__KVM_HOST_SMCCC_FUNC___pkvm_unmap_module_page,
+	__KVM_HOST_SMCCC_FUNC___pkvm_init_module,
+	__KVM_HOST_SMCCC_FUNC___pkvm_close_module_registration,
 
 	/*
 	 * Start of the dynamically registered hypercalls. Start a bit

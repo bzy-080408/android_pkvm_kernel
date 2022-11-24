@@ -13,6 +13,7 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/sort.h>
 
+#include <asm/kvm_hyp.h>
 #include <asm/kvm_mmu.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/kvm_pkvm_module.h>
@@ -352,6 +353,14 @@ int kvm_init_pvm(struct kvm *kvm, unsigned long type)
 	kvm->arch.pkvm.enabled = true;
 	return 0;
 }
+
+static int __init early_pkvm_enable_modules(char *arg)
+{
+	kvm_nvhe_sym(__pkvm_modules_enabled) = true;
+
+	return 0;
+}
+early_param("kvm-arm.protected_modules", early_pkvm_enable_modules);
 
 struct pkvm_mod_sec_mapping {
 	struct pkvm_module_section *sec;
