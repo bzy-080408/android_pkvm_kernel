@@ -473,7 +473,8 @@ static int pkvm_map_module_pages(void *hyp_va, struct pkvm_el2_module *mod,
 	return ret;
 }
 
-int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
+int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this,
+			   unsigned long *token)
 {
 	void *start, *end, *hyp_va;
 	kvm_nvhe_reloc_t *endrel;
@@ -506,6 +507,15 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this)
 		module_put(this);
 		return -ENOMEM;
 	}
+
+	/*
+	 * The token can be used for other calls related to this module.
+	 * Conveniently the only information needed is this addr so let's use it
+	 * as an identifier.
+	 */
+	if (token)
+		*token = (unsigned long)hyp_va;
+
 	endrel = (void *)mod->relocs + mod->nr_relocs * sizeof(*endrel);
 	kvm_apply_hyp_module_relocations(start, hyp_va, mod->relocs, endrel);
 
