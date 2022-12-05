@@ -1019,10 +1019,42 @@ static void kvm_restrictedmem_error(struct restrictedmem_notifier *notifier,
 	kvm_arch_memory_mce(slot->kvm);
 }
 
+bool __weak kvm_arch_slot_ismappable(struct kvm *kvm,
+				     gfn_t gfn_start, gfn_t gfn_end)
+{
+	return false;
+}
+
+static bool kvm_restrictedmem_notifier_ismappable(struct restrictedmem_notifier *notifier,
+						  struct vm_area_struct *vma)
+{
+	struct kvm_memory_slot *slot = container_of(notifier,
+						    struct kvm_memory_slot,
+						    notifier);
+	unsigned long base_pgoff = slot->restricted_offset >> PAGE_SHIFT;
+	gfn_t start_gfn = slot->base_gfn;
+	gfn_t end_gfn = slot->base_gfn + slot->npages;
+	unsigned long nr_pages = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	pgoff_t start = vma->vm_pgoff;
+	pgoff_t end = start + nr_pages;
+
+	if (start > base_pgoff)
+		start_gfn = slot->base_gfn + start - base_pgoff;
+
+	if (end < base_pgoff + slot->npages)
+		end_gfn = slot->base_gfn + end - base_pgoff;
+
+	if (start_gfn >= end_gfn)
+		return true;
+
+	return kvm_arch_slot_ismappable(slot->kvm, start_gfn, end_gfn);
+}
+
 static struct restrictedmem_notifier_ops kvm_restrictedmem_notifier_ops = {
 	.invalidate_start = kvm_restrictedmem_invalidate_begin,
 	.invalidate_end = kvm_restrictedmem_invalidate_end,
 	.error = kvm_restrictedmem_error,
+	.ismappable = kvm_restrictedmem_notifier_ismappable,
 };
 
 static inline void kvm_restrictedmem_register(struct kvm_memory_slot *slot)
