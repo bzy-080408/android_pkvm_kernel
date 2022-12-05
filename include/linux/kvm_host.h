@@ -50,6 +50,8 @@
 #define KVM_MAX_VCPU_IDS KVM_MAX_VCPUS
 #endif
 
+#define INVALID_GPA (~(gpa_t)0)
+
 /*
  * The bit 16 ~ bit 31 of kvm_memory_region::flags are internally used
  * in kvm, other bits are visible for userspace which are defined in
