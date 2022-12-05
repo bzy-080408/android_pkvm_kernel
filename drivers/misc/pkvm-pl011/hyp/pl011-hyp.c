@@ -23,7 +23,7 @@ static inline void __hyp_writew(unsigned int val, void *ioaddr)
 	asm volatile("str %w0, [%1]" : : "r" (val), "r" (ioaddr));
 }
 
-static void pl011_hyp_putc(char c)
+void pl011_hyp_putc(char c)
 {
 	unsigned int val;
 	void *base = (void *)uart_addr;
@@ -37,6 +37,13 @@ static void pl011_hyp_putc(char c)
 	} while (val & (1U << HYP_PL011_UARTFR_BUSY));
 }
 
+struct putc_fn_struct {
+	void (*putc_fn)(char c);
+};
+
+const struct putc_fn_struct putc_struct = { .putc_fn = pl011_hyp_putc };
+
+
 int pl011_hyp_init(const struct pkvm_module_ops *ops)
 {
 	int ret;
@@ -46,5 +53,5 @@ int pl011_hyp_init(const struct pkvm_module_ops *ops)
 	if (ret)
 		return ret;
 
-	return ops->register_serial_driver(pl011_hyp_putc);
+	return ops->register_serial_driver(putc_struct.putc_fn);
 }
