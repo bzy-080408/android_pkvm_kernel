@@ -2571,8 +2571,8 @@ static void kvm_unmap_mem_range(struct kvm *kvm, gfn_t start, gfn_t end,
 		kvm_flush_remote_tlbs(kvm);
 }
 
-static int kvm_vm_ioctl_set_mem_attributes(struct kvm *kvm,
-					   struct kvm_memory_attributes *attrs)
+int kvm_vm_ioctl_set_mem_attributes(struct kvm *kvm,
+				    struct kvm_memory_attributes *attrs)
 {
 	gfn_t start, end;
 	unsigned long i;
