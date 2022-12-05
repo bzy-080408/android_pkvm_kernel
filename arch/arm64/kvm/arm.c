@@ -730,6 +730,13 @@ void kvm_arm_resume_guest(struct kvm *kvm)
 	}
 }
 
+#ifdef CONFIG_HAVE_KVM_RESTRICTED_MEM
+void kvm_arch_memory_mce(struct kvm *kvm)
+{
+	kvm_make_all_cpus_request(kvm, KVM_REQ_MEMORY_MCE);
+}
+#endif
+
 static void kvm_vcpu_sleep(struct kvm_vcpu *vcpu)
 {
 	struct rcuwait *wait = kvm_arch_vcpu_get_wait(vcpu);
@@ -858,6 +865,11 @@ static int check_vcpu_requests(struct kvm_vcpu *vcpu)
 
 		if (kvm_check_request(KVM_REQ_SUSPEND, vcpu))
 			return kvm_vcpu_suspend(vcpu);
+
+		if (kvm_check_request(KVM_REQ_MEMORY_MCE, vcpu)) {
+			vcpu->run->exit_reason = KVM_EXIT_SHUTDOWN;
+			return 0;
+		}
 	}
 
 	return 1;
