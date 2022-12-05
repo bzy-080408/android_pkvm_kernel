@@ -74,5 +74,7 @@ int __pkvm_register_serial_driver(void (*hyp_putc_cb)(char))
 		ret = -EBUSY;
 	hyp_spin_unlock(&lock);
 
+	hyp_puts("Registered serial driver!");
+
 	return ret;
 }
