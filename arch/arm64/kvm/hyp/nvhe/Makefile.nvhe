@@ -22,15 +22,17 @@ HYPREL := arch/arm64/tools/gen-hyprel
 ## file containing all nVHE hyp code and data.
 ##
 
-hyp-obj := $(patsubst %.o,%.nvhe.o,$(hyp-obj-y))
+hyp-obj := $(patsubst %.o,%_nvhe.o,$(hyp-obj-y))
 targets += $(hyp-obj) kvm_nvhe.tmp.o kvm_nvhe.rel.o hyp.lds hyp-reloc.S hyp-reloc.o
 
 # 1) Compile all source files to `.nvhe.o` object files. The file extension
 #    avoids file name clashes for files shared with VHE.
-$(obj)/%.nvhe.o: $(src)/%.c FORCE
+$(obj)/%_nvhe.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
-$(obj)/%.nvhe.o: $(src)/%.S FORCE
+$(obj)/%_nvhe.o: $(src)/%.S FORCE
 	$(call if_changed_rule,as_o_S)
+$(obj)/%_nvhe.o: $(src)/%.rs FORCE
+	$(call if_changed_dep,rustc_o_rs)
 
 # 2) Partially link all '.nvhe.o' files and apply the linker script.
 #    Prefixes names of ELF sections with '.hyp', eg. '.hyp.text'.

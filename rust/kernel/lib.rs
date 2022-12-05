@@ -23,6 +23,7 @@ compile_error!("Missing kernel configuration for conditional compilation");
 #[cfg(not(testlib))]
 mod allocator;
 pub mod error;
+pub mod pkvm;
 pub mod prelude;
 pub mod print;
 pub mod str;
