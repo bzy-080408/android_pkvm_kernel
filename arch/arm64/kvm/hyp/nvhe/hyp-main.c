@@ -52,6 +52,13 @@ void __kvm_hyp_host_forward_smc(struct kvm_cpu_context *host_ctxt);
 
 typedef void (*shadow_entry_exit_handler_fn)(struct kvm_vcpu *, struct kvm_vcpu *);
 
+static bool (*default_host_smc_handler)(struct kvm_cpu_context *host_ctxt);
+
+int __pkvm_register_host_smc_handler(bool (*cb)(struct kvm_cpu_context *))
+{
+	return cmpxchg(&default_host_smc_handler, NULL, cb) ? -EBUSY : 0;
+}
+
 static void handle_pvm_entry_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
 {
 	shadow_vcpu->arch.flags |= host_vcpu->arch.flags & KVM_ARM64_INCREMENT_PC;
@@ -1190,11 +1197,6 @@ inval:
 	cpu_reg(host_ctxt, 0) = SMCCC_RET_NOT_SUPPORTED;
 }
 
-static void default_host_smc_handler(struct kvm_cpu_context *host_ctxt)
-{
-	__kvm_hyp_host_forward_smc(host_ctxt);
-}
-
 static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 {
 	bool handled;
@@ -1202,8 +1204,10 @@ static void handle_host_smc(struct kvm_cpu_context *host_ctxt)
 	handled = kvm_host_psci_handler(host_ctxt);
 	if (!handled)
 		handled = kvm_host_ffa_handler(host_ctxt);
+	if (!handled && READ_ONCE(default_host_smc_handler))
+		handled = default_host_smc_handler(host_ctxt);
 	if (!handled)
-		default_host_smc_handler(host_ctxt);
+		__kvm_hyp_host_forward_smc(host_ctxt);
 
 	/* SMC was trapped, move ELR past the current PC. */
 	kvm_skip_host_instr();
