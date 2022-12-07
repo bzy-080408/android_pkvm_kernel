@@ -53,10 +53,16 @@ void __kvm_hyp_host_forward_smc(struct kvm_cpu_context *host_ctxt);
 typedef void (*shadow_entry_exit_handler_fn)(struct kvm_vcpu *, struct kvm_vcpu *);
 
 static bool (*default_host_smc_handler)(struct kvm_cpu_context *host_ctxt);
+static bool (*default_trap_handler)(struct kvm_cpu_context *host_ctxt);
 
 int __pkvm_register_host_smc_handler(bool (*cb)(struct kvm_cpu_context *))
 {
 	return cmpxchg(&default_host_smc_handler, NULL, cb) ? -EBUSY : 0;
+}
+
+int __pkvm_register_default_trap_handler(bool (*cb)(struct kvm_cpu_context *))
+{
+	return cmpxchg(&default_trap_handler, NULL, cb) ? -EBUSY : 0;
 }
 
 static void handle_pvm_entry_wfx(struct kvm_vcpu *host_vcpu, struct kvm_vcpu *shadow_vcpu)
@@ -1233,6 +1239,6 @@ void handle_trap(struct kvm_cpu_context *host_ctxt)
 		handle_host_mem_abort(host_ctxt);
 		break;
 	default:
-		BUG();
+		BUG_ON(!READ_ONCE(default_trap_handler) || !default_trap_handler(host_ctxt));
 	}
 }
