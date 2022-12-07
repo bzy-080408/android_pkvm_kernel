@@ -424,81 +424,103 @@ static int __init early_pkvm_enable_modules(char *arg)
 }
 early_param("kvm-arm.protected_modules", early_pkvm_enable_modules);
 
-static bool offset_in_section(size_t offset, void *start, struct pkvm_module_section *sec)
-{
-	void *addr = start + offset;
+struct pkvm_mod_sec_mapping {
+	struct pkvm_module_section *sec;
+	enum kvm_pgtable_prot prot;
+};
 
-	return (addr >= sec->start) && (addr < sec->end);
-}
-
-static void pkvm_unmap_module_pages(void *hyp_va, struct pkvm_el2_module *mod,
-				    size_t size)
+static void pkvm_unmap_module_pages(void *kern_va, void *hyp_va, size_t size)
 {
-	void *start = mod->text.start;
 	size_t offset;
 	u64 pfn;
 
 	for (offset = 0; offset < size; offset += PAGE_SIZE) {
-		if (!offset_in_section(offset, start, &mod->text) &&
-		    !offset_in_section(offset, start, &mod->bss) &&
-		    !offset_in_section(offset, start, &mod->rodata))
-			continue;
-
-		pfn = vmalloc_to_pfn(start + offset);
+		pfn = vmalloc_to_pfn(kern_va + offset);
 		kvm_call_hyp_nvhe(__pkvm_unmap_module_page, pfn,
 				  hyp_va + offset);
 	}
 }
 
-static int pkvm_map_module_pages(void *hyp_va, struct pkvm_el2_module *mod,
-				 size_t size)
+static void pkvm_unmap_module_sections(struct pkvm_mod_sec_mapping *secs_map, void *hyp_va_base, int nr_secs)
 {
-	void *start = mod->text.start;
-	enum kvm_pgtable_prot prot;
-	size_t offset;
-	int ret = 0;
+	size_t offset, size;
+	void *start;
+	int i;
+
+	for (i = 0; i < nr_secs; i++) {
+		start = secs_map[i].sec->start;
+		size = secs_map[i].sec->end - start;
+		offset = start - secs_map[0].sec->start;
+		pkvm_unmap_module_pages(start, hyp_va_base + offset, size);
+	}
+}
+
+static int pkvm_map_module_section(struct pkvm_mod_sec_mapping *sec_map, void *hyp_va)
+{
+	size_t offset, size = sec_map->sec->end - sec_map->sec->start;
+	int ret;
 	u64 pfn;
 
 	for (offset = 0; offset < size; offset += PAGE_SIZE) {
-		if (offset_in_section(offset, start, &mod->text))
-			prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_X;
-		else if (offset_in_section(offset, start, &mod->bss) ||
-				offset_in_section(offset, start, &mod->data))
-			prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W;
-		else if (offset_in_section(offset, start, &mod->rodata))
-			prot = KVM_PGTABLE_PROT_R;
-		else
-			continue;
-
-		pfn = vmalloc_to_pfn(start + offset);
+		pfn = vmalloc_to_pfn(sec_map->sec->start + offset);
 		ret = kvm_call_hyp_nvhe(__pkvm_map_module_page, pfn,
-					hyp_va + offset, prot);
+					hyp_va + offset, sec_map->prot);
 		if (ret) {
-			pkvm_unmap_module_pages(hyp_va, mod, offset);
-			break;
+			pkvm_unmap_module_pages(sec_map->sec->start, hyp_va, offset);
+			return ret;
 		}
 	}
 
-	return ret;
+	return 0;
+}
+
+static int pkvm_map_module_sections(struct pkvm_mod_sec_mapping *secs_map, void *hyp_va_base, int nr_secs)
+{
+	size_t offset;
+	int i, ret;
+
+	for (i = 0; i < nr_secs; i++) {
+		offset = secs_map[i].sec->start - secs_map[0].sec->start;
+		ret = pkvm_map_module_section(&secs_map[i], hyp_va_base + offset);
+		if (ret) {
+			pkvm_unmap_module_sections(secs_map, hyp_va_base, i);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int __pkvm_cmp_mod_sec(const void *p1, const void *p2)
+{
+	struct pkvm_mod_sec_mapping const *s1 = p1;
+	struct pkvm_mod_sec_mapping const *s2 = p2;
+
+	return s1->sec->start < s2->sec->start ? -1 : s1->sec->start > s2->sec->start;
 }
 
 int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this,
 			   unsigned long *token)
 {
+	struct pkvm_mod_sec_mapping secs_map[] = {
+		{ &mod->text, KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_X },
+		{ &mod->bss, KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W },
+		{ &mod->rodata, KVM_PGTABLE_PROT_R },
+		{ &mod->data, KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W },
+	};
 	void *start, *end, *hyp_va;
 	kvm_nvhe_reloc_t *endrel;
 	size_t offset, size;
-	int ret;
+	int ret, i;
 
 	if (!is_protected_kvm_enabled())
 		return -EOPNOTSUPP;
 
-	if (!PAGE_ALIGNED(mod->text.start) ||
-	    !PAGE_ALIGNED(mod->bss.start) ||
-	    !PAGE_ALIGNED(mod->rodata.start) ||
-	    !PAGE_ALIGNED(mod->data.start)) {
-		kvm_err("EL2 sections are not page-aligned\n");
-		return -EINVAL;
+	for (i = 0; i < ARRAY_SIZE(secs_map); i++) {
+		if (!PAGE_ALIGNED(secs_map[i].sec->start)) {
+			kvm_err("EL2 sections are not page-aligned\n");
+			return -EINVAL;
+		}
 	}
 
 	if (!try_module_get(this)) {
@@ -506,9 +528,10 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this,
 		return -ENODEV;
 	}
 
-	start = mod->text.start;
-	end = mod->data.end;
-	size = PAGE_ALIGN((size_t)(end - start));
+	sort(secs_map, ARRAY_SIZE(secs_map), sizeof(secs_map[0]), __pkvm_cmp_mod_sec, NULL);
+	start = secs_map[0].sec->start;
+	end = secs_map[ARRAY_SIZE(secs_map) - 1].sec->end;
+	size = PAGE_ALIGN(end - start);
 
 	hyp_va = (void *)kvm_call_hyp_nvhe(__pkvm_alloc_module_va, size >> PAGE_SHIFT);
 	if (!hyp_va) {
@@ -528,7 +551,7 @@ int __pkvm_load_el2_module(struct pkvm_el2_module *mod, struct module *this,
 	endrel = (void *)mod->relocs + mod->nr_relocs * sizeof(*endrel);
 	kvm_apply_hyp_module_relocations(start, hyp_va, mod->relocs, endrel);
 
-	ret = pkvm_map_module_pages(hyp_va, mod, size);
+	ret = pkvm_map_module_sections(secs_map, hyp_va, ARRAY_SIZE(secs_map));
 	if (ret) {
 		kvm_err("Failed to map EL2 module page: %d\n", ret);
 		module_put(this);
