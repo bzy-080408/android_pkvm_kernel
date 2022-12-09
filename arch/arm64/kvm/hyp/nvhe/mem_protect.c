@@ -787,7 +787,7 @@ static int __host_ack_transition(u64 addr, const struct pkvm_mem_transition *tx,
 static int host_ack_share(u64 addr, const struct pkvm_mem_transition *tx,
 			  enum kvm_pgtable_prot perms)
 {
-	if (perms != PKVM_HOST_MEM_PROT)
+	if (tx->initiator.id != PKVM_ID_HYP && perms != PKVM_HOST_MEM_PROT)
 		return -EPERM;
 
 	return __host_ack_transition(addr, tx, PKVM_NOPAGE);
@@ -864,6 +864,7 @@ static int hyp_request_donation(u64 *completer_addr,
 	u64 addr = tx->initiator.addr;
 
 	*completer_addr = tx->initiator.hyp.completer_addr;
+
 	return __hyp_check_page_state_range(addr, size, PKVM_PAGE_OWNED);
 }
 
@@ -931,6 +932,29 @@ static int hyp_ack_donation(u64 addr, const struct pkvm_mem_transition *tx)
 		return 0;
 
 	return __hyp_check_page_state_range(addr, size, PKVM_NOPAGE);
+}
+
+static int hyp_request_share(u64 *completer_addr,
+			     const struct pkvm_mem_transition *tx)
+{
+	u64 size = tx->nr_pages * PAGE_SIZE;
+	u64 addr = tx->initiator.addr;
+
+	*completer_addr = tx->initiator.hyp.completer_addr;
+
+	return __hyp_check_page_state_range(addr, size, PKVM_PAGE_SHARED_OWNED);
+}
+
+static int hyp_initiate_share(u64 *completer_addr,
+			      const struct pkvm_mem_transition *tx)
+{
+	u64 size = tx->nr_pages * PAGE_SIZE;
+	u64 addr = tx->initiator.addr;
+
+	*completer_addr = tx->initiator.hyp.completer_addr;
+
+	return __hyp_set_page_state_range(addr, size, PKVM_PAGE_SHARED_OWNED,
+					  PAGE_HYP);
 }
 
 static int hyp_complete_share(u64 addr, const struct pkvm_mem_transition *tx,
@@ -1147,6 +1171,9 @@ static int check_share(struct pkvm_mem_share *share)
 	case PKVM_ID_HOST:
 		ret = host_request_owned_transition(&completer_addr, tx);
 		break;
+	case PKVM_ID_HYP:
+		ret = hyp_request_share(&completer_addr, tx);
+		break;
 	case PKVM_ID_GUEST:
 		ret = guest_request_share(&completer_addr, tx);
 		break;
@@ -1183,6 +1210,9 @@ static int __do_share(struct pkvm_mem_share *share)
 	switch (tx->initiator.id) {
 	case PKVM_ID_HOST:
 		ret = host_initiate_share(&completer_addr, tx);
+		break;
+	case PKVM_ID_HYP:
+		ret = hyp_initiate_share(&completer_addr, tx);
 		break;
 	case PKVM_ID_GUEST:
 		ret = guest_initiate_share(&completer_addr, tx);
