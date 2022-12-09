@@ -1906,20 +1906,45 @@ unlock:
 int hyp_pin_shared_mem(void *from, void *to)
 {
 	u64 cur, start = ALIGN_DOWN((u64)from, PAGE_SIZE);
+	enum pkvm_page_state hyp_state, host_state;
 	u64 end = PAGE_ALIGN((u64)to);
 	u64 size = end - start;
+	kvm_pte_t pte;
 	int ret;
 
 	host_lock_component();
 	hyp_lock_component();
 
-	ret = __host_check_page_state_range(__hyp_pa(start), size,
-					    PKVM_PAGE_SHARED_OWNED);
+	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, __hyp_pa(start), &pte, NULL);
 	if (ret)
 		goto unlock;
 
-	ret = __hyp_check_page_state_range(start, size,
-					   PKVM_PAGE_SHARED_BORROWED);
+	/*
+	 *       hyp       |        host
+	 * ------------------------------------
+	 * SHARED_BORROWED |    SHARED_OWNED	=> valid
+	 *   SHARED_OWNED  | SHARED_BORROWED	=> valid
+	 *        x        |         x		=> invalid
+	 */
+	host_state = host_get_page_state(pte);
+	switch (host_state) {
+	case PKVM_PAGE_SHARED_OWNED:
+		hyp_state = PKVM_PAGE_SHARED_BORROWED;
+		break;
+	case PKVM_PAGE_RESTRICTED_PROT | PKVM_PAGE_SHARED_BORROWED:
+	case PKVM_PAGE_SHARED_BORROWED:
+		hyp_state = PKVM_PAGE_SHARED_OWNED;
+		break;
+	default:
+		ret = -EPERM;
+		goto unlock;
+	}
+
+	ret = __host_check_page_state_range(__hyp_pa(start), size, host_state);
+	if (ret)
+		goto unlock;
+
+	ret = __hyp_check_page_state_range(start, size, hyp_state);
 	if (ret)
 		goto unlock;
 
