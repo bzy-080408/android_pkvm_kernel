@@ -27,6 +27,9 @@
 extern unsigned long hyp_nr_cpus;
 struct host_kvm host_kvm;
 
+struct pkvm_moveable_reg pkvm_moveable_regs[PKVM_NR_MOVEABLE_REGS];
+unsigned int pkvm_moveable_regs_nr;
+
 static struct hyp_pool host_s2_pool;
 
 static pkvm_id pkvm_guest_id(struct kvm_vcpu *vcpu)
@@ -366,7 +369,7 @@ int __pkvm_prot_finalize(void)
 	return 0;
 }
 
-int host_stage2_unmap_dev_locked(phys_addr_t start, u64 size)
+int host_stage2_unmap_reg_locked(phys_addr_t start, u64 size)
 {
 	int ret;
 
@@ -380,21 +383,24 @@ int host_stage2_unmap_dev_locked(phys_addr_t start, u64 size)
 	return 0;
 }
 
-static int host_stage2_unmap_dev_all(void)
+static int host_stage2_unmap_unmoveable_regs(void)
 {
 	struct kvm_pgtable *pgt = &host_kvm.pgt;
-	struct memblock_region *reg;
+	struct pkvm_moveable_reg *reg;
 	u64 addr = 0;
 	int i, ret;
 
-	/* Unmap all non-memory regions to recycle the pages */
-	for (i = 0; i < hyp_memblock_nr; i++, addr = reg->base + reg->size) {
-		reg = &hyp_memory[i];
-		ret = host_stage2_unmap_dev_locked(addr, reg->base - addr);
-		if (ret)
-			return ret;
+	/* Unmap all unmoveable regions to recycle the pages */
+	for (i = 0; i < pkvm_moveable_regs_nr; i++) {
+		reg = &pkvm_moveable_regs[i];
+		if (reg->start > addr) {
+			ret = host_stage2_unmap_reg_locked(addr, reg->start - addr);
+			if (ret)
+				return ret;
+		}
+		addr = max(addr, reg->start + reg->size);
 	}
-	return host_stage2_unmap_dev_locked(addr, BIT(pgt->ia_bits) - addr);
+	return host_stage2_unmap_reg_locked(addr, BIT(pgt->ia_bits) - addr);
 }
 
 struct kvm_mem_range {
@@ -486,10 +492,10 @@ static inline int __host_stage2_idmap(u64 start, u64 end,
 }
 
 /*
- * The pool has been provided with enough pages to cover all of memory with
- * page granularity, but it is difficult to know how much of the MMIO range
- * we will need to cover upfront, so we may need to 'recycle' the pages if we
- * run out.
+ * The pool has been provided with enough pages to cover all of moveable regions
+ * with page granularity, but it is difficult to know how much of the
+ * non-moveable regions we will need to cover upfront, so we may need to
+ * 'recycle' the pages if we run out.
  */
 #define host_stage2_try(fn, ...)					\
 	({								\
@@ -497,7 +503,7 @@ static inline int __host_stage2_idmap(u64 start, u64 end,
 		hyp_assert_lock_held(&host_kvm.lock);			\
 		__ret = fn(__VA_ARGS__);				\
 		if (__ret == -ENOMEM) {					\
-			__ret = host_stage2_unmap_dev_all();		\
+			__ret = host_stage2_unmap_unmoveable_regs();		\
 			if (!__ret)					\
 				__ret = fn(__VA_ARGS__);		\
 		}							\
