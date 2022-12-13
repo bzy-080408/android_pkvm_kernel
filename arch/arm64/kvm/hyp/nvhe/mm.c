@@ -25,8 +25,10 @@ hyp_spinlock_t pkvm_pgd_lock;
 struct memblock_region hyp_memory[HYP_MEMBLOCK_REGIONS];
 unsigned int hyp_memblock_nr;
 
-static u64 __io_map_base;
 static DEFINE_PER_CPU(void *, hyp_fixmap_base);
+
+static u64 __private_range_base;
+static u64 __private_range_cur;
 
 static int __pkvm_create_mappings(unsigned long start, unsigned long size,
 				  unsigned long phys, enum kvm_pgtable_prot prot)
@@ -42,18 +44,18 @@ static int __pkvm_create_mappings(unsigned long start, unsigned long size,
 
 static unsigned long hyp_alloc_private_va_range(size_t size)
 {
-	unsigned long addr = __io_map_base;
+	unsigned long cur = __private_range_cur;
 
 	hyp_assert_lock_held(&pkvm_pgd_lock);
-	__io_map_base += PAGE_ALIGN(size);
+	cur += PAGE_ALIGN(size);
 
 	/* Are we overflowing on the vmemmap ? */
-	if (__io_map_base > __hyp_vmemmap) {
-		__io_map_base = addr;
-		addr = (unsigned long)ERR_PTR(-ENOMEM);
-	}
+	if (cur > __hyp_vmemmap || (cur - __private_range_base) > __PKVM_PRIVATE_SZ)
+		cur = (unsigned long)ERR_PTR(-ENOMEM);
+	else
+		swap(__private_range_cur, cur);
 
-	return addr;
+	return cur;
 }
 
 unsigned long __pkvm_create_private_mapping(phys_addr_t phys, size_t size,
@@ -356,9 +358,10 @@ int hyp_create_idmap(u32 hyp_va_bits)
 	 * with the idmap to place the IOs and the vmemmap. IOs use the lower
 	 * half of the quarter and the vmemmap the upper half.
 	 */
-	__io_map_base = start & BIT(hyp_va_bits - 2);
-	__io_map_base ^= BIT(hyp_va_bits - 2);
-	__hyp_vmemmap = __io_map_base | BIT(hyp_va_bits - 3);
+	__private_range_base = start & BIT(hyp_va_bits - 2);
+	__private_range_base ^= BIT(hyp_va_bits - 2);
+	__private_range_cur = __private_range_base;
+	__hyp_vmemmap = __private_range_base | BIT(hyp_va_bits - 3);
 
 	return __pkvm_create_mappings(start, end - start, start, PAGE_HYP_EXEC);
 }
