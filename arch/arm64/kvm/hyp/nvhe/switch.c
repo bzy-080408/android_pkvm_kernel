@@ -346,6 +346,12 @@ int __kvm_vcpu_run(struct kvm_vcpu *vcpu)
 	return exit_code;
 }
 
+static void (*hyp_panic_notifier)(struct kvm_cpu_context *host_ctxt);
+int __pkvm_register_hyp_panic_notifier(void (*cb)(struct kvm_cpu_context *host_ctxt))
+{
+	return cmpxchg(&hyp_panic_notifier, NULL, cb) ? -EBUSY : 0;
+}
+
 void __noreturn hyp_panic(void)
 {
 	u64 spsr = read_sysreg_el2(SYS_SPSR);
@@ -356,6 +362,9 @@ void __noreturn hyp_panic(void)
 
 	host_ctxt = &this_cpu_ptr(&kvm_host_data)->host_ctxt;
 	vcpu = host_ctxt->__hyp_running_vcpu;
+
+	if (READ_ONCE(hyp_panic_notifier))
+		hyp_panic_notifier(host_ctxt);
 
 	if (vcpu) {
 		__timer_disable_traps(vcpu);
