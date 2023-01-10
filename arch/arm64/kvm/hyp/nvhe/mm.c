@@ -84,14 +84,17 @@ out:
 
 void *__pkvm_alloc_module_va(u64 nr_pages)
 {
-	unsigned long addr = 0;
+	void *addr;
 
 	pkvm_modules_lock();
-	if (pkvm_modules_enabled())
-		pkvm_alloc_private_va_range(nr_pages << PAGE_SHIFT, &addr);
+	if (pkvm_modules_enabled()) {
+		hyp_spin_lock(&pkvm_pgd_lock);
+		addr = (void *)hyp_alloc_private_va_range(nr_pages << PAGE_SHIFT);
+		hyp_spin_unlock(&pkvm_pgd_lock);
+	}
 	pkvm_modules_unlock();
 
-	return (void *)addr;
+	return !IS_ERR(addr) ? addr : NULL;
 }
 
 int __pkvm_map_module_page(u64 pfn, void *va, enum kvm_pgtable_prot prot)
